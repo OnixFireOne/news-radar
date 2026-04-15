@@ -1,0 +1,11 @@
+data/
+data/sessions/
+.env
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+web/.next/
+web/node_modules/
+*.session
+*.session-journal

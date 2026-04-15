@@ -1,0 +1,92 @@
+version: '3.8'
+
+services:
+
+  # ─────────────────────────────────────────
+  # COLLECTOR — userbot читает Telegram каналы
+  # ─────────────────────────────────────────
+  collector:
+    build:
+      context: .          # корень проекта — видит все папки
+      dockerfile: collectors/Dockerfile
+    container_name: news-radar-collector
+    volumes:
+      - ./data:/app/data
+      - ./data/sessions:/app/sessions
+    environment:
+      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
+      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
+      - TELEGRAM_SESSION_NAME=${TELEGRAM_SESSION_NAME:-news_radar}
+      - DATABASE_PATH=/app/data/news.db
+      - MIN_MESSAGE_LENGTH=${MIN_MESSAGE_LENGTH:-30}
+    restart: unless-stopped
+    networks:
+      - news-radar-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ─────────────────────────────────────────
+  # ANALYZER — AI анализ через Oobabooga
+  # ─────────────────────────────────────────
+  analyzer:
+    build:
+      context: .
+      dockerfile: analyzer/Dockerfile
+    container_name: news-radar-analyzer
+    volumes:
+      - ./data:/app/data
+    environment:
+      - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:5000/v1}
+      - LLM_API_KEY=${LLM_API_KEY:-not-needed}
+      - LLM_MODEL=${LLM_MODEL:-}
+      - DATABASE_PATH=/app/data/news.db
+      - ANALYZE_INTERVAL_MINUTES=${ANALYZE_INTERVAL_MINUTES:-30}
+    restart: unless-stopped
+    networks:
+      - news-radar-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ─────────────────────────────────────────
+  # API — FastAPI backend
+  # ─────────────────────────────────────────
+  api:
+    build:
+      context: .
+      dockerfile: api/Dockerfile
+    container_name: news-radar-api
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - DATABASE_PATH=/app/data/news.db
+    restart: unless-stopped
+    networks:
+      - news-radar-network
+
+  # ─────────────────────────────────────────
+  # TELEGRAM BOT — вывод дайджестов
+  # ─────────────────────────────────────────
+  bot:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    container_name: news-radar-bot
+    depends_on:
+      - api
+    volumes:
+      - ./data:/app/data
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS}
+      - API_URL=http://api:8000
+      - DATABASE_PATH=/app/data/news.db
+      - DIGEST_INTERVAL_HOURS=${DIGEST_INTERVAL_HOURS:-3}
+    restart: unless-stopped
+    networks:
+      - news-radar-network
+
+networks:
+  news-radar-network:
+    driver: bridge
