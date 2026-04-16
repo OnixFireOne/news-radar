@@ -1,10 +1,11 @@
 """
-TelegramCollector — userbot на Telethon.
-Слушает все каналы/группы аккаунта в реальном времени
-и сохраняет сообщения в SQLite.
+TelegramCollector — Telethon-based userbot.
 
-Запуск первый раз: потребует SMS-код от Telegram.
-Сессия сохраняется в /app/sessions/ — не теряй эту папку!
+Listens to all channels/groups of the authenticated account in real time
+and saves messages to SQLite.
+
+First run: will prompt for SMS code from Telegram.
+Session is saved to /app/sessions/ — don't lose this folder!
 """
 
 import asyncio
@@ -16,9 +17,8 @@ from pathlib import Path
 from typing import AsyncIterator
 
 from telethon import TelegramClient, events
-from telethon.tl.types import Channel, Chat, PeerChannel
+from telethon.tl.types import Channel, Chat
 
-# Добавляем корень проекта в path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from collectors.base import BaseCollector, RawMessage
@@ -29,8 +29,8 @@ logger = logging.getLogger(__name__)
 
 class TelegramCollector(BaseCollector):
     """
-    Userbot который читает все каналы текущего аккаунта.
-    Авторизуется через API ID + Hash (не бот-токен!).
+    Userbot that reads all channels of the current account.
+    Authenticates via API ID + Hash (not a bot token!).
     """
 
     source_type = "telegram"
@@ -53,28 +53,28 @@ class TelegramCollector(BaseCollector):
         self._running = False
 
     async def start(self) -> None:
-        """Подключиться к Telegram. Первый раз попросит SMS-код."""
+        """Connect to Telegram. First run will ask for phone number and SMS code."""
         Path(self.session_path).parent.mkdir(parents=True, exist_ok=True)
-        
+
         self.client = TelegramClient(
             self.session_path,
             self.api_id,
             self.api_hash,
         )
-        
+
         logger.info("Connecting to Telegram...")
         await self.client.start()
-        
+
         me = await self.client.get_me()
-        logger.info(f"✅ Logged in as: {me.first_name} (@{me.username})")
-        
-        # Инициализируем БД и загружаем источники
+        logger.info(f"Logged in as: {me.first_name} (@{me.username})")
+
+        # Initialize DB and sync channel list from account
         init_db(self.db_path)
         await self._sync_dialogs()
         self._running = True
 
     async def stop(self) -> None:
-        """Отключиться."""
+        """Disconnect from Telegram."""
         self._running = False
         if self.client:
             await self.client.disconnect()
@@ -82,16 +82,16 @@ class TelegramCollector(BaseCollector):
 
     async def _sync_dialogs(self) -> None:
         """
-        Синхронизировать список каналов из аккаунта в таблицу sources.
-        Добавляет новые, не трогает существующие.
+        Sync the channel list from account dialogs into the sources table.
+        Adds new sources, does not modify existing ones.
         """
         logger.info("Syncing channels from account dialogs...")
         conn = get_db(self.db_path)
         count = 0
-        
+
         try:
             async for dialog in self.client.iter_dialogs():
-                # Берём только каналы и группы, не личку
+                # Only channels and groups, skip direct messages
                 if not isinstance(dialog.entity, (Channel, Chat)):
                     continue
 
@@ -99,7 +99,6 @@ class TelegramCollector(BaseCollector):
                 name = getattr(entity, "username", None) or str(entity.id)
                 display_name = dialog.name
 
-                # Upsert источника
                 conn.execute("""
                     INSERT OR IGNORE INTO sources (type, name, display_name, active)
                     VALUES (?, ?, ?, 1)
@@ -107,15 +106,15 @@ class TelegramCollector(BaseCollector):
                 count += 1
 
             conn.commit()
-            logger.info(f"✅ Synced {count} sources from account")
+            logger.info(f"Synced {count} sources from account")
         except Exception as e:
             logger.error(f"Error syncing dialogs: {e}")
         finally:
             conn.close()
 
     async def listen(self) -> AsyncIterator[RawMessage]:
-        """Слушать новые сообщения в реальном времени."""
-        
+        """Listen for new messages in real time from all account channels."""
+
         queue: asyncio.Queue[RawMessage] = asyncio.Queue()
 
         @self.client.on(events.NewMessage)
@@ -128,7 +127,7 @@ class TelegramCollector(BaseCollector):
             except Exception as e:
                 logger.error(f"Error handling message: {e}")
 
-        logger.info("👂 Listening for new messages...")
+        logger.info("Listening for new messages...")
 
         while self._running:
             try:
@@ -142,7 +141,7 @@ class TelegramCollector(BaseCollector):
         source_name: str,
         limit: int = 100,
     ) -> list[RawMessage]:
-        """Загрузить историю из конкретного канала."""
+        """Load message history from a specific channel."""
         messages = []
         logger.info(f"Fetching {limit} messages from {source_name}...")
 
@@ -166,22 +165,22 @@ class TelegramCollector(BaseCollector):
         except Exception as e:
             logger.error(f"Error fetching history from {source_name}: {e}")
 
-        logger.info(f"✅ Fetched {len(messages)} messages from {source_name}")
+        logger.info(f"Fetched {len(messages)} messages from {source_name}")
         return messages
 
     async def _event_to_message(self, event) -> RawMessage | None:
-        """Конвертировать Telethon event в RawMessage."""
+        """Convert a Telethon event into a RawMessage."""
         if not event.text:
             return None
 
-        # Получаем название источника
+        # Resolve source name
         try:
             chat = await event.get_chat()
             source_name = getattr(chat, "username", None) or str(chat.id)
         except Exception:
             source_name = str(event.chat_id)
 
-        # Определяем тип медиа
+        # Detect media type
         media_type = None
         if event.photo:
             media_type = "photo"
@@ -202,17 +201,17 @@ class TelegramCollector(BaseCollector):
         )
 
     def _save_message(self, msg: RawMessage) -> None:
-        """Сохранить сообщение в SQLite."""
+        """Persist a message to SQLite."""
         conn = get_db(self.db_path)
         try:
-            # Найти source_id
+            # Look up source_id by name
             row = conn.execute(
                 "SELECT id FROM sources WHERE name = ? AND type = ?",
                 (msg.source_name, "telegram"),
             ).fetchone()
 
             if not row:
-                # Создать источник если нет
+                # Auto-create source if it doesn't exist yet
                 cursor = conn.execute(
                     "INSERT INTO sources (type, name, display_name) VALUES (?, ?, ?)",
                     ("telegram", msg.source_name, msg.source_name),
@@ -243,7 +242,7 @@ class TelegramCollector(BaseCollector):
 
 
 async def main():
-    """Точка входа для Docker."""
+    """Docker entry point."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -265,7 +264,7 @@ async def main():
 
     await collector.start()
 
-    # Сначала подгрузить историю последних 50 сообщений из каждого канала
+    # Load recent history (50 messages per channel) before going live
     logger.info("Loading recent history from all channels...")
     conn = get_db(db_path)
     sources = conn.execute(
@@ -276,20 +275,16 @@ async def main():
     for source in sources:
         try:
             await collector.fetch_history(source["name"], limit=50)
-            await asyncio.sleep(1)  # пауза чтобы не спамить Telegram
+            await asyncio.sleep(1)  # small delay to avoid hammering Telegram
         except Exception as e:
             logger.warning(f"Could not load history from {source['name']}: {e}")
 
-    logger.info("✅ History loaded. Now listening for new messages...")
+    logger.info("History loaded. Listening for new messages...")
 
-    # Слушаем новые сообщения бесконечно
     try:
         async for message in collector.listen():
-            logger.info(
-                f"📨 [{message.source_name}] {message.text[:80]}..."
-                if len(message.text) > 80
-                else f"📨 [{message.source_name}] {message.text}"
-            )
+            preview = message.text[:80] + "..." if len(message.text) > 80 else message.text
+            logger.info(f"[{message.source_name}] {preview}")
     except KeyboardInterrupt:
         logger.info("Shutting down...")
     finally:

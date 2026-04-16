@@ -1,98 +1,98 @@
 """
-Промпты для AI-анализа новостей.
-Вынесены отдельно — легко менять без правки логики.
+LLM prompts for news analysis.
+Kept in a separate file so they can be tuned without touching business logic.
 
-Совет: качество промпта = качество анализа.
-Это главный навык Prompt Engineering — учись здесь.
+Key insight: prompt quality = analysis quality.
+This is where Prompt Engineering skills are built.
 """
 
 
 # ──────────────────────────────────────────────
-# АНАЛИЗ ОДНОГО СООБЩЕНИЯ
+# SINGLE MESSAGE ANALYSIS
 # ──────────────────────────────────────────────
 
-SINGLE_MESSAGE_PROMPT = """Ты аналитик крипто/финансовых новостей. Проанализируй сообщение из Telegram-канала.
+SINGLE_MESSAGE_PROMPT = """You are a crypto/financial news analyst. Analyze this Telegram channel message.
 
-КАНАЛ: {source_name}
-СООБЩЕНИЕ:
+CHANNEL: {source_name}
+MESSAGE:
 {text}
 
-Верни ТОЛЬКО валидный JSON без пояснений:
+Return ONLY valid JSON with no extra text:
 {{
-  "temperature": <число от 1 до 10>,
-  "topic": "<одна из категорий: bitcoin, ethereum, altcoins, defi, nft, macro, regulation, hack/scam, exchange, general>",
-  "summary": "<2-3 предложения: суть новости>",
-  "keywords": ["<ключевое слово>", ...],
+  "temperature": <number from 1 to 10>,
+  "topic": "<one of: bitcoin, ethereum, altcoins, defi, nft, macro, regulation, hack/scam, exchange, general>",
+  "summary": "<2-3 sentences: what this news is about>",
+  "keywords": ["<keyword>", ...],
   "sentiment": "<positive | negative | neutral>"
 }}
 
-Шкала temperature:
-1-3: обычные новости, мало кого волнует
-4-6: интересно, умеренный интерес
-7-8: горячая тема, активное обсуждение  
-9-10: BREAKING, максимальный хайп/паника"""
+Temperature scale:
+1-3: routine news, low interest
+4-6: interesting, moderate engagement
+7-8: hot topic, active discussion
+9-10: BREAKING, maximum hype or panic"""
 
 
 # ──────────────────────────────────────────────
-# БАТЧ-ДАЙДЖЕСТ (несколько сообщений за период)
+# BATCH DIGEST (multiple messages over a time period)
 # ──────────────────────────────────────────────
 
-DIGEST_PROMPT = """Ты составляешь дайджест крипто-новостей за период {period}.
+DIGEST_PROMPT = """You are creating a crypto news digest for the period: {period}.
 
-Вот {count} сообщений из разных Telegram-каналов:
+Here are {count} messages from different Telegram channels:
 
 {messages}
 
-Составь структурированный дайджест в формате Markdown:
+Write a structured digest in Markdown format:
 
-## 🔥 Главное за {period}
+## 🔥 Top Stories ({period})
 
-### [Топ-тема 1 с температурой X/10]
-[2-3 предложения о чём эта тема]
+### [Topic 1 — temperature X/10]
+[2-3 sentences about this topic]
 
-### [Топ-тема 2 с температурой X/10]
-[2-3 предложения]
+### [Topic 2 — temperature X/10]
+[2-3 sentences]
 
-[... до 5 тем]
+[... up to 5 topics]
 
-## 📊 Настроение рынка
-[Общий вывод: bullish/bearish/нейтральный и почему]
+## 📊 Market Sentiment
+[Overall conclusion: bullish / bearish / neutral and why]
 
-## ⚡ Требует внимания
-[1-2 пункта на что обратить особое внимание]
+## ⚡ Watch Out For
+[1-2 items that require special attention]
 
-Пиши кратко, по делу, без воды. Используй эмодзи умеренно."""
+Be concise and factual. Use emojis sparingly."""
 
 
 # ──────────────────────────────────────────────
-# КЛАСТЕРИЗАЦИЯ ТЕМ
+# TOPIC CLUSTERING
 # ──────────────────────────────────────────────
 
-CLUSTER_PROMPT = """Сгруппируй эти новости по темам.
+CLUSTER_PROMPT = """Group these news items by topic.
 
-НОВОСТИ:
+NEWS:
 {messages}
 
-Верни ТОЛЬКО валидный JSON:
+Return ONLY valid JSON:
 {{
   "clusters": [
     {{
-      "topic": "<название темы>",
+      "topic": "<topic name>",
       "message_ids": [<id>, ...],
-      "temperature": <средняя температура>,
-      "summary": "<одно предложение о теме>"
+      "temperature": <average temperature>,
+      "summary": "<one sentence about this topic>"
     }}
   ]
 }}
 
-Не более 5 кластеров. Объединяй похожие темы."""
+Maximum 5 clusters. Merge similar topics."""
 
 
 # ──────────────────────────────────────────────
-# СИСТЕМНЫЙ ПРОМПТ (для всех запросов)
+# SYSTEM PROMPT (used for all requests)
 # ──────────────────────────────────────────────
 
-SYSTEM_PROMPT = """Ты — аналитик криптовалютного рынка. 
-Твоя задача: кратко, точно и объективно анализировать новости.
-Всегда отвечай строго в запрошенном формате.
-Не добавляй ничего лишнего вне формата."""
+SYSTEM_PROMPT = """You are a cryptocurrency market analyst.
+Your job: analyze news briefly, accurately, and objectively.
+Always respond strictly in the requested format.
+Do not add anything outside the format."""

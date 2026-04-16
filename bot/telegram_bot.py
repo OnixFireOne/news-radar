@@ -1,15 +1,15 @@
 """
-Telegram Bot — вывод дайджестов пользователю.
+Telegram Bot — digest delivery to the user.
 
-Это НЕ userbot — это обычный бот через @BotFather.
-Команды:
-  /start   — приветствие
-  /status  — статистика системы
-  /hot     — горячие темы прямо сейчас
-  /digest  — последний дайджест
-  /help    — помощь
+This is a regular bot (via @BotFather), NOT a userbot.
+Commands:
+  /start   — welcome message
+  /status  — system statistics
+  /hot     — trending topics right now
+  /digest  — most recent AI digest
+  /help    — help
 
-Авто-рассылка дайджеста каждые DIGEST_INTERVAL_HOURS часов.
+Auto-sends a digest every DIGEST_INTERVAL_HOURS hours.
 """
 
 import asyncio
@@ -26,17 +26,17 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
 )
-from telegram.constants import ParseMode
 
 logger = logging.getLogger(__name__)
 
-# Разрешённые пользователи (Telegram user_id через @userinfobot)
+# Set of allowed Telegram user IDs (get yours from @userinfobot)
 ALLOWED_USERS: set[int] = set()
 
 
 def is_allowed(user_id: int) -> bool:
+    """Check if the user is authorized to use this bot."""
     if not ALLOWED_USERS:
-        return True  # если список пустой — разрешаем всем
+        return True  # if empty — allow everyone (dev mode)
     return user_id in ALLOWED_USERS
 
 
@@ -44,7 +44,7 @@ API_URL = os.environ.get("API_URL", "http://localhost:8000")
 
 
 async def fetch_api(path: str) -> dict | list | None:
-    """Получить данные из API."""
+    """Fetch data from the News Radar API."""
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.get(f"{API_URL}{path}")
@@ -52,12 +52,12 @@ async def fetch_api(path: str) -> dict | list | None:
                 return resp.json()
             return None
     except Exception as e:
-        logger.error(f"API error ({path}): {e}")
+        logger.error(f"API request failed ({path}): {e}")
         return None
 
 
 # ──────────────────────────────────────────────
-# КОМАНДЫ
+# COMMAND HANDLERS
 # ──────────────────────────────────────────────
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -65,14 +65,13 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "📡 *News Radar* запущен\\!\n\n"
-        "Я слежу за Telegram-каналами и анализирую новости через AI\\.\n\n"
-        "*Команды:*\n"
-        "/hot — горячие темы прямо сейчас\n"
-        "/digest — последний дайджест\n"
-        "/status — статистика системы\n"
-        "/help — помощь",
-        parse_mode=ParseMode.MARKDOWN_V2,
+        "📡 News Radar is running!\n\n"
+        "I monitor Telegram channels and analyze news with AI.\n\n"
+        "Commands:\n"
+        "/hot — trending topics right now\n"
+        "/digest — latest AI digest\n"
+        "/status — system statistics\n"
+        "/help — this message"
     )
 
 
@@ -82,76 +81,69 @@ async def cmd_status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     stats = await fetch_api("/stats")
     if not stats:
-        await update.message.reply_text("❌ API недоступен")
+        await update.message.reply_text("❌ API is unavailable")
         return
 
-    text = (
-        f"📊 *Статус News Radar*\n\n"
-        f"📨 Всего сообщений: `{stats['total_messages']}`\n"
-        f"✅ Проанализировано: `{stats['analyzed_messages']}`\n"
-        f"⏳ В очереди: `{stats['pending_messages']}`\n\n"
-        f"📡 Источников: `{stats['active_sources']}` активных\n"
-        f"⚡ За час: `{stats['messages_last_hour']}` сообщений\n"
-        f"📅 За 24ч: `{stats['messages_last_24h']}` сообщений"
+    await update.message.reply_text(
+        f"📊 News Radar Status\n\n"
+        f"📨 Total messages: {stats['total_messages']}\n"
+        f"✅ Analyzed: {stats['analyzed_messages']}\n"
+        f"⏳ Pending: {stats['pending_messages']}\n\n"
+        f"📡 Active sources: {stats['active_sources']}\n"
+        f"⚡ Last hour: {stats['messages_last_hour']} messages\n"
+        f"📅 Last 24h: {stats['messages_last_24h']} messages"
     )
-
-    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN_V2)
 
 
 async def cmd_hot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Горячие темы за последние 6 часов."""
+    """Show trending topics for the last 6 hours."""
     if not is_allowed(update.effective_user.id):
         return
 
-    await update.message.reply_text("🔍 Ищу горячие темы...")
+    await update.message.reply_text("🔍 Looking for hot topics...")
 
     topics = await fetch_api("/topics?hours=6&limit=5")
     if not topics:
-        await update.message.reply_text("Нет данных — возможно, анализ ещё не запускался")
+        await update.message.reply_text("No data yet — analysis may still be running")
         return
 
-    lines = ["🔥 *Горячие темы за 6 часов*\n"]
+    lines = ["🔥 Hot Topics (last 6 hours)\n"]
     for i, topic in enumerate(topics, 1):
         temp = topic["avg_temperature"]
         emoji = "🔴" if temp >= 8 else "🟠" if temp >= 6 else "🟡"
-        lines.append(
-            f"{emoji} *{topic['topic']}* — `{temp}/10`\n"
-            f"   {topic['message_count']} сообщений\n"
-        )
-        if topic.get("top_message"):
-            preview = topic["top_message"][:100] + "..." if len(topic["top_message"]) > 100 else topic["top_message"]
-            lines.append(f"   _{preview}_\n")
+        lines.append(f"{emoji} {topic['topic']} — {temp}/10 ({topic['message_count']} msgs)")
 
-    # Экранируем специальные символы для MarkdownV2
-    text = "\n".join(lines)
-    # Отправляем как обычный текст чтобы не было проблем с экранированием
-    await update.message.reply_text(
-        "\n".join(lines),
-        parse_mode=None,  # plain text безопаснее
-    )
+        if topic.get("top_message"):
+            preview = topic["top_message"][:120]
+            if len(topic["top_message"]) > 120:
+                preview += "..."
+            lines.append(f"   → {preview}")
+        lines.append("")
+
+    await update.message.reply_text("\n".join(lines))
 
 
 async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Последний AI-дайджест."""
+    """Send the latest AI-generated digest."""
     if not is_allowed(update.effective_user.id):
         return
 
-    await update.message.reply_text("📝 Загружаю дайджест...")
+    await update.message.reply_text("📝 Loading digest...")
 
     digest = await fetch_api("/digest/latest")
     if not digest:
         await update.message.reply_text(
-            "Дайджест ещё не сгенерирован. Попробуй через 30 минут."
+            "Digest not generated yet. Try again in 30 minutes."
         )
         return
 
     content = digest["content_md"]
-    
-    # Telegram ограничивает 4096 символов
-    if len(content) > 4000:
-        content = content[:4000] + "\n\n... (обрезано)"
 
-    await update.message.reply_text(content, parse_mode=None)
+    # Telegram message limit is 4096 chars
+    if len(content) > 4000:
+        content = content[:4000] + "\n\n... (truncated)"
+
+    await update.message.reply_text(content)
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -159,22 +151,22 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(
-        "📡 News Radar — AI-агрегатор новостей\n\n"
-        "Команды:\n"
-        "/hot — горячие темы прямо сейчас\n"
-        "/digest — последний AI-дайджест\n"
-        "/status — статистика (сколько каналов, сообщений)\n"
-        "/help — это сообщение\n\n"
-        "Авто-дайджест приходит каждые 3 часа."
+        "📡 News Radar — AI news aggregator\n\n"
+        "Commands:\n"
+        "/hot — trending topics right now\n"
+        "/digest — latest AI digest\n"
+        "/status — system stats (channels, messages)\n"
+        "/help — this message\n\n"
+        "Auto-digest is sent every 3 hours."
     )
 
 
 # ──────────────────────────────────────────────
-# АВТОДАЙДЖЕСТ
+# AUTO-DIGEST (scheduled)
 # ──────────────────────────────────────────────
 
 async def send_auto_digest(app: Application) -> None:
-    """Отправить автоматический дайджест всем разрешённым пользователям."""
+    """Send automatic digest to all authorized users."""
     digest = await fetch_api("/digest/latest")
     if not digest:
         return
@@ -183,11 +175,9 @@ async def send_auto_digest(app: Application) -> None:
     if len(content) > 4000:
         content = content[:4000] + "\n\n..."
 
-    text = f"⏰ Авто-дайджест\n\n{content}"
+    text = f"⏰ Auto Digest\n\n{content}"
 
-    # Отправляем всем разрешённым пользователям
-    users = list(ALLOWED_USERS) if ALLOWED_USERS else []
-    for user_id in users:
+    for user_id in list(ALLOWED_USERS):
         try:
             await app.bot.send_message(chat_id=user_id, text=text)
         except Exception as e:
@@ -195,7 +185,7 @@ async def send_auto_digest(app: Application) -> None:
 
 
 async def main():
-    """Запуск бота."""
+    """Bot entry point."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -204,40 +194,40 @@ async def main():
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     interval_hours = int(os.environ.get("DIGEST_INTERVAL_HOURS", "3"))
 
-    # Загружаем разрешённых пользователей
+    # Load allowed user IDs from env
     allowed_raw = os.environ.get("TELEGRAM_ALLOWED_USERS", "")
     for uid in allowed_raw.split(","):
         uid = uid.strip()
         if uid.isdigit():
             ALLOWED_USERS.add(int(uid))
 
-    logger.info(f"Allowed users: {ALLOWED_USERS or 'ALL'}")
+    logger.info(f"Allowed users: {ALLOWED_USERS or 'ALL (dev mode)'}")
 
     app = Application.builder().token(token).build()
 
-    # Регистрируем команды
+    # Register command handlers
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("hot", cmd_hot))
     app.add_handler(CommandHandler("digest", cmd_digest))
     app.add_handler(CommandHandler("help", cmd_help))
 
-    # Устанавливаем меню команд в Telegram
+    # Set bot command menu in Telegram
     await app.bot.set_my_commands([
-        BotCommand("hot", "Горячие темы прямо сейчас"),
-        BotCommand("digest", "Последний дайджест"),
-        BotCommand("status", "Статистика системы"),
-        BotCommand("help", "Помощь"),
+        BotCommand("hot", "Trending topics right now"),
+        BotCommand("digest", "Latest AI digest"),
+        BotCommand("status", "System statistics"),
+        BotCommand("help", "Help"),
     ])
 
-    # Авто-дайджест через Job Queue
+    # Schedule auto-digest
     app.job_queue.run_repeating(
         callback=lambda ctx: send_auto_digest(app),
         interval=interval_hours * 3600,
-        first=interval_hours * 3600,  # первый через N часов
+        first=interval_hours * 3600,
     )
 
-    logger.info("✅ News Radar Bot started")
+    logger.info("News Radar Bot started")
     await app.run_polling(drop_pending_updates=True)
 
 

@@ -1,6 +1,6 @@
 """
-API Models — Pydantic схемы для FastAPI.
-Определяют что возвращает API клиентам (веб + бот).
+API Models — Pydantic schemas for FastAPI responses.
+Defines the shape of data returned to web clients and the Telegram bot.
 """
 
 from datetime import datetime

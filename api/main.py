@@ -1,14 +1,16 @@
 """
-FastAPI — основной backend API для News Radar.
+FastAPI backend for News Radar.
 
-Эндпоинты:
-  GET /feed          — лента новостей с AI-анализом
-  GET /topics        — горячие темы
-  GET /digest/latest — последний дайджест
-  GET /sources       — список каналов
-  GET /stats         — статистика системы
+Endpoints:
+  GET /feed          — news feed with AI analysis
+  GET /topics        — trending topics
+  GET /digest/latest — most recent digest
+  GET /digest        — list of digests
+  GET /sources       — list of monitored channels
+  GET /stats         — system statistics
+  GET /health        — health check
 
-Документация (автоматически): http://localhost:8000/docs
+Auto-generated docs: http://localhost:8000/docs
 """
 
 import json
@@ -42,10 +44,11 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# CORS — разрешаем фронту обращаться к API
+# Allow frontend to call the API from any origin
+# In production: replace "*" with your actual domain
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # в проде заменить на конкретный домен
+    allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -55,13 +58,13 @@ DB_PATH = os.environ.get("DATABASE_PATH", "/app/data/news.db")
 
 @app.on_event("startup")
 async def startup():
-    """Инициализация при старте."""
+    """Initialize database on startup."""
     init_db(DB_PATH)
-    logger.info("✅ News Radar API started")
+    logger.info("News Radar API started")
 
 
 # ──────────────────────────────────────────────
-# FEED — лента новостей
+# FEED
 # ──────────────────────────────────────────────
 
 @app.get("/feed", response_model=list[MessageResponse])
@@ -74,18 +77,18 @@ async def get_feed(
     hours: int = Query(24, ge=1, le=168),
 ):
     """
-    Лента новостей с AI-анализом.
-    
-    Фильтры:
-    - min_temperature: показывать только горячие (например, 7+)
-    - topic: фильтр по теме (bitcoin, defi, macro...)
-    - source: фильтр по каналу (@username)
-    - hours: за последние N часов
+    News feed with AI analysis scores.
+
+    Filters:
+    - min_temperature: only show hot topics (e.g. 7+ for high hype)
+    - topic: filter by category (bitcoin, defi, macro...)
+    - source: filter by channel @username
+    - hours: time window in hours
     """
     since = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
 
     query = """
-        SELECT 
+        SELECT
             m.id, m.text, m.views, m.forwards, m.collected_at, m.analyzed,
             s.name as source_name, s.display_name as source_display_name,
             a.temperature, a.topic, a.summary, a.keywords, a.sentiment
@@ -150,7 +153,7 @@ async def get_feed(
 
 
 # ──────────────────────────────────────────────
-# TOPICS — горячие темы
+# TOPICS
 # ──────────────────────────────────────────────
 
 @app.get("/topics", response_model=list[TopicResponse])
@@ -158,7 +161,7 @@ async def get_topics(
     hours: int = Query(24, ge=1, le=168),
     limit: int = Query(10, ge=1, le=50),
 ):
-    """Горячие темы за последние N часов, отсортированные по температуре."""
+    """Trending topics sorted by average temperature."""
     since = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
 
     conn = get_db(DB_PATH)
@@ -202,17 +205,17 @@ async def get_topics(
 
 @app.get("/digest/latest", response_model=DigestResponse)
 async def get_latest_digest():
-    """Последний сгенерированный дайджест."""
+    """Get the most recently generated digest."""
     conn = get_db(DB_PATH)
     try:
-        row = conn.execute("""
-            SELECT * FROM digests ORDER BY created_at DESC LIMIT 1
-        """).fetchone()
+        row = conn.execute(
+            "SELECT * FROM digests ORDER BY created_at DESC LIMIT 1"
+        ).fetchone()
     finally:
         conn.close()
 
     if not row:
-        raise HTTPException(status_code=404, detail="No digests yet")
+        raise HTTPException(status_code=404, detail="No digests generated yet")
 
     return DigestResponse(
         id=row["id"],
@@ -225,7 +228,7 @@ async def get_latest_digest():
 
 @app.get("/digest", response_model=list[DigestResponse])
 async def get_digests(limit: int = Query(10, ge=1, le=50)):
-    """Список последних дайджестов."""
+    """List recent digests."""
     conn = get_db(DB_PATH)
     try:
         rows = conn.execute(
@@ -247,12 +250,12 @@ async def get_digests(limit: int = Query(10, ge=1, le=50)):
 
 
 # ──────────────────────────────────────────────
-# SOURCES — источники
+# SOURCES
 # ──────────────────────────────────────────────
 
 @app.get("/sources", response_model=list[SourceResponse])
 async def get_sources():
-    """Список всех источников (каналов)."""
+    """List all monitored channels/sources."""
     conn = get_db(DB_PATH)
     try:
         rows = conn.execute("SELECT * FROM sources ORDER BY display_name").fetchall()
@@ -277,14 +280,13 @@ async def get_sources():
 
 @app.get("/stats", response_model=StatsResponse)
 async def get_stats():
-    """Статистика системы."""
+    """System-wide statistics."""
     conn = get_db(DB_PATH)
     try:
         now = datetime.utcnow()
 
         total = conn.execute("SELECT COUNT(*) as c FROM messages").fetchone()["c"]
         analyzed = conn.execute("SELECT COUNT(*) as c FROM messages WHERE analyzed=1").fetchone()["c"]
-        pending = total - analyzed
 
         total_sources = conn.execute("SELECT COUNT(*) as c FROM sources").fetchone()["c"]
         active_sources = conn.execute("SELECT COUNT(*) as c FROM sources WHERE active=1").fetchone()["c"]
@@ -310,7 +312,7 @@ async def get_stats():
     return StatsResponse(
         total_messages=total,
         analyzed_messages=analyzed,
-        pending_messages=pending,
+        pending_messages=total - analyzed,
         total_sources=total_sources,
         active_sources=active_sources,
         latest_digest=latest_digest,

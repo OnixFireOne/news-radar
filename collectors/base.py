@@ -1,8 +1,8 @@
 """
-BaseCollector — абстрактный базовый класс для всех источников.
+BaseCollector — abstract base class for all data source collectors.
 
-Архитектурный паттерн: каждый источник (Telegram, Discord, Twitter...)
-реализует этот интерфейс. Analyzer не знает откуда пришли данные.
+Architecture pattern: each source (Telegram, Discord, Twitter...)
+implements this interface. The Analyzer doesn't know where data came from.
 """
 
 from abc import ABC, abstractmethod
@@ -13,29 +13,29 @@ from typing import AsyncIterator
 
 @dataclass
 class RawMessage:
-    """Нормализованное сообщение из любого источника."""
-    external_id: str          # ID в источнике (message_id в Telegram)
-    source_name: str          # @channel_username
-    source_type: str          # 'telegram', 'discord', 'twitter' ...
-    text: str                 # текст сообщения
+    """Normalized message from any data source."""
+    external_id: str          # Message ID in the source (e.g. Telegram message_id)
+    source_name: str          # @channel_username or server name
+    source_type: str          # 'telegram', 'discord', 'twitter', etc.
+    text: str                 # Message text content
     views: int = 0
     forwards: int = 0
-    media_type: str | None = None   # photo, video, document
+    media_type: str | None = None   # photo, video, document, or None
     timestamp: datetime | None = None
 
     def is_valid(self, min_length: int = 30) -> bool:
-        """Проверить что сообщение стоит анализировать."""
+        """Check if the message is worth analyzing."""
         return (
             len(self.text.strip()) >= min_length
-            and not self.text.startswith("/")   # команды бота
+            and not self.text.startswith("/")   # skip bot commands
         )
 
 
 class BaseCollector(ABC):
     """
-    Абстрактный коллектор. Реализуй этот класс для каждого источника.
+    Abstract collector. Implement this class for each data source.
 
-    Пример использования:
+    Usage example:
         collector = TelegramCollector(api_id, api_hash)
         await collector.start()
         async for msg in collector.listen():
@@ -46,19 +46,19 @@ class BaseCollector(ABC):
 
     @abstractmethod
     async def start(self) -> None:
-        """Инициализация и подключение к источнику."""
+        """Initialize and connect to the data source."""
         ...
 
     @abstractmethod
     async def stop(self) -> None:
-        """Корректное отключение."""
+        """Gracefully disconnect from the source."""
         ...
 
     @abstractmethod
     async def listen(self) -> AsyncIterator[RawMessage]:
         """
-        Асинхронный генератор новых сообщений в реальном времени.
-        Работает бесконечно пока не вызван stop().
+        Async generator that yields new messages in real time.
+        Runs indefinitely until stop() is called.
         """
         ...
 
@@ -68,12 +68,12 @@ class BaseCollector(ABC):
         source_name: str,
         limit: int = 100,
     ) -> list[RawMessage]:
-        """Загрузить историю сообщений из источника."""
+        """Load historical messages from the source."""
         ...
 
     def normalize(self, raw: dict) -> RawMessage:
         """
-        Переопределить при необходимости кастомной нормализации.
-        По умолчанию просто возвращает RawMessage из dict.
+        Override for custom normalization logic.
+        By default, constructs RawMessage from a dict.
         """
         return RawMessage(**raw)

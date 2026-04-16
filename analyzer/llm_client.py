@@ -1,8 +1,9 @@
 """
-LLM Client — клиент к Oobabooga (или любому OpenAI-совместимому API).
+LLM Client — wrapper for Oobabooga (or any OpenAI-compatible API).
 
-Oobabooga имеет OpenAI-совместимый эндпоинт на /v1,
-так что используем стандартный openai клиент.
+Oobabooga exposes an OpenAI-compatible endpoint at /v1,
+so we use standard HTTP calls instead of the openai SDK for simplicity.
+Works with Oobabooga, Ollama, vLLM, OpenAI — same interface.
 """
 
 import json
@@ -17,8 +18,7 @@ logger = logging.getLogger(__name__)
 
 class LLMClient:
     """
-    Простой клиент к OpenAI-совместимому API.
-    Работает с Oobabooga, Ollama, vLLM, OpenAI — один интерфейс.
+    Simple client for any OpenAI-compatible chat completions API.
     """
 
     def __init__(
@@ -41,16 +41,16 @@ class LLMClient:
         max_tokens: int = 1024,
     ) -> str:
         """
-        Отправить запрос к LLM и получить текстовый ответ.
-        
+        Send a request to the LLM and return the text response.
+
         Args:
-            user_prompt: основной промпт
-            system_prompt: системная инструкция
-            temperature: 0 = детерминировано, 1 = креативно
-            max_tokens: максимум токенов в ответе
-        
+            user_prompt: main user message
+            system_prompt: system instruction
+            temperature: 0 = deterministic, 1 = creative
+            max_tokens: max tokens in response
+
         Returns:
-            Текстовый ответ модели
+            Model response as plain text
         """
         messages = []
         if system_prompt:
@@ -80,7 +80,7 @@ class LLMClient:
                 return data["choices"][0]["message"]["content"].strip()
 
         except httpx.TimeoutException:
-            logger.error(f"LLM timeout after {self.timeout}s")
+            logger.error(f"LLM request timed out after {self.timeout}s")
             raise
         except httpx.HTTPStatusError as e:
             logger.error(f"LLM HTTP error {e.response.status_code}: {e.response.text[:200]}")
@@ -97,8 +97,9 @@ class LLMClient:
         max_tokens: int = 1024,
     ) -> dict[str, Any]:
         """
-        Запрос с ожиданием JSON-ответа.
-        Автоматически парсит и валидирует JSON.
+        Request expecting a JSON response.
+        Automatically parses and validates the JSON.
+        Handles cases where the model wraps JSON in markdown code blocks.
         """
         raw = await self.complete(
             user_prompt=user_prompt,
@@ -107,7 +108,7 @@ class LLMClient:
             max_tokens=max_tokens,
         )
 
-        # Вытащить JSON из ответа (модель может добавить лишнее)
+        # Strip markdown code fences if model added them
         raw = raw.strip()
         if "```json" in raw:
             raw = raw.split("```json")[1].split("```")[0].strip()
@@ -121,7 +122,7 @@ class LLMClient:
             raise ValueError(f"LLM returned invalid JSON: {raw[:200]}")
 
     async def health_check(self) -> bool:
-        """Проверить доступность LLM API."""
+        """Check if the LLM API is reachable."""
         try:
             async with httpx.AsyncClient(timeout=5) as client:
                 resp = await client.get(f"{self.base_url}/models")

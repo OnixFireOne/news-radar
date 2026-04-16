@@ -1,8 +1,9 @@
 """
-Analyzer — AI-анализ собранных сообщений.
+Analyzer — AI-powered batch processing of collected messages.
 
-Запускается по расписанию (ANALYZE_INTERVAL_MINUTES).
-Берёт необработанные сообщения из БД → отправляет в LLM → сохраняет результат.
+Runs on a schedule (ANALYZE_INTERVAL_MINUTES).
+Picks up unprocessed messages from DB → sends to LLM → saves results.
+Also generates periodic digests for the Telegram bot.
 """
 
 import asyncio
@@ -24,13 +25,13 @@ logger = logging.getLogger(__name__)
 
 class NewsAnalyzer:
     """
-    Батч-обработка сообщений через LLM.
-    
-    Логика:
-    1. Берёт сообщения где analyzed=0
-    2. Для каждого: запрашивает temperature, topic, summary, keywords
-    3. Сохраняет в таблицу analysis
-    4. Отмечает message.analyzed=1
+    Batch processor that sends messages through the LLM pipeline.
+
+    Flow:
+    1. Fetch messages where analyzed=0
+    2. For each: request temperature, topic, summary, keywords from LLM
+    3. Save results to the analysis table
+    4. Mark message.analyzed=1
     """
 
     def __init__(
@@ -43,12 +44,12 @@ class NewsAnalyzer:
         self.db_path = db_path
         self.llm = llm_client
         self.batch_size = batch_size
-        self.interval = interval_minutes * 60  # в секундах
+        self.interval = interval_minutes * 60  # convert to seconds
 
     async def analyze_pending(self) -> int:
         """
-        Обработать все необработанные сообщения.
-        Возвращает количество проанализированных.
+        Process all unanalyzed messages.
+        Returns the number of messages successfully analyzed.
         """
         conn = get_db(self.db_path)
         count = 0
@@ -79,7 +80,6 @@ class NewsAnalyzer:
                     )
 
                     if result:
-                        # Сохранить анализ
                         conn.execute("""
                             INSERT INTO analysis
                                 (message_id, temperature, topic, summary, keywords, sentiment)
@@ -93,20 +93,19 @@ class NewsAnalyzer:
                             result.get("sentiment", "neutral"),
                         ))
 
-                        # Отметить как обработанное
-                        conn.execute(
-                            "UPDATE messages SET analyzed=1 WHERE id=?",
-                            (row["id"],)
-                        )
-                        conn.commit()
-                        count += 1
+                    # Mark as analyzed regardless (prevent infinite retry on bad messages)
+                    conn.execute(
+                        "UPDATE messages SET analyzed=1 WHERE id=?",
+                        (row["id"],)
+                    )
+                    conn.commit()
+                    count += 1
 
-                    # Пауза чтобы не перегружать LLM
+                    # Small delay to avoid overloading the LLM
                     await asyncio.sleep(0.5)
 
                 except Exception as e:
                     logger.error(f"Failed to analyze message {row['id']}: {e}")
-                    # Помечаем как обработанное с ошибкой чтобы не зависало
                     conn.execute(
                         "UPDATE messages SET analyzed=1 WHERE id=?",
                         (row["id"],)
@@ -116,7 +115,7 @@ class NewsAnalyzer:
         finally:
             conn.close()
 
-        logger.info(f"✅ Analyzed {count} messages")
+        logger.info(f"Analyzed {count} messages")
         return count
 
     async def _analyze_message(
@@ -125,10 +124,10 @@ class NewsAnalyzer:
         text: str,
         source_name: str,
     ) -> dict | None:
-        """Проанализировать одно сообщение через LLM."""
+        """Send a single message to the LLM for analysis."""
         prompt = SINGLE_MESSAGE_PROMPT.format(
             source_name=source_name,
-            text=text[:2000],  # обрезаем очень длинные
+            text=text[:2000],  # truncate very long messages
         )
 
         try:
@@ -139,27 +138,27 @@ class NewsAnalyzer:
                 max_tokens=512,
             )
 
-            # Валидируем temperature в диапазоне 1-10
+            # Clamp temperature to valid range
             if "temperature" in result:
                 result["temperature"] = max(1.0, min(10.0, float(result["temperature"])))
 
             return result
 
         except Exception as e:
-            logger.error(f"LLM analysis failed for msg {message_id}: {e}")
+            logger.error(f"LLM analysis failed for message {message_id}: {e}")
             return None
 
     async def generate_digest(self, hours: int = 3) -> str | None:
         """
-        Сгенерировать дайджест за последние N часов.
-        Возвращает Markdown-текст.
+        Generate a digest of the last N hours of analyzed messages.
+        Returns Markdown text or None if no data available.
         """
         since = datetime.utcnow() - timedelta(hours=hours)
         conn = get_db(self.db_path)
 
         try:
             rows = conn.execute("""
-                SELECT 
+                SELECT
                     m.text,
                     s.name as source_name,
                     a.temperature,
@@ -178,18 +177,18 @@ class NewsAnalyzer:
             conn.close()
 
         if not rows:
-            logger.warning("No analyzed messages for digest")
+            logger.warning("No analyzed messages available for digest")
             return None
 
-        # Форматируем для промпта
+        # Format messages for the prompt
         messages_text = "\n\n".join([
-            f"[{i+1}] Канал: @{row['source_name']} | Температура: {row['temperature']}/10\n"
-            f"Тема: {row['topic']}\n"
-            f"Текст: {row['text'][:300]}"
+            f"[{i+1}] Channel: @{row['source_name']} | Temperature: {row['temperature']}/10\n"
+            f"Topic: {row['topic']}\n"
+            f"Text: {row['text'][:300]}"
             for i, row in enumerate(rows)
         ])
 
-        period = f"последние {hours} часа" if hours <= 4 else f"последние {hours} часов"
+        period = f"last {hours} hours"
         prompt = DIGEST_PROMPT.format(
             period=period,
             count=len(rows),
@@ -204,7 +203,7 @@ class NewsAnalyzer:
                 max_tokens=1500,
             )
 
-            # Сохранить дайджест в БД
+            # Persist digest to DB
             conn = get_db(self.db_path)
             try:
                 conn.execute("""
@@ -222,8 +221,8 @@ class NewsAnalyzer:
             return None
 
     async def run_loop(self) -> None:
-        """Основной цикл — анализ каждые N минут."""
-        logger.info(f"Starting analyzer loop (every {self.interval // 60} min)")
+        """Main loop — run analysis every N minutes."""
+        logger.info(f"Analyzer loop started (interval: {self.interval // 60} min)")
 
         while True:
             try:
@@ -235,7 +234,7 @@ class NewsAnalyzer:
 
 
 async def main():
-    """Точка входа для Docker."""
+    """Docker entry point."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
@@ -248,13 +247,11 @@ async def main():
 
     llm = LLMClient()
 
-    # Проверка доступности LLM
     logger.info(f"Checking LLM at {llm.base_url}...")
-    healthy = await llm.health_check()
-    if not healthy:
-        logger.warning("⚠️  LLM not available yet, will retry...")
+    if await llm.health_check():
+        logger.info("LLM is available")
     else:
-        logger.info("✅ LLM is available")
+        logger.warning("LLM not available yet — will retry on each cycle")
 
     analyzer = NewsAnalyzer(
         db_path=db_path,
