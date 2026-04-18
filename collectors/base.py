@@ -13,15 +13,36 @@ from typing import AsyncIterator
 
 @dataclass
 class RawMessage:
-    """Normalized message from any data source."""
-    external_id: str          # Message ID in the source (e.g. Telegram message_id)
-    source_name: str          # @channel_username or server name
-    source_type: str          # 'telegram', 'discord', 'twitter', etc.
-    text: str                 # Message text content
-    views: int = 0
-    forwards: int = 0
-    media_type: str | None = None   # photo, video, document, or None
-    timestamp: datetime | None = None
+    """
+    Normalized message from any data source.
+    All optional fields default to None/0 so existing collectors
+    that don't fill them still work without changes.
+    """
+    external_id:          str                 # Message ID in the source
+    source_name:          str                 # @channel_username or server name
+    source_type:          str                 # 'telegram', 'discord', 'twitter'
+    text:                 str                 # Message text content
+
+    # Core metrics
+    views:                int = 0
+    forwards:             int = 0
+    media_type:           str | None = None   # photo, video, document, or None
+    timestamp:            datetime | None = None
+
+    # Engagement metrics (Telegram-specific, others can leave as default)
+    reactions_count:      int = 0             # total reactions across all emojis
+    reactions_json:       str | None = None   # JSON: {"\ud83d\udc4d": 12, "\ud83d\udd25": 5, ...}
+    replies_count:        int = 0             # number of comments/replies
+
+    # Authorship
+    post_author:          str | None = None   # editor signature in multi-author channels
+
+    # Forward tracking (content origin for deduplication)
+    forward_from_channel: str | None = None   # source channel @name or numeric id
+    forward_from_msg_id:  int | None = None   # original message id in source
+
+    # Post lifecycle
+    edit_date:            datetime | None = None  # last edit time (None = never edited)
 
     def is_valid(self, min_length: int = 30) -> bool:
         """Check if the message is worth analyzing."""

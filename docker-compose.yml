@@ -3,6 +3,26 @@ version: '3.8'
 services:
 
   # ─────────────────────────────────────────
+  # CHROMADB — vector store for semantic search
+  # Phase 1: stores BGE-m3 embeddings of all analyzed messages
+  # Accessible inside Docker network at chromadb:8000
+  # Exposed on host at localhost:8200 for debugging
+  # ─────────────────────────────────────────
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: news-radar-chroma
+    ports:
+      - "8200:8000"
+    volumes:
+      - ./data/chroma:/chroma/chroma   # persistent vector data
+    environment:
+      - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
+    restart: unless-stopped
+    networks:
+      - news-radar-network
+
+  # ─────────────────────────────────────────
   # COLLECTOR — userbot читает Telegram каналы
   # ─────────────────────────────────────────
   collector:
@@ -10,15 +30,11 @@ services:
       context: .          # корень проекта — видит все папки
       dockerfile: collectors/Dockerfile
     container_name: news-radar-collector
+    env_file: .env
     volumes:
       - ./data:/app/data
       - ./data/sessions:/app/sessions
-    environment:
-      - TELEGRAM_API_ID=${TELEGRAM_API_ID}
-      - TELEGRAM_API_HASH=${TELEGRAM_API_HASH}
-      - TELEGRAM_SESSION_NAME=${TELEGRAM_SESSION_NAME:-news_radar}
-      - DATABASE_PATH=/app/data/news.db
-      - MIN_MESSAGE_LENGTH=${MIN_MESSAGE_LENGTH:-30}
+      - ./config:/app/config
     restart: unless-stopped
     networks:
       - news-radar-network
@@ -26,21 +42,22 @@ services:
       - "host.docker.internal:host-gateway"
 
   # ─────────────────────────────────────────
-  # ANALYZER — AI анализ через Oobabooga
+  # ANALYZER — AI анализ через Oobabooga + embeddings через BGE-m3
+  # depends_on chromadb: сначала поднимается хранилище векторов
+  # data/models volume: BGE-m3 (~570MB) кэшируется между пересборками
   # ─────────────────────────────────────────
   analyzer:
     build:
       context: .
       dockerfile: analyzer/Dockerfile
     container_name: news-radar-analyzer
+    depends_on:
+      - chromadb
+    env_file: .env
     volumes:
       - ./data:/app/data
-    environment:
-      - LLM_BASE_URL=${LLM_BASE_URL:-http://host.docker.internal:5000/v1}
-      - LLM_API_KEY=${LLM_API_KEY:-not-needed}
-      - LLM_MODEL=${LLM_MODEL:-}
-      - DATABASE_PATH=/app/data/news.db
-      - ANALYZE_INTERVAL_MINUTES=${ANALYZE_INTERVAL_MINUTES:-30}
+      - ./data/models:/app/data/models   # HuggingFace model cache (BGE-m3 survives rebuilds)
+      - ./config:/app/config
     restart: unless-stopped
     networks:
       - news-radar-network
@@ -49,18 +66,20 @@ services:
 
   # ─────────────────────────────────────────
   # API — FastAPI backend
+  # Phase 1: includes /search, /similar, /duplicates endpoints
   # ─────────────────────────────────────────
   api:
     build:
       context: .
       dockerfile: api/Dockerfile
     container_name: news-radar-api
+    depends_on:
+      - chromadb
+    env_file: .env
     ports:
-      - "8000:8000"
+      - "8100:8000"
     volumes:
       - ./data:/app/data
-    environment:
-      - DATABASE_PATH=/app/data/news.db
     restart: unless-stopped
     networks:
       - news-radar-network
@@ -75,14 +94,11 @@ services:
     container_name: news-radar-bot
     depends_on:
       - api
+    env_file: .env
     volumes:
       - ./data:/app/data
     environment:
-      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
-      - TELEGRAM_ALLOWED_USERS=${TELEGRAM_ALLOWED_USERS}
       - API_URL=http://api:8000
-      - DATABASE_PATH=/app/data/news.db
-      - DIGEST_INTERVAL_HOURS=${DIGEST_INTERVAL_HOURS:-3}
     restart: unless-stopped
     networks:
       - news-radar-network
@@ -90,3 +106,4 @@ services:
 networks:
   news-radar-network:
     driver: bridge
+

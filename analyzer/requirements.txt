@@ -1,3 +1,15 @@
-openai>=1.0.0
 httpx>=0.27.0
 python-dotenv>=1.0.0
+
+# Phase 1: Semantic embeddings + vector store
+sentence-transformers>=2.7.0   # BGE-m3 multilingual embeddings (Russian + English)
+chromadb>=0.5.0                 # Vector store client (connects to chromadb container)
+numpy>=1.24.0                   # array ops for HDBSCAN + find_duplicates
+
+# PyTorch CPU-only (no GPU needed for embedding on news volumes)
+# This avoids downloading NVIDIA CUDA libs (~1GB extra in GPU version)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0
+
+# Phase 2: Trend Detection clustering
+hdbscan>=0.8.33                 # density-based clustering (used by BERTopic internally)

@@ -3,3 +3,12 @@ uvicorn[standard]>=0.29.0
 pydantic>=2.0.0
 python-dotenv>=1.0.0
 httpx>=0.27.0
+
+# Phase 1: Semantic search endpoints use ChromaDB client and embedder from analyzer/
+chromadb>=0.5.0
+sentence-transformers>=2.7.0
+numpy>=1.24.0
+
+# PyTorch CPU-only (no GPU needed for embedding)
+--extra-index-url https://download.pytorch.org/whl/cpu
+torch>=2.0.0

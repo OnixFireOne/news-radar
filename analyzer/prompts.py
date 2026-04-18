@@ -37,31 +37,31 @@ Temperature scale:
 # BATCH DIGEST (multiple messages over a time period)
 # ──────────────────────────────────────────────
 
-DIGEST_PROMPT = """You are creating a crypto news digest for the period: {period}.
+DIGEST_PROMPT = """You are creating a short, engaging, and light crypto news digest for the period: {period}.
 
 Here are {count} messages from different Telegram channels:
 
 {messages}
 
-Write a structured digest in Markdown format:
+Write a punchy and easy-to-read digest in Russian using Markdown format. Limit text to the essentials.
 
-## 🔥 Top Stories ({period})
+Format exactly like this:
 
-### [Topic 1 — temperature X/10]
-[2-3 sentences about this topic]
+*🔥 Главное за период ({period}):*
 
-### [Topic 2 — temperature X/10]
-[2-3 sentences]
+🔹 *[Topic Name] (Температура: X/10)*
+[Short, punchy 1-2 sentence summary. What happened and why it matters?]
 
-[... up to 5 topics]
+🔹 *[Another Topic] (Температура: X/10)*
+[Short, punchy 1-2 sentence summary.]
 
-## 📊 Market Sentiment
-[Overall conclusion: bullish / bearish / neutral and why]
+[... include up to 5 top stories maximum]
 
-## ⚡ Watch Out For
-[1-2 items that require special attention]
+*📊 Настроения на рынке:*
+[One short sentence: Bullish / Bearish / Neutral and main reason]
 
-Be concise and factual. Use emojis sparingly."""
+*⚡ На радаре:*
+[One specific trend, token, or narrative to watch, 1 sentence]"""
 
 
 # ──────────────────────────────────────────────

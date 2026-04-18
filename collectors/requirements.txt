@@ -1,3 +1,4 @@
 telethon>=1.36.0
 aiofiles>=23.0.0
 python-dotenv>=1.0.0
+watchdog>=4.0.0

@@ -1,0 +1,38 @@
+{
+  "_comment": "Edit this file to change settings. Changes apply instantly (no restart needed).",
+  "telegram_folder": "Ton/DeFi",
+  "min_message_length": 5,
+  "load_history_limit": 50,
+  "analyze_interval_minutes": 30,
+  "digest_interval_hours": 3,
+  "llm_model": "Qwen3.5-35B-A3B-Q4_K_M.gguf",
+  "trend_window_hours": 2,
+  "trend_min_sources": 3,
+  "trend_min_temperature": 6.0,
+  "ignored_sources": [],
+  "keywords_alert": [
+    "hack",
+    "exploit",
+    "rug",
+    "scam",
+    "SEC",
+    "ban",
+    "liquidat",
+    "crash"
+  ],
+  "topics": [
+    "bitcoin",
+    "ethereum",
+    "defi",
+    "nft",
+    "regulation",
+    "macro",
+    "altcoins",
+    "exchange",
+    "hack/scam",
+    "ton",
+    "general"
+  ],
+  "digest_max_items": 7,
+  "digest_min_temperature": 5.0
+}

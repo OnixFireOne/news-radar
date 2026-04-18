@@ -131,10 +131,27 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("📝 Loading digest...")
 
     digest = await fetch_api("/digest/latest")
+
+    args = ctx.args or []
+    force_new = "new" in map(str.lower, args)
+
+    if not digest or force_new:
+        await update.message.reply_text("⚙️ Generating new digest... This may take up to a minute.")
+        try:
+            async with httpx.AsyncClient(timeout=120) as client:
+                resp = await client.post(f"{API_URL}/digest/generate?hours=6")
+                if resp.status_code == 200:
+                    digest = resp.json()
+                else:
+                    await update.message.reply_text(f"❌ API Error: {resp.text}")
+                    return
+        except Exception as e:
+            logger.error(f"Failed to generate digest: {e}")
+            await update.message.reply_text("❌ Failed to contact API.")
+            return
+
     if not digest:
-        await update.message.reply_text(
-            "Digest not generated yet. Try again in 30 minutes."
-        )
+        await update.message.reply_text("❌ Digest not found and could not generate one.")
         return
 
     content = digest["content_md"]
@@ -143,7 +160,7 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(content) > 4000:
         content = content[:4000] + "\n\n... (truncated)"
 
-    await update.message.reply_text(content)
+    await update.message.reply_text(content, parse_mode="Markdown")
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -179,12 +196,12 @@ async def send_auto_digest(app: Application) -> None:
 
     for user_id in list(ALLOWED_USERS):
         try:
-            await app.bot.send_message(chat_id=user_id, text=text)
+            await app.bot.send_message(chat_id=user_id, text=text, parse_mode="Markdown")
         except Exception as e:
             logger.error(f"Failed to send digest to {user_id}: {e}")
 
 
-async def main():
+def main():
     """Bot entry point."""
     logging.basicConfig(
         level=logging.INFO,
@@ -212,14 +229,6 @@ async def main():
     app.add_handler(CommandHandler("digest", cmd_digest))
     app.add_handler(CommandHandler("help", cmd_help))
 
-    # Set bot command menu in Telegram
-    await app.bot.set_my_commands([
-        BotCommand("hot", "Trending topics right now"),
-        BotCommand("digest", "Latest AI digest"),
-        BotCommand("status", "System statistics"),
-        BotCommand("help", "Help"),
-    ])
-
     # Schedule auto-digest
     app.job_queue.run_repeating(
         callback=lambda ctx: send_auto_digest(app),
@@ -228,8 +237,10 @@ async def main():
     )
 
     logger.info("News Radar Bot started")
-    await app.run_polling(drop_pending_updates=True)
+
+    # python-telegram-bot v20+ manages its own event loop
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

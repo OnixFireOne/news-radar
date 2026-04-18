@@ -61,6 +61,10 @@ class LLMClient:
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            # Disable Qwen3 extended thinking mode.
+            # Without this, Qwen3 spends all tokens on <think> reasoning and
+            # returns content="" — the actual answer never appears.
+            "enable_thinking": False,
         }
         if self.model:
             payload["model"] = self.model
@@ -77,7 +81,18 @@ class LLMClient:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                return data["choices"][0]["message"]["content"].strip()
+                message = data["choices"][0]["message"]
+
+                content = (message.get("content") or "").strip()
+
+                # Fallback: if content is empty but reasoning_content has data
+                # (some API versions expose thinking even with enable_thinking=False)
+                if not content:
+                    content = (message.get("reasoning_content") or "").strip()
+                    if content:
+                        logger.debug("LLM: using reasoning_content as fallback (content was empty)")
+
+                return content
 
         except httpx.TimeoutException:
             logger.error(f"LLM request timed out after {self.timeout}s")
