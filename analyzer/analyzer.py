@@ -16,6 +16,7 @@ import json
 import logging
 import os
 import sys
+import httpx
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -27,6 +28,7 @@ from analyzer.embedder import get_embedder
 from analyzer.chroma_client import ChromaClient
 from analyzer.trend_tracker import TrendTracker   # Phase 2: trend detection
 from database.schema import get_db, init_db
+from config.config_watcher import ConfigWatcher
 
 logger = logging.getLogger(__name__)
 
@@ -48,16 +50,22 @@ class NewsAnalyzer:
         llm_client: LLMClient,
         batch_size: int = 10,
         interval_minutes: int = 30,
+        cfg: ConfigWatcher | None = None,
     ):
         self.db_path = db_path
         self.llm = llm_client
         self.batch_size = batch_size
-        self.interval = interval_minutes * 60  # convert to seconds
+        self.interval = interval_minutes * 60
+        self.cfg = cfg  # optional — used for digest_rules + topics hot-reload
 
         # Vector store for semantic search + dedup (Phase 1)
-        # Initialized lazily on first use; failure here does not stop analysis
         self.chroma = ChromaClient()
         self.embedder = get_embedder()  # BGE-m3, loaded on first encode() call
+
+        # Phase 3: topic normalization table (reloaded hot from topics.json)
+        self._topics: dict = cfg.load_topics() if cfg else {}
+        if self._topics:
+            logger.info(f"Loaded {len(self._topics)} topic aliases from topics.json")
 
     async def analyze_pending(self) -> int:
         """
@@ -93,6 +101,10 @@ class NewsAnalyzer:
                     )
 
                     if result:
+                        # Phase 3: normalize topic label using topics.json aliases
+                        raw_topic = result.get("topic", "general")
+                        normalized_topic = self._normalize_topic(raw_topic)
+
                         conn.execute("""
                             INSERT INTO analysis
                                 (message_id, temperature, topic, summary, keywords, sentiment)
@@ -100,7 +112,7 @@ class NewsAnalyzer:
                         """, (
                             row["id"],
                             result.get("temperature", 5.0),
-                            result.get("topic", "general"),
+                            normalized_topic,
                             result.get("summary", ""),
                             json.dumps(result.get("keywords", []), ensure_ascii=False),
                             result.get("sentiment", "neutral"),
@@ -127,6 +139,17 @@ class NewsAnalyzer:
                     conn.commit()
                     count += 1
 
+                    # Phase 5: Instant Alerts -> directly to Telegram if temperature >= 9.0
+                    temp = float(result.get("temperature", 5.0))
+                    if temp >= 9.0 and self.cfg and self.cfg.get("instant_alerts_temperature", True):
+                        source_n = row["source_name"]
+                        raw_topic = result.get("topic", "general")
+                        summary = result.get("summary", "No summary provided.")
+                        text = row["text"]
+                        asyncio.create_task(
+                            self._send_instant_alert(row["id"], source_n, temp, raw_topic, summary, text)
+                        )
+
                     # Small delay to avoid overloading the LLM
                     await asyncio.sleep(0.5)
 
@@ -143,6 +166,36 @@ class NewsAnalyzer:
 
         logger.info(f"Analyzed {count} messages")
         return count
+
+    async def _send_instant_alert(self, msg_id: int, source: str, temp: float, topic: str, summary: str, text: str):
+        """Immediately dispatch a Telegram message for breaking news (temp >= 9.0)."""
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        allowed_users = os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",")
+        if not bot_token or not allowed_users or not allowed_users[0]:
+            return
+
+        # Escape underscores so Telegram Markdown doesn't turn channel names into broken italic links
+        safe_source = source.replace("_", "\_")
+        safe_summary = summary  # summary from LLM is already in Russian as per prompt
+
+        message = (
+            f"🚨 *BREAKING NEWS* (Температура: {temp:.0f}/10)\n\n"
+            f"📡 Источник: @{safe_source}\n"
+            f"🏷 Тема: `{topic}`\n\n"
+            f"📝 {safe_summary}"
+        )
+
+        async with httpx.AsyncClient() as client:
+            for uid in allowed_users:
+                uid = uid.strip()
+                if not uid: continue
+                try:
+                    await client.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={"chat_id": uid, "text": message, "parse_mode": "Markdown"}
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send instant alert to {uid}: {e}")
 
     async def _store_embedding(
         self,
@@ -221,31 +274,97 @@ class NewsAnalyzer:
             logger.error(f"LLM analysis failed for message {message_id}: {e}")
             return None
 
+    def _normalize_topic(self, raw_topic: str) -> str:
+        """
+        Map the LLM-returned topic label to a canonical name using topics.json aliases.
+
+        Example: "BTC", "биткоин", "btc price" → "bitcoin"
+
+        Reloads topics on every call when cfg is available so topics.json
+        hot-reload takes effect within the next analysis batch.
+        """
+        if self.cfg:
+            self._topics = self.cfg.load_topics()
+
+        if not self._topics or not raw_topic:
+            return (raw_topic or "general").lower().strip()
+
+        lower = raw_topic.lower().strip()
+
+        for canonical, meta in self._topics.items():
+            if lower == canonical:
+                return canonical
+            aliases = [a.lower() for a in meta.get("aliases", [])]
+            if lower in aliases:
+                return canonical
+
+        return lower  # unknown topic — keep as-is
+
+    def _is_alert_topic(self, topic: str) -> bool:
+        """Return True if topic is marked alert:true in topics.json."""
+        meta = self._topics.get(topic, {})
+        return bool(meta.get("alert", False))
+
     async def generate_digest(self, hours: int = 3) -> str | None:
         """
-        Generate a digest of the last N hours of analyzed messages.
-        Returns Markdown text or None if no data available.
+        Generate a digest using a 4-tier priority queue.
+
+        Priority tiers:
+          1. ALERTS  — hack/scam or temperature >= 9  (always first)
+          2. TRENDS  — messages belonging to hot trends (unique_sources >= threshold)
+          3. HIGH    — temperature >= digest_min_temperature + 2, diverse sources
+          4. FILL    — best remaining message per topic for diversity
+
+        Rules (from settings.json digest_rules, hot-reloaded):
+          max_per_topic       — cap per unique topic
+          always_include_alerts — inserts alerts regardless of cap
+          dedup_threshold     — cosine similarity threshold for semantic dedup
+          digest_max_items    — total cap
         """
+        # ── Load rules (hot-reload from settings if cfg available) ──
+        rules = {}
+        digest_max    = 7
+        min_temp      = 5.0
+        if self.cfg:
+            rules      = self.cfg.get("digest_rules", {})
+            digest_max = self.cfg.get("digest_max_items", 7)
+            min_temp   = self.cfg.get("digest_min_temperature", 5.0)
+
+        max_per_topic     = rules.get("max_per_topic", 2)
+        include_alerts    = rules.get("always_include_alerts", True)
+        trend_src_min     = rules.get("min_unique_sources_for_trend", 3)
+        dedup_threshold   = rules.get("dedup_threshold", 0.85)
+
         since = datetime.utcnow() - timedelta(hours=hours)
         conn = get_db(self.db_path)
 
         try:
             rows = conn.execute("""
                 SELECT
+                    m.id,
                     m.text,
-                    s.name as source_name,
+                    s.name  AS source_name,
                     a.temperature,
                     a.topic,
-                    a.summary
+                    a.summary,
+                    -- is this message part of a hot trend?
+                    EXISTS (
+                        SELECT 1 FROM trend_messages tm
+                        JOIN trends t ON t.id = tm.trend_id
+                        WHERE tm.message_id = m.id
+                          AND t.unique_sources >= ?
+                          AND t.status IN ('emerging', 'hot')
+                    ) AS in_hot_trend
                 FROM messages m
                 JOIN sources s ON m.source_id = s.id
                 LEFT JOIN analysis a ON a.message_id = m.id
                 WHERE datetime(m.collected_at) >= datetime(?)
                   AND m.analyzed = 1
+                  AND m.in_digest = 0
+                  AND a.temperature IS NOT NULL
                 ORDER BY a.temperature DESC
-                LIMIT 30
-            """, (since.isoformat(),)).fetchall()
-
+                LIMIT 100
+            """, (trend_src_min, since.isoformat())).fetchall()
         finally:
             conn.close()
 
@@ -253,18 +372,81 @@ class NewsAnalyzer:
             logger.warning("No analyzed messages available for digest")
             return None
 
-        # Format messages for the prompt
+        # ── Build priority tiers ──
+        alerts, trends_tier, high_tier, fill_tier = [], [], [], []
+        for row in rows:
+            topic = row["topic"] or "general"
+            temp  = float(row["temperature"] or 5.0)
+            is_alert = self._is_alert_topic(topic) or temp >= 9.0
+
+            if is_alert and include_alerts:
+                alerts.append(dict(row))
+            elif row["in_hot_trend"]:
+                trends_tier.append(dict(row))
+            elif temp >= min_temp + 2:
+                high_tier.append(dict(row))
+            elif temp >= min_temp:
+                fill_tier.append(dict(row))
+
+        # ── Apply per-topic cap + collect candidates in priority order ──
+        topic_counts: dict[str, int] = {}
+        selected: list[dict] = []
+
+        def try_add(item: dict, force: bool = False) -> bool:
+            topic = item["topic"] or "general"
+            count = topic_counts.get(topic, 0)
+            if force or count < max_per_topic:
+                selected.append(item)
+                topic_counts[topic] = count + 1
+                return True
+            return False
+
+        # Alerts bypass cap
+        for item in alerts:
+            if len(selected) >= digest_max:
+                break
+            try_add(item, force=True)
+
+        for item in trends_tier + high_tier:
+            if len(selected) >= digest_max:
+                break
+            try_add(item)
+
+        # Diversity fill: one best per remaining topic
+        seen_topics = set(topic_counts.keys())
+        for item in fill_tier:
+            if len(selected) >= digest_max:
+                break
+            topic = item["topic"] or "general"
+            if topic not in seen_topics:
+                try_add(item)
+                seen_topics.add(topic)
+
+        if not selected:
+            logger.warning("Digest priority queue produced 0 candidates")
+            return None
+
+        # ── Semantic dedup via ChromaDB ──
+        if dedup_threshold < 1.0:
+            selected = self._dedup_by_similarity(selected, threshold=dedup_threshold)
+
+        logger.info(
+            f"Digest: {len(alerts)} alerts, {len(trends_tier)} trend msgs, "
+            f"{len(high_tier)} high-temp → {len(selected)} selected after dedup"
+        )
+
+        # ── Build LLM prompt ──
         messages_text = "\n\n".join([
             f"[{i+1}] Channel: @{row['source_name']} | Temperature: {row['temperature']}/10\n"
             f"Topic: {row['topic']}\n"
             f"Text: {row['text'][:300]}"
-            for i, row in enumerate(rows)
+            for i, row in enumerate(selected)
         ])
 
         period = f"last {hours} hours"
         prompt = DIGEST_PROMPT.format(
             period=period,
-            count=len(rows),
+            count=len(selected),
             messages=messages_text,
         )
 
@@ -276,13 +458,36 @@ class NewsAnalyzer:
                 max_tokens=1500,
             )
 
-            # Persist digest to DB
             conn = get_db(self.db_path)
             try:
-                conn.execute("""
-                    INSERT INTO digests (content_md, period_start, period_end)
-                    VALUES (?, ?, ?)
-                """, (digest, since.isoformat(), datetime.utcnow().isoformat()))
+                conn.execute(
+                    "INSERT INTO digests (content_md, period_start, period_end) VALUES (?, ?, ?)",
+                    (digest, since.isoformat(), datetime.utcnow().isoformat()),
+                )
+
+                selected_ids = [row["id"] for row in selected]
+
+                # Mark the selected messages themselves
+                conn.executemany(
+                    "UPDATE messages SET in_digest=1 WHERE id=?",
+                    [(mid,) for mid in selected_ids]
+                )
+
+                # Also mark ALL messages in the same trend clusters — so the
+                # same story (covered by 10 channels) doesn't resurface next
+                # digest cycle from a different channel.
+                if selected_ids:
+                    placeholders = ",".join("?" * len(selected_ids))
+                    conn.execute(f"""
+                        UPDATE messages SET in_digest=1
+                        WHERE id IN (
+                            SELECT tm2.message_id
+                            FROM trend_messages tm1
+                            JOIN trend_messages tm2 ON tm1.trend_id = tm2.trend_id
+                            WHERE tm1.message_id IN ({placeholders})
+                        )
+                    """, selected_ids)
+
                 conn.commit()
             finally:
                 conn.close()
@@ -292,6 +497,55 @@ class NewsAnalyzer:
         except Exception as e:
             logger.error(f"Failed to generate digest: {e}")
             return None
+
+    def _dedup_by_similarity(self, candidates: list[dict], threshold: float) -> list[dict]:
+        """
+        Remove semantically near-duplicate messages using ChromaDB cosine similarity.
+
+        For each candidate we query ChromaDB for similar messages already in
+        the 'selected so far' set. If similarity > threshold → skip.
+        Falls back to returning candidates as-is if ChromaDB is unavailable.
+        """
+        try:
+            self.chroma._connect()
+            unique: list[dict] = []
+            kept_ids: set[str] = set()
+
+            for msg in candidates:
+                msg_id = str(msg["id"])
+                if msg_id in kept_ids:
+                    continue
+
+                # Find documents in ChromaDB that are similar to this one
+                result = self.chroma._collection.query(
+                    query_texts=[msg["text"][:512]],
+                    n_results=min(10, len(candidates)),
+                    include=["distances"],
+                )
+                # ChromaDB returns L2 distances; convert to cosine similarity
+                # For normalized embeddings: cosine_sim ≈ 1 - (L2² / 2)
+                distances = (result.get("distances") or [[]])[0]
+                ids       = (result.get("ids") or [[]])[0]
+
+                is_dup = False
+                for sim_id, dist in zip(ids, distances):
+                    if sim_id == msg_id:
+                        continue
+                    cosine_sim = max(0.0, 1.0 - dist / 2.0)
+                    if cosine_sim >= threshold and sim_id in kept_ids:
+                        is_dup = True
+                        break
+
+                if not is_dup:
+                    unique.append(msg)
+                    kept_ids.add(msg_id)
+
+            return unique
+
+        except Exception as e:
+            logger.warning(f"Semantic dedup skipped (ChromaDB unavailable): {e}")
+            return candidates
+
 
     async def run_loop(self) -> None:
         """
@@ -317,6 +571,7 @@ class NewsAnalyzer:
             db_path=self.db_path,
             llm_client=self.llm,
             chroma_client=self.chroma,
+            analyzer=self,
         )
 
         logger.info(
@@ -376,10 +631,13 @@ async def main():
     else:
         logger.warning("LLM not available yet — will retry on each cycle")
 
+    cfg = ConfigWatcher("/app/config/settings.json")
+
     analyzer = NewsAnalyzer(
         db_path=db_path,
         llm_client=llm,
         interval_minutes=interval,
+        cfg=cfg,
     )
 
     await analyzer.run_loop()

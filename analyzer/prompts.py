@@ -21,7 +21,7 @@ Return ONLY valid JSON with no extra text:
 {{
   "temperature": <number from 1 to 10>,
   "topic": "<one of: bitcoin, ethereum, altcoins, defi, nft, macro, regulation, hack/scam, exchange, general>",
-  "summary": "<2-3 sentences: what this news is about>",
+  "summary": "<2-3 sentences in RUSSIAN: what this news is about>",
   "keywords": ["<keyword>", ...],
   "sentiment": "<positive | negative | neutral>"
 }}
@@ -37,31 +37,32 @@ Temperature scale:
 # BATCH DIGEST (multiple messages over a time period)
 # ──────────────────────────────────────────────
 
-DIGEST_PROMPT = """You are creating a short, engaging, and light crypto news digest for the period: {period}.
+DIGEST_PROMPT = """You are creating a short, engaging crypto news digest for the period: {period}.
 
 Here are {count} messages from different Telegram channels:
 
 {messages}
 
-Write a punchy and easy-to-read digest in Russian using Markdown format. Limit text to the essentials.
+Write a punchy and easy-to-read digest in RUSSIAN using Markdown format. Limit text to the essentials.
+IMPORTANT: Every story MUST include a source reference at the end like: (источник: @channel)
 
-Format exactly like this:
+Format exactly like this example — do NOT add extra headers or titles before the list:
 
-*🔥 Главное за период ({period}):*
+*🔥 Главное за {period}:*
 
-🔹 *[Topic Name] (Температура: X/10)*
-[Short, punchy 1-2 sentence summary. What happened and why it matters?]
+🔹 *Bitcoin / Температура: 9/10*
+BTC пробил $70k на фоне рекордного притока ETF. Аналитики ждут продолжения роста. (источник: @some_channel)
 
-🔹 *[Another Topic] (Температура: X/10)*
-[Short, punchy 1-2 sentence summary.]
+🔹 *Regulation / Температура: 8/10*
+SEC подала новый иск против биржи. Рынок отреагировал снижением на 3%. (источник: @another_channel)
 
-[... include up to 5 top stories maximum]
+[... include up to 5 top stories maximum, one per 🔹 bullet]
 
 *📊 Настроения на рынке:*
-[One short sentence: Bullish / Bearish / Neutral and main reason]
+[One short sentence in Russian: Bullish / Bearish / Neutral and main reason]
 
 *⚡ На радаре:*
-[One specific trend, token, or narrative to watch, 1 sentence]"""
+[One specific trend, token, or narrative to watch, 1 short sentence in Russian]"""
 
 
 # ──────────────────────────────────────────────

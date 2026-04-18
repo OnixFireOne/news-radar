@@ -1,5 +1,5 @@
 {
-  "_comment": "Edit this file to change settings. Changes apply instantly (no restart needed).",
+  "_comment": "Edit this file to change settings. Changes apply within 3 seconds (no restart needed).",
   "telegram_folder": "Ton/DeFi",
   "min_message_length": 5,
   "load_history_limit": 50,
@@ -10,29 +10,16 @@
   "trend_min_sources": 3,
   "trend_min_temperature": 6.0,
   "ignored_sources": [],
-  "keywords_alert": [
-    "hack",
-    "exploit",
-    "rug",
-    "scam",
-    "SEC",
-    "ban",
-    "liquidat",
-    "crash"
-  ],
-  "topics": [
-    "bitcoin",
-    "ethereum",
-    "defi",
-    "nft",
-    "regulation",
-    "macro",
-    "altcoins",
-    "exchange",
-    "hack/scam",
-    "ton",
-    "general"
-  ],
+  "keywords_alert": ["hack", "exploit", "rug", "scam", "SEC", "ban", "liquidat", "crash"],
   "digest_max_items": 7,
-  "digest_min_temperature": 5.0
+  "digest_min_temperature": 5.0,
+  "digest_rules": {
+    "max_per_topic": 2,
+    "always_include_alerts": true,
+    "min_unique_sources_for_trend": 3,
+    "dedup_threshold": 0.85
+  },
+  "digest_engine": "legacy",
+  "instant_alerts_temperature": true,
+  "instant_alerts_trend": true
 }

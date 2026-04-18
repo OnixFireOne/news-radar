@@ -34,6 +34,10 @@ CREATE TABLE IF NOT EXISTS sources (
     linked_chat_id  INTEGER,                     -- discussion group chat_id
     channel_created DATETIME,                    -- when the channel was created
     meta_updated    DATETIME,                    -- when we last fetched this metadata
+    -- Phase 5 metrics (OpenClaw / Source Reliability)
+    originator_count INTEGER DEFAULT 0,          -- how many times they posted a news first
+    copier_count     INTEGER DEFAULT 0,          -- how many times they copied a news
+    reliability_score REAL DEFAULT 1.0,          -- computed weight multiplier
     created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -64,6 +68,7 @@ CREATE TABLE IF NOT EXISTS messages (
     collected_at    DATETIME DEFAULT CURRENT_TIMESTAMP,
     analyzed        INTEGER DEFAULT 0,           -- 0 = pending, 1 = done
     chroma_synced   INTEGER DEFAULT 0,           -- 0 = not in ChromaDB, 1 = synced
+    in_digest       INTEGER DEFAULT 0,           -- 1 = already included in a digest
     UNIQUE(source_id, external_id)               -- prevent duplicates
 );
 
@@ -184,6 +189,14 @@ MIGRATIONS = [
      "ALTER TABLE sources ADD COLUMN channel_created DATETIME"),
     ("add_source_meta_updated",
      "ALTER TABLE sources ADD COLUMN meta_updated DATETIME"),
+    ("add_source_originator_count",
+     "ALTER TABLE sources ADD COLUMN originator_count INTEGER DEFAULT 0"),
+    ("add_source_copier_count",
+     "ALTER TABLE sources ADD COLUMN copier_count INTEGER DEFAULT 0"),
+    ("add_source_reliability_score",
+     "ALTER TABLE sources ADD COLUMN reliability_score REAL DEFAULT 1.0"),
+    ("add_message_in_digest",
+     "ALTER TABLE messages ADD COLUMN in_digest INTEGER DEFAULT 0"),
 ]
 
 

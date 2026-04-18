@@ -87,21 +87,24 @@ class SearchResult(BaseModel):
 
 class SimilarResult(BaseModel):
     """One result from GET /similar?id=..."""
-    message_id: int
+    id: int
     source_name: str
-    topic: str
-    temperature: float
-    similarity: float
-    text_preview: str
+    text: str               # first 300 chars
     collected_at: Optional[datetime] = None
+    similarity: float       # 0.0-1.0 cosine similarity
+    temperature: Optional[float] = None
+    topic: Optional[str] = None
 
 
 class DuplicateGroup(BaseModel):
     """A cluster of near-identical messages from GET /duplicates"""
-    message_ids: list[int]
-    sources: list[str]       # which channels reported this
-    representative_text: str  # first message in the group
-    size: int                 # how many duplicates
+    anchor_id: int           # the representative (earliest/highest-temp) message
+    anchor_source: str       # channel that published it first
+    anchor_text: str         # first 200 chars
+    duplicate_count: int     # how many other channels picked it up
+    member_ids: list[int]    # IDs of the duplicate messages
+    max_similarity: float    # highest cosine similarity in the group
+    topic: Optional[str] = None
 
 
 # ──────────────────────────────────────────────
@@ -120,3 +123,24 @@ class TrendResponse(BaseModel):
     summary: Optional[str]
     first_seen: Optional[datetime]
     last_seen: Optional[datetime]
+
+# ──────────────────────────────────────────────
+# Phase 5: Agents and API Tools
+# ──────────────────────────────────────────────
+
+class SourceStatsResponse(BaseModel):
+    name: str
+    reliability_score: float
+    originator_count: int
+    copier_count: int
+    total_messages: int
+
+class AlertRequest(BaseModel):
+    text: str
+    priority: int = 1
+    channels: list[str] = []
+
+class DigestQueueRequest(BaseModel):
+    narrative_text: str
+    period: str
+    sources_cited: list[str] = []

@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY api/ /app/api/
 COPY database/ /app/database/
+COPY config/ /app/config/
 # Phase 1: API imports ChromaClient and Embedder from analyzer module
 COPY analyzer/ /app/analyzer/
 

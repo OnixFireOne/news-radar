@@ -1,0 +1,53 @@
+{
+  "_comment": "Canonical topic labels. Agents can extend this file at runtime. Changes apply within 3 seconds (no restart needed).",
+
+  "bitcoin": {
+    "aliases": ["btc", "биткоин", "сатоши", "btc price", "bitcoin price", "xbt", "nakamoto"],
+    "alert": false
+  },
+  "ethereum": {
+    "aliases": ["eth", "эфир", "эфириум", "ethereum price", "ether", "vitalik"],
+    "alert": false
+  },
+  "ton": {
+    "aliases": ["toncoin", "ton blockchain", "tether on ton", "ton ecosystem", "тон", "тонкоин", "notcoin", "dogs coin", "hamster"],
+    "alert": false
+  },
+  "defi": {
+    "aliases": ["de-fi", "decentralized finance", "dex", "amm", "liquidity pool", "yield", "staking", "lending", "aave", "uniswap", "curve"],
+    "alert": false
+  },
+  "hack/scam": {
+    "aliases": ["hack", "exploit", "rug pull", "rug", "scam", "drained", "stolen", "bridge attack", "phishing", "взлом", "мошенничество", "хак"],
+    "alert": true,
+    "priority": "critical"
+  },
+  "regulation": {
+    "aliases": ["sec", "fca", "cftc", "регулирование", "законодательство", "закон", "ban", "запрет", "санкции", "лицензия", "compliance", "kyc", "aml"],
+    "alert": false
+  },
+  "macro": {
+    "aliases": ["fed", "фрс", "inflation", "инфляция", "interest rate", "ставка", "recession", "рецессия", "cpi", "gdp", "powell", "treasury"],
+    "alert": false
+  },
+  "altcoins": {
+    "aliases": ["alts", "альткоины", "shitcoin", "memecoin", "sol", "solana", "bnb", "xrp", "ripple", "ada", "cardano", "avax", "avalanche", "matic", "polygon"],
+    "alert": false
+  },
+  "exchange": {
+    "aliases": ["binance", "bybit", "okx", "coinbase", "kraken", "kucoin", "биржа", "листинг", "listing", "delisting", "делистинг", "cex", "trading pair"],
+    "alert": false
+  },
+  "nft": {
+    "aliases": ["nfts", "нфт", "opensea", "jpeg", "pfp", "collection", "коллекция", "mint", "минтинг"],
+    "alert": false
+  },
+  "ai": {
+    "aliases": ["artificial intelligence", "искусственный интеллект", "llm", "gpt", "chatgpt", "claude", "gemini", "ai agent", "agents", "machine learning", "ml", "neural network"],
+    "alert": false
+  },
+  "general": {
+    "aliases": ["crypto", "крипто", "blockchain", "блокчейн", "web3", "market", "рынок", "news", "новости"],
+    "alert": false
+  }
+}

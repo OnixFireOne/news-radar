@@ -10,6 +10,7 @@ RUN pip install --no-cache-dir -r /tmp/requirements.txt
 
 COPY analyzer/ /app/analyzer/
 COPY database/ /app/database/
+COPY config/ /app/config/
 
 RUN mkdir -p /app/data /app/data/models
 

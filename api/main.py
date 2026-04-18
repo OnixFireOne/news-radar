@@ -47,7 +47,11 @@ from api.models import (
     SimilarResult,
     DuplicateGroup,
     TrendResponse,    # Phase 2
+    SourceStatsResponse, # Phase 5
+    AlertRequest,
+    DigestQueueRequest
 )
+import httpx
 from database.schema import get_db, init_db
 from analyzer.chroma_client import ChromaClient
 from analyzer.embedder import get_embedder
@@ -453,109 +457,7 @@ async def semantic_search(
     return output
 
 
-@app.get("/similar", response_model=list[SimilarResult])
-async def find_similar(
-    id: int = Query(..., description="Message ID to find similar news for"),
-    limit: int = Query(5, ge=1, le=20),
-):
-    """
-    Find news messages semantically similar to a given message.
 
-    Useful for:
-    - "Other channels reporting the same story"
-    - Detecting if a trend is forming around this topic
-    - Finding context/background for a breaking story
-    """
-    chroma = get_chroma()
-
-    try:
-        results = chroma.find_similar(message_id=id, limit=limit)
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
-
-    if not results:
-        return []
-
-    conn = get_db(DB_PATH)
-    try:
-        output = []
-        for r in results:
-            row = conn.execute("""
-                SELECT m.text, m.collected_at, s.name as source_name
-                FROM messages m JOIN sources s ON m.source_id = s.id
-                WHERE m.id = ?
-            """, (r["message_id"],)).fetchone()
-
-            output.append(SimilarResult(
-                message_id=r["message_id"],
-                source_name=row["source_name"] if row else r["source"],
-                topic=r["topic"],
-                temperature=r["temperature"],
-                similarity=r["similarity"],
-                text_preview=(row["text"][:300] if row else r["document"]),
-                collected_at=datetime.fromisoformat(row["collected_at"]) if row else None,
-            ))
-    finally:
-        conn.close()
-
-    return output
-
-
-@app.get("/duplicates", response_model=list[DuplicateGroup])
-async def find_duplicates(
-    hours: int = Query(6, ge=1, le=48, description="Time window to search for duplicates"),
-    threshold: float = Query(0.92, ge=0.7, le=1.0, description="Cosine similarity threshold"),
-):
-    """
-    Find groups of near-duplicate messages (same news across different channels).
-
-    Use cases:
-    - Digest deduplication: don't show same story N times
-    - Measuring trend spread: if 10 channels post same thing, it's hot news
-    - Source quality: originators vs re-posters
-
-    threshold=0.92 → near-identical text (different wording of same fact)
-    threshold=0.85 → same topic but different perspective (broader dedup)
-    """
-    # Get message IDs from the time window via SQLite
-    since = (datetime.utcnow() - timedelta(hours=hours)).isoformat()
-    conn = get_db(DB_PATH)
-    try:
-        rows = conn.execute("""
-            SELECT m.id, m.text, s.name as source_name
-            FROM messages m
-            JOIN sources s ON m.source_id = s.id
-            WHERE datetime(m.collected_at) >= datetime(?)
-              AND m.analyzed = 1
-              AND m.chroma_synced = 1
-            ORDER BY m.collected_at DESC
-        """, (since,)).fetchall()
-    finally:
-        conn.close()
-
-    if not rows:
-        return []
-
-    message_ids = [row["id"] for row in rows]
-    id_to_row = {row["id"]: row for row in rows}
-
-    chroma = get_chroma()
-    groups = chroma.find_duplicates(message_ids=message_ids, threshold=threshold)
-
-    output = []
-    for group in groups:
-        sources = [id_to_row[mid]["source_name"] for mid in group if mid in id_to_row]
-        first = id_to_row.get(group[0])
-        output.append(DuplicateGroup(
-            message_ids=group,
-            sources=sources,
-            representative_text=first["text"][:300] if first else "",
-            size=len(group),
-        ))
-
-    # Sort by size descending (biggest duplicate groups first)
-    output.sort(key=lambda g: g.size, reverse=True)
-    return output
 
 
 # ──────────────────────────────────────────────
@@ -690,6 +592,205 @@ async def get_trend_posts(
         ))
 
     return result
+
+
+# ────────────────────────────────────────────────────────────────────────────
+# SEMANTIC ENDPOINTS (Phase 1 + 3)
+# ────────────────────────────────────────────────────────────────────────────
+
+@app.get("/similar", response_model=list[SimilarResult], summary="Find similar messages to a given message ID")
+async def get_similar(
+    id: int = Query(..., description="Message ID to find similar posts for"),
+    limit: int = Query(5, ge=1, le=20),
+    threshold: float = Query(0.7, ge=0.0, le=1.0, description="Minimum cosine similarity (0-1)"),
+):
+    """
+    Semantic similarity search using BGE-m3 embeddings stored in ChromaDB.
+    The message must have been analyzed (chroma_synced=1).
+    """
+    # Verify message exists in SQLite
+    conn = get_db()
+    try:
+        row = conn.execute("SELECT id FROM messages WHERE id = ?", (id,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail=f"Message {id} not found")
+
+    # Find similar via ChromaDB (uses stored embedding)
+    try:
+        chroma = get_chroma()
+        results = chroma.find_similar(message_id=id, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"ChromaDB unavailable: {e}")
+
+    # Enrich with SQLite details
+    similar = []
+    conn = get_db()
+    try:
+        for item in results:
+            cosine_sim = item.get("similarity", 0.0)
+            if cosine_sim < threshold:
+                continue
+            sim_id = item["message_id"]
+            msg = conn.execute("""
+                SELECT m.id, m.text, s.name AS source_name, m.collected_at,
+                       a.temperature, a.topic
+                FROM messages m
+                JOIN sources s ON m.source_id = s.id
+                LEFT JOIN analysis a ON a.message_id = m.id
+                WHERE m.id = ?
+            """, (sim_id,)).fetchone()
+            if msg:
+                similar.append(SimilarResult(
+                    id=msg["id"],
+                    source_name=msg["source_name"],
+                    text=msg["text"][:300],
+                    collected_at=datetime.fromisoformat(msg["collected_at"]),
+                    similarity=cosine_sim,
+                    temperature=msg["temperature"],
+                    topic=msg["topic"],
+                ))
+    finally:
+        conn.close()
+
+    return similar
+
+
+@app.get("/duplicates", response_model=list[DuplicateGroup], summary="Find near-duplicate messages across channels")
+async def get_duplicates(
+    hours: int = Query(6, ge=1, le=48, description="Time window in hours"),
+    threshold: float = Query(0.85, ge=0.5, le=1.0, description="Cosine similarity threshold"),
+    limit: int = Query(10, ge=1, le=50, description="Max groups to return"),
+):
+    """
+    Find groups of near-duplicate messages (same news from multiple channels).
+    Uses ChromaDB find_duplicates with Union-Find grouping.
+    """
+    since = datetime.utcnow() - timedelta(hours=hours)
+
+    conn = get_db()
+    try:
+        rows = conn.execute("""
+            SELECT m.id, m.text, s.name AS source_name, m.collected_at, a.topic
+            FROM messages m
+            JOIN sources s ON m.source_id = s.id
+            LEFT JOIN analysis a ON a.message_id = m.id
+            WHERE datetime(m.collected_at) >= datetime(?)
+              AND m.chroma_synced = 1
+            ORDER BY m.collected_at DESC
+            LIMIT 500
+        """, (since.isoformat(),)).fetchall()
+    finally:
+        conn.close()
+
+    if not rows:
+        return []
+
+    # Build a lookup for quick access
+    msg_map = {row["id"]: dict(row) for row in rows}
+    message_ids = list(msg_map.keys())
+
+    try:
+        chroma = get_chroma()
+        raw_groups = chroma.find_duplicates(message_ids=message_ids, threshold=threshold)
+    except Exception as e:
+        raise HTTPException(status_code=503, detail=f"ChromaDB unavailable: {e}")
+
+    groups = []
+    for group_ids in raw_groups:
+        if len(groups) >= limit:
+            break
+        anchor_id = group_ids[0]
+        anchor = msg_map.get(anchor_id, {})
+        members = [gid for gid in group_ids[1:] if gid in msg_map]
+        if not members:
+            continue
+        groups.append(DuplicateGroup(
+            anchor_id=anchor_id,
+            anchor_source=anchor.get("source_name", ""),
+            anchor_text=(anchor.get("text") or "")[:200],
+            duplicate_count=len(members),
+            member_ids=members,
+            max_similarity=round(threshold, 4),  # min threshold was met
+            topic=anchor.get("topic"),
+        ))
+
+    groups.sort(key=lambda g: g.duplicate_count, reverse=True)
+    return groups
+
+# ──────────────────────────────────────────────
+# Phase 5: Agents API Tools (OpenClaw targets)
+# ──────────────────────────────────────────────
+
+@app.get("/sources/{name}/stats", response_model=SourceStatsResponse)
+async def get_source_stats(name: str):
+    """Get reliability metrics for a specific source for RoutingAgent."""
+    conn = get_db(DB_PATH)
+    try:
+        row = conn.execute(
+            "SELECT name, reliability_score, originator_count, copier_count, "
+            "(SELECT count(id) FROM messages WHERE source_id=sources.id) as total_messages "
+            "FROM sources WHERE name = ? COLLATE NOCASE", (name,)
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Source not found")
+        return SourceStatsResponse(**dict(row))
+    finally:
+        conn.close()
+
+@app.post("/alerts", response_model=dict)
+async def push_alert(alert: AlertRequest):
+    """External trigger (by OpenClaw) to instantly send an alert to admins."""
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    allowed_users = os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",")
+    if not bot_token or not allowed_users or not allowed_users[0]:
+        raise HTTPException(status_code=500, detail="Telegram not configured")
+
+    async with httpx.AsyncClient() as client:
+        for uid in allowed_users:
+            uid = uid.strip()
+            if not uid: continue
+            try:
+                await client.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={"chat_id": uid, "text": alert.text, "parse_mode": "Markdown"}
+                )
+            except Exception as e:
+                logger.error(f"Failed to send OpenClaw alert: {e}")
+    return {"status": "dispatched", "users_alerted": len(allowed_users)}
+
+@app.patch("/messages/{id}/noise", response_model=dict)
+async def mark_noise(id: int):
+    """Mark a message as noise/spam by setting temperature=1 and analyzed=1."""
+    conn = get_db(DB_PATH)
+    try:
+        conn.execute("UPDATE analysis SET temperature=1.0 WHERE message_id=?", (id,))
+        conn.commit()
+    finally:
+        conn.close()
+    return {"status": "noise_marked"}
+
+@app.post("/digest/queue", response_model=dict)
+async def queue_digest(digest: DigestQueueRequest):
+    """OpenClaw submits an Agent-authored narrative digest to the main Telegram bot."""
+    bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+    allowed_users = os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",")
+    if not bot_token or not allowed_users or not allowed_users[0]:
+        raise HTTPException(status_code=500, detail="Telegram not configured")
+
+    async with httpx.AsyncClient() as client:
+        for uid in allowed_users:
+            uid = uid.strip()
+            if not uid: continue
+            try:
+                await client.post(
+                    f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                    json={"chat_id": uid, "text": digest.narrative_text, "parse_mode": "Markdown"}
+                )
+            except Exception as e:
+                logger.error(f"Failed to send OpenClaw digest: {e}")
+    return {"status": "published"}
 
 
 if __name__ == "__main__":

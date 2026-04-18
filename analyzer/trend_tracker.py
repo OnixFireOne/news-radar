@@ -36,6 +36,7 @@ import asyncio
 import logging
 import math
 import os
+import httpx
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional
@@ -169,10 +170,11 @@ class TrendTracker:
     HDBSCAN_EPSILON = 0.35       # cluster_selection_epsilon — tune if too few/many clusters
     DEAD_TREND_HOURS = 12        # mark old trends as dead even if not in current window
 
-    def __init__(self, db_path: str, llm_client, chroma_client):
+    def __init__(self, db_path: str, llm_client, chroma_client, analyzer=None):
         self.db_path = db_path
         self.llm = llm_client
         self.chroma = chroma_client
+        self.analyzer = analyzer
 
     async def run_cycle(self) -> int:
         """
@@ -495,7 +497,7 @@ class TrendTracker:
 
                 # Lookup existing trend with same topic (active in last 24h)
                 existing = conn.execute("""
-                    SELECT id FROM trends
+                    SELECT id, status FROM trends
                     WHERE topic = ?
                       AND datetime(last_seen) >= datetime(?)
                     ORDER BY created_at DESC
@@ -504,6 +506,7 @@ class TrendTracker:
 
                 if existing:
                     trend_id = existing["id"]
+                    existing_status = existing["status"]
                     conn.execute("""
                         UPDATE trends SET
                             trend_score    = ?,
@@ -543,6 +546,19 @@ class TrendTracker:
                         summary,
                     ))
                     trend_id = cursor.lastrowid
+                    existing_status = "emerging" # New trend, default to emerging to see if it hit hot
+
+                # Phase 5: Instant Alerts based on Trend
+                if status == "hot" and existing_status != "hot":
+                    if self.analyzer and self.analyzer.cfg and self.analyzer.cfg.get("instant_alerts_trend", True):
+                        asyncio.create_task(
+                            self._send_trend_alert(
+                                topic=cluster.topic,
+                                score=score,
+                                sources=cluster.unique_sources,
+                                summary=summary or "Trend summary pending."
+                            )
+                        )
 
                 # Link messages to this trend (INSERT OR IGNORE = idempotent)
                 for message_id in cluster.message_ids:
@@ -588,3 +604,31 @@ class TrendTracker:
             logger.error(f"TrendTracker: expire_old_trends failed: {e}")
         finally:
             conn.close()
+
+    async def _send_trend_alert(self, topic: str, score: float, sources: int, summary: str):
+        """Immediately dispatch a Telegram message when a trend hits HOT."""
+        bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
+        allowed_users = os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",")
+        if not bot_token or not allowed_users or not allowed_users[0]:
+            return
+
+        safe_topic = topic.replace("_", "\_")
+
+        message = (
+            f"🔥 *TRENDING NOW*\n\n"
+            f"📡 `{safe_topic}`\n"
+            f"📈 Score: *{score:.1f}* \u2014 {sources} независимых канала\n\n"
+            f"📝 {summary}"
+        )
+
+        async with httpx.AsyncClient() as client:
+            for uid in allowed_users:
+                uid = uid.strip()
+                if not uid: continue
+                try:
+                    await client.post(
+                        f"https://api.telegram.org/bot{bot_token}/sendMessage",
+                        json={"chat_id": uid, "text": message, "parse_mode": "Markdown"}
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send trend alert to {uid}: {e}")

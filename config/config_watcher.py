@@ -22,7 +22,19 @@ DEFAULT_CONFIG = {
     "digest_interval_hours": 3,
     "ignored_sources": [],
     "keywords_alert": [],
+    "digest_max_items": 7,
+    "digest_min_temperature": 5.0,
+    "digest_rules": {
+        "max_per_topic": 2,
+        "always_include_alerts": True,
+        "min_unique_sources_for_trend": 3,
+        "dedup_threshold": 0.85,
+    },
+    "digest_engine": "legacy",     # "legacy" or "agent"
+    "instant_alerts_temperature": True, # send breaking news immediately based on temp
+    "instant_alerts_trend": True        # send breaking news immediately based on trend status
 }
+
 
 
 class ConfigWatcher:
@@ -47,6 +59,25 @@ class ConfigWatcher:
 
     def get(self, key: str, default: Any = None) -> Any:
         return self._config.get(key, default)
+
+    def load_topics(self) -> dict:
+        """
+        Load topics.json from the same directory as settings.json.
+        Returns a dict of {canonical_label: {aliases: [...], alert: bool, ...}}.
+        Falls back to empty dict if file not found.
+        """
+        topics_path = self.config_path.parent / "topics.json"
+        if not topics_path.exists():
+            logger.warning(f"topics.json not found at {topics_path}")
+            return {}
+        try:
+            with open(topics_path, encoding="utf-8") as f:
+                data = json.load(f)
+            # Strip meta keys that start with "_"
+            return {k: v for k, v in data.items() if not k.startswith("_")}
+        except Exception as e:
+            logger.error(f"Failed to load topics.json: {e}")
+            return {}
 
     def on_change(self, key: str, callback: Callable[[Any], Any]) -> None:
         """Register a callback that fires when a specific key changes."""
