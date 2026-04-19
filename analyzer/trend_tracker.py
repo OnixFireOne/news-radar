@@ -552,12 +552,12 @@ class TrendTracker:
                 if status == "hot" and existing_status != "hot":
                     if self.analyzer and self.analyzer.cfg and self.analyzer.cfg.get("instant_alerts_trend", True):
                         asyncio.create_task(
-                            self._send_trend_alert(
-                                topic=cluster.topic,
-                                score=score,
-                                sources=cluster.unique_sources,
-                                summary=summary or "Trend summary pending."
-                            )
+                            self.analyzer._route_event("trend_alert", {
+                                "topic": cluster.topic,
+                                "score": score,
+                                "sources": cluster.unique_sources,
+                                "summary": summary or "Trend summary pending."
+                            })
                         )
 
                 # Link messages to this trend (INSERT OR IGNORE = idempotent)

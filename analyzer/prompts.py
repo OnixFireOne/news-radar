@@ -44,17 +44,18 @@ Here are {count} messages from different Telegram channels:
 {messages}
 
 Write a punchy and easy-to-read digest in RUSSIAN using Markdown format. Limit text to the essentials.
-IMPORTANT: Every story MUST include a source reference at the end like: (источник: @channel)
+IMPORTANT: Every story MUST end with a Markdown link using the PostURL from the message context.
+Use EXACTLY this format for the link: [источник](PostURL) — the word must be 'источник', no channel name visible.
 
-Format exactly like this example — do NOT add extra headers or titles before the list:
+Format exactly like this example:
 
 *🔥 Главное за {period}:*
 
 🔹 *Bitcoin / Температура: 9/10*
-BTC пробил $70k на фоне рекордного притока ETF. Аналитики ждут продолжения роста. (источник: @some_channel)
+BTC пробил $70k на фоне рекордного притока ETF. Аналитики ждут продолжения роста. [источник](https://t.me/some_channel/12345)
 
 🔹 *Regulation / Температура: 8/10*
-SEC подала новый иск против биржи. Рынок отреагировал снижением на 3%. (источник: @another_channel)
+SEC подала новый иск против биржи. Рынок отреагировал снижением на 3%. [источник](https://t.me/another_channel/67890)
 
 [... include up to 5 top stories maximum, one per 🔹 bullet]
 

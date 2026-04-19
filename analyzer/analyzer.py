@@ -168,22 +168,84 @@ class NewsAnalyzer:
         return count
 
     async def _send_instant_alert(self, msg_id: int, source: str, temp: float, topic: str, summary: str, text: str):
-        """Immediately dispatch a Telegram message for breaking news (temp >= 9.0)."""
+        """Dispatch a breaking news alert — via OpenClaw if configured, else direct Telegram."""
+        # Try to build a direct post link from the DB
+        source_url = f"https://t.me/{source}"
+        conn = get_db(self.db_path)
+        try:
+            row = conn.execute(
+                "SELECT m.external_id FROM messages m JOIN sources s ON m.source_id=s.id "
+                "WHERE m.id=? AND s.name=?", (msg_id, source)
+            ).fetchone()
+            if row and row["external_id"]:
+                source_url = f"https://t.me/{source}/{row['external_id']}"
+        except Exception:
+            pass
+        finally:
+            conn.close()
+
+        await self._route_event("breaking_alert", {
+            "message_id": msg_id,
+            "source": source,
+            "source_url": source_url,
+            "topic": topic,
+            "temperature": temp,
+            "summary": summary,
+        })
+
+    async def _route_event(self, event_type: str, data: dict):
+        """
+        Route an event to OpenClaw (if OPENCLAW_WEBHOOK_URL is set)
+        or fall back to sending directly to Telegram.
+
+        OpenClaw receives structured JSON and handles:
+          - Translation to multiple languages
+          - Routing to different platforms (Telegram, Discord, Web Push)
+          - Formatting per platform
+        """
+        webhook_url = os.getenv("OPENCLAW_WEBHOOK_URL", "").strip()
+
+        if webhook_url:
+            # ── Route through OpenClaw ──
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    await client.post(webhook_url, json={"event_type": event_type, "data": data})
+                    logger.debug(f"Event '{event_type}' routed to OpenClaw")
+            except Exception as e:
+                logger.error(f"OpenClaw webhook failed ({event_type}): {e} — falling back to Telegram")
+                await self._fallback_telegram(event_type, data)
+        else:
+            # ── Direct Telegram (no OpenClaw configured) ──
+            await self._fallback_telegram(event_type, data)
+
+    async def _fallback_telegram(self, event_type: str, data: dict):
+        """Send event directly to Telegram when OpenClaw is not configured."""
         bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
         allowed_users = os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",")
         if not bot_token or not allowed_users or not allowed_users[0]:
             return
 
-        # Escape underscores so Telegram Markdown doesn't turn channel names into broken italic links
-        safe_source = source.replace("_", "\_")
-        safe_summary = summary  # summary from LLM is already in Russian as per prompt
-
-        message = (
-            f"🚨 *BREAKING NEWS* (Температура: {temp:.0f}/10)\n\n"
-            f"📡 Источник: @{safe_source}\n"
-            f"🏷 Тема: `{topic}`\n\n"
-            f"📝 {safe_summary}"
-        )
+        if event_type == "breaking_alert":
+            safe_source = data["source"].replace("_", "\_")
+            source_url = data.get("source_url", f"https://t.me/{data['source']}")
+            message = (
+                f"🚨 *BREAKING NEWS* (Температура: {data['temperature']:.0f}/10)\n\n"
+                f"🕹 Тема: `{data['topic']}`\n\n"
+                f"📝 {data['summary']}\n\n"
+                f"[\u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a]({source_url})"
+            )
+        elif event_type == "trend_alert":
+            safe_topic = data["topic"].replace("_", "\_")
+            message = (
+                f"🔥 *TRENDING NOW*\n\n"
+                f"📡 `{safe_topic}`\n"
+                f"📈 Score: *{data['score']:.1f}* \u2014 {data['sources']} независимых канала\n\n"
+                f"📝 {data['summary']}"
+            )
+        elif event_type == "digest":
+            message = data.get("text", "")
+        else:
+            return
 
         async with httpx.AsyncClient() as client:
             for uid in allowed_users:
@@ -192,10 +254,11 @@ class NewsAnalyzer:
                 try:
                     await client.post(
                         f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                        json={"chat_id": uid, "text": message, "parse_mode": "Markdown"}
+                        json={"chat_id": uid, "text": message, "parse_mode": "Markdown",
+                              "disable_web_page_preview": True}
                     )
                 except Exception as e:
-                    logger.error(f"Failed to send instant alert to {uid}: {e}")
+                    logger.error(f"Telegram fallback failed for {uid}: {e}")
 
     async def _store_embedding(
         self,
@@ -342,6 +405,7 @@ class NewsAnalyzer:
             rows = conn.execute("""
                 SELECT
                     m.id,
+                    m.external_id,
                     m.text,
                     s.name  AS source_name,
                     a.temperature,
@@ -436,8 +500,16 @@ class NewsAnalyzer:
         )
 
         # ── Build LLM prompt ──
+        # Build post URLs for source linking in the digest
+        def post_url(row: dict) -> str:
+            ext_id = row.get("external_id", "")
+            src = row.get("source_name", "")
+            if ext_id and src and not src.startswith("-"):  # skip private/numeric channel IDs
+                return f"https://t.me/{src}/{ext_id}"
+            return f"https://t.me/{src}" if src else ""
+
         messages_text = "\n\n".join([
-            f"[{i+1}] Channel: @{row['source_name']} | Temperature: {row['temperature']}/10\n"
+            f"[{i+1}] Channel: @{row['source_name']} | PostURL: {post_url(dict(row))} | Temperature: {row['temperature']}/10\n"
             f"Topic: {row['topic']}\n"
             f"Text: {row['text'][:300]}"
             for i, row in enumerate(selected)
@@ -491,6 +563,13 @@ class NewsAnalyzer:
                 conn.commit()
             finally:
                 conn.close()
+
+            # ── Route digest to OpenClaw or fallback to direct Telegram ──
+            await self._route_event("digest", {
+                "period": period,
+                "text": digest,
+                "message_count": len(selected),
+            })
 
             return digest
 
