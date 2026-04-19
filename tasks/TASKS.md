@@ -48,7 +48,7 @@ OPENCLAW_WEBHOOK_URL=http://host.docker.internal:18789/event
 
 ---
 
-## 🔴 Приоритет 2: Подписки (TaskAgent не работает правильно)
+## ✅ Приоритет 2: Подписки (TaskAgent не работает правильно)
 
 TaskAgent сделан как поиск по запросу. Нужны **persistent subscriptions**.
 
@@ -72,7 +72,7 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 
 ---
 
-## 🟠 Приоритет 3: Проверь заполняется ли `summary` в trends
+## ✅ Приоритет 3: Проверь заполняется ли `summary` в trends
 
 Запусти:
 ```
