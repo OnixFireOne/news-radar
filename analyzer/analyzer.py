@@ -231,7 +231,7 @@ class NewsAnalyzer:
         if webhook_url.endswith("/hooks/wake"):
             webhook_url = webhook_url.replace("/hooks/wake", "/v1/chat/completions")
         elif not webhook_url.endswith("/v1/chat/completions"):
-            webhook_url = "http://host.docker.internal:18789/v1/chat/completions"
+            webhook_url = "http://openclaw:18789/v1/chat/completions"
 
         if webhook_url and route_enabled:
             # Build human-readable text for OpenClaw /hooks/wake
@@ -596,7 +596,7 @@ class NewsAnalyzer:
             for i, row in enumerate(selected)
         ])
 
-        period = f"last {hours} hours"
+        period = "последнее время"
         prompt = DIGEST_PROMPT.format(
             period=period,
             count=len(selected),

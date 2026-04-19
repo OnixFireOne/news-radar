@@ -83,6 +83,7 @@ services:
     restart: unless-stopped
     networks:
       - news-radar-network
+      - openclaw-net
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
@@ -104,10 +105,13 @@ services:
     restart: unless-stopped
     networks:
       - news-radar-network
+      - openclaw-net
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
 networks:
   news-radar-network:
     driver: bridge
+  openclaw-net:
+    external: true
 

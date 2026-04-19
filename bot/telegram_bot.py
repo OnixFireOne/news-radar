@@ -48,7 +48,7 @@ OPENCLAW_WEBHOOK_TOKEN = os.environ.get("OPENCLAW_WEBHOOK_TOKEN", "").strip()
 async def wake_openclaw(text: str) -> bool:
     """Send a message to OpenClaw via /v1/chat/completions (OpenAI-compatible schema). Returns True if successful."""
     # Override URL to standard gateway URL for inference
-    url = "http://host.docker.internal:18789/v1/chat/completions"
+    url = "http://openclaw:18789/v1/chat/completions"
     headers = {"Authorization": f"Bearer {OPENCLAW_WEBHOOK_TOKEN}"} if OPENCLAW_WEBHOOK_TOKEN else {}
     
     payload = {
