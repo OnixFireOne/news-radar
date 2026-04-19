@@ -32,7 +32,8 @@ DEFAULT_CONFIG = {
     },
     "digest_engine": "legacy",     # "legacy" or "agent"
     "instant_alerts_temperature": True, # send breaking news immediately based on temp
-    "instant_alerts_trend": True        # send breaking news immediately based on trend status
+    "instant_alerts_trend": True,       # send breaking news immediately based on trend status
+    "route_via_openclaw": False         # if True + OPENCLAW_WEBHOOK_URL set -> route all events to agent
 }
 
 

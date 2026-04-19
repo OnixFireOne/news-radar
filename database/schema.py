@@ -94,6 +94,17 @@ CREATE TABLE IF NOT EXISTS digests (
     sent_telegram INTEGER DEFAULT 0
 );
 
+-- User topic subscriptions (for /track command)
+CREATE TABLE IF NOT EXISTS subscriptions (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id         TEXT NOT NULL,
+    query           TEXT NOT NULL,
+    last_notified_at DATETIME,
+    active          INTEGER DEFAULT 1,
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE(user_id, query)
+);
+
 -- Channel rating: rolling stats per source
 CREATE TABLE IF NOT EXISTS source_stats (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,

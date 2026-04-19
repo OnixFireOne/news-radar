@@ -797,3 +797,58 @@ if __name__ == "__main__":
     import uvicorn
     logging.basicConfig(level=logging.INFO)
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+# ──────────────────────────────────────────────────────────────
+# SUBSCRIPTIONS  (for /track Telegram command)
+# ──────────────────────────────────────────────────────────────
+
+@app.get("/subscriptions")
+def list_subscriptions(user_id: str):
+    """List active subscriptions for a user."""
+    conn = get_db(DATABASE_PATH)
+    try:
+        rows = conn.execute(
+            "SELECT id, query, created_at FROM subscriptions WHERE user_id=? AND active=1 ORDER BY created_at DESC",
+            (user_id,)
+        ).fetchall()
+        return [{"id": r["id"], "query": r["query"], "created_at": r["created_at"]} for r in rows]
+    finally:
+        conn.close()
+
+
+@app.post("/subscriptions", status_code=201)
+def add_subscription(payload: dict):
+    """Add a subscription. Body: {user_id, query}"""
+    user_id = payload.get("user_id", "").strip()
+    query   = payload.get("query", "").strip()
+    if not user_id or not query:
+        raise HTTPException(status_code=400, detail="user_id and query are required")
+
+    conn = get_db(DATABASE_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO subscriptions (user_id, query) VALUES (?, ?) ON CONFLICT(user_id, query) DO UPDATE SET active=1",
+            (user_id, query)
+        )
+        conn.commit()
+        return {"status": "ok", "user_id": user_id, "query": query}
+    finally:
+        conn.close()
+
+
+@app.delete("/subscriptions")
+def remove_subscription(user_id: str, query: str):
+    """Deactivate a subscription."""
+    conn = get_db(DATABASE_PATH)
+    try:
+        result = conn.execute(
+            "UPDATE subscriptions SET active=0 WHERE user_id=? AND query=? AND active=1",
+            (user_id, query)
+        )
+        conn.commit()
+        if result.rowcount == 0:
+            raise HTTPException(status_code=404, detail="Subscription not found")
+        return {"status": "removed"}
+    finally:
+        conn.close()

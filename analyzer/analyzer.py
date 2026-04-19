@@ -195,27 +195,61 @@ class NewsAnalyzer:
 
     async def _route_event(self, event_type: str, data: dict):
         """
-        Route an event to OpenClaw (if OPENCLAW_WEBHOOK_URL is set)
-        or fall back to sending directly to Telegram.
+        Route an event to OpenClaw via POST /hooks/wake (fire-and-forget).
 
-        OpenClaw receives structured JSON and handles:
-          - Translation to multiple languages
-          - Routing to different platforms (Telegram, Discord, Web Push)
-          - Formatting per platform
+        OpenClaw /hooks/wake expects: {"text": "<message>", "mode": "now"}
+        We format each event as readable text so the agent understands the context.
+
+        Toggle: config/settings.json -> "route_via_openclaw": true  (hot-reload)
+        URL:    .env -> OPENCLAW_WEBHOOK_URL=http://host.docker.internal:18789/hooks/wake
+        Token:  .env -> OPENCLAW_WEBHOOK_TOKEN=<token> (optional, if configured in openclaw)
         """
         webhook_url = os.getenv("OPENCLAW_WEBHOOK_URL", "").strip()
+        route_enabled = self.cfg.get("route_via_openclaw", False) if self.cfg else False
 
-        if webhook_url:
-            # ── Route through OpenClaw ──
+        if webhook_url and route_enabled:
+            # Build human-readable text for OpenClaw /hooks/wake
+            if event_type == "breaking_alert":
+                text = (
+                    f"[NEWS-RADAR EVENT: breaking_alert]\n"
+                    f"Topic: {data.get('topic')}\n"
+                    f"Temperature: {data.get('temperature')}/10\n"
+                    f"Source: {data.get('source')} ({data.get('source_url')})\n"
+                    f"Summary: {data.get('summary')}"
+                )
+            elif event_type == "trend_alert":
+                text = (
+                    f"[NEWS-RADAR EVENT: trend_alert]\n"
+                    f"Topic: {data.get('topic')}\n"
+                    f"Trend Score: {data.get('score', 0):.1f} \u2014 {data.get('sources')} unique channels\n"
+                    f"Summary: {data.get('summary')}"
+                )
+            elif event_type == "digest":
+                text = (
+                    f"[NEWS-RADAR EVENT: digest]\n"
+                    f"Period: {data.get('period')}\n"
+                    f"Messages: {data.get('message_count')}\n\n"
+                    f"{data.get('text', '')}"
+                )
+            else:
+                text = f"[NEWS-RADAR EVENT: {event_type}]\n{json.dumps(data, ensure_ascii=False)}"
+
+            token = os.getenv("OPENCLAW_WEBHOOK_TOKEN", "").strip()
+            headers = {"Authorization": f"Bearer {token}"} if token else {}
+
             try:
                 async with httpx.AsyncClient(timeout=10) as client:
-                    await client.post(webhook_url, json={"event_type": event_type, "data": data})
-                    logger.debug(f"Event '{event_type}' routed to OpenClaw")
+                    resp = await client.post(
+                        webhook_url,
+                        json={"text": text, "mode": "now"},
+                        headers=headers,
+                    )
+                    logger.info(f"Event '{event_type}' \u2192 OpenClaw (HTTP {resp.status_code})")
             except Exception as e:
-                logger.error(f"OpenClaw webhook failed ({event_type}): {e} — falling back to Telegram")
+                logger.error(f"OpenClaw webhook failed ({event_type}): {e} \u2014 falling back to Telegram")
                 await self._fallback_telegram(event_type, data)
         else:
-            # ── Direct Telegram (no OpenClaw configured) ──
+            # \u2500\u2500 Direct Telegram (OpenClaw disabled or not configured) \u2500\u2500
             await self._fallback_telegram(event_type, data)
 
     async def _fallback_telegram(self, event_type: str, data: dict):
@@ -679,13 +713,18 @@ class NewsAnalyzer:
             # ─── Digest generation cycle ───
             now = datetime.utcnow()
             if (now - last_digest_run).total_seconds() >= digest_interval:
-                try:
-                    logger.info(f"Generating periodic digest (last {digest_interval_hours} hours)...")
-                    await self.generate_digest(hours=digest_interval_hours)
+                engine = self.cfg.get("digest_engine", "legacy") if self.cfg else "legacy"
+                if engine == "agent":
+                    logger.info("digest_engine=agent — skipping legacy digest, waiting for OpenClaw NarrativeAgent")
                     last_digest_run = now
-                except Exception as e:
-                    logger.error(f"Digest generation cycle error: {e}")
-                    last_digest_run = now
+                else:
+                    try:
+                        logger.info(f"Generating periodic digest (last {digest_interval_hours} hours)...")
+                        await self.generate_digest(hours=digest_interval_hours)
+                        last_digest_run = now
+                    except Exception as e:
+                        logger.error(f"Digest generation cycle error: {e}")
+                        last_digest_run = now
 
             await asyncio.sleep(self.interval)
 

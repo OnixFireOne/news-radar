@@ -41,6 +41,26 @@ def is_allowed(user_id: int) -> bool:
 
 
 API_URL = os.environ.get("API_URL", "http://localhost:8000")
+OPENCLAW_WEBHOOK_URL = os.environ.get("OPENCLAW_WEBHOOK_URL", "").strip()
+OPENCLAW_WEBHOOK_TOKEN = os.environ.get("OPENCLAW_WEBHOOK_TOKEN", "").strip()
+
+
+async def wake_openclaw(text: str) -> bool:
+    """Send a message to OpenClaw via /hooks/wake. Returns True if successful."""
+    if not OPENCLAW_WEBHOOK_URL:
+        return False
+    headers = {"Authorization": f"Bearer {OPENCLAW_WEBHOOK_TOKEN}"} if OPENCLAW_WEBHOOK_TOKEN else {}
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                OPENCLAW_WEBHOOK_URL,
+                json={"text": text, "mode": "now"},
+                headers=headers,
+            )
+            return resp.status_code in (200, 202)
+    except Exception as e:
+        logger.error(f"OpenClaw wake failed: {e}")
+        return False
 
 
 async def fetch_api(path: str) -> dict | list | None:
@@ -66,10 +86,14 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "📡 News Radar is running!\n\n"
-        "I monitor Telegram channels and analyze news with AI.\n\n"
+        "I monitor 57+ Telegram channels and analyze news with AI.\n\n"
         "Commands:\n"
         "/hot — trending topics right now\n"
         "/digest — latest AI digest\n"
+        "/track <topic> — subscribe to a topic\n"
+        "/untrack <topic> — remove subscription\n"
+        "/my_tracks — your active subscriptions\n"
+        "/ask <question> — ask the AI agent\n"
         "/status — system statistics\n"
         "/help — this message"
     )
@@ -172,10 +196,129 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "Commands:\n"
         "/hot — trending topics right now\n"
         "/digest — latest AI digest\n"
+        "/track <topic> — subscribe to a topic (e.g. /track SEC)\n"
+        "/untrack <topic> — remove subscription\n"
+        "/my_tracks — your active subscriptions\n"
+        "/ask <question> — ask the AI agent anything\n"
         "/status — system stats (channels, messages)\n"
-        "/help — this message\n\n"
-        "Auto-digest is sent every 3 hours."
+        "/help — this message"
     )
+
+
+async def cmd_track(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Subscribe to a topic. Routes to OpenClaw TaskAgent if configured."""
+    if not is_allowed(update.effective_user.id):
+        return
+
+    query = " ".join(ctx.args or "").strip()
+    if not query:
+        await update.message.reply_text("Usage: /track <topic>\nExample: /track SEC")
+        return
+
+    user_id = str(update.effective_user.id)
+
+    # Save subscription via API
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(f"{API_URL}/subscriptions", json={"user_id": user_id, "query": query})
+            saved = resp.status_code in (200, 201)
+    except Exception:
+        saved = False
+
+    # Notify OpenClaw TaskAgent
+    woke = await wake_openclaw(
+        f"[NEWS-RADAR COMMAND: track]\n"
+        f"User: {user_id}\n"
+        f"Query: {query}\n"
+        f"Action: Add subscription and confirm to user."
+    )
+
+    if woke:
+        await update.message.reply_text(f"✅ Подписка `{query}` активирована. Агент будет следить и уведомлять вас о новостях.", parse_mode="Markdown")
+    elif saved:
+        await update.message.reply_text(f"✅ Подписка `{query}` сохранена. Будем искать новости для вас каждые 30 мин.", parse_mode="Markdown")
+    else:
+        await update.message.reply_text(f"⚠️ Не удалось сохранить подписку. API недоступен.")
+
+
+async def cmd_untrack(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Remove a topic subscription."""
+    if not is_allowed(update.effective_user.id):
+        return
+
+    query = " ".join(ctx.args or "").strip()
+    if not query:
+        await update.message.reply_text("Usage: /untrack <topic>\nExample: /untrack SEC")
+        return
+
+    user_id = str(update.effective_user.id)
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.delete(f"{API_URL}/subscriptions", params={"user_id": user_id, "query": query})
+            ok = resp.status_code == 200
+    except Exception:
+        ok = False
+
+    await wake_openclaw(
+        f"[NEWS-RADAR COMMAND: untrack]\n"
+        f"User: {user_id}\n"
+        f"Query: {query}\n"
+        f"Action: Remove subscription and confirm to user."
+    )
+
+    if ok:
+        await update.message.reply_text(f"❌ Подписка `{query}` удалена.", parse_mode="Markdown")
+    else:
+        await update.message.reply_text(f"⚠️ Подписка `{query}` не найдена.")
+
+
+async def cmd_my_tracks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """List active subscriptions for this user."""
+    if not is_allowed(update.effective_user.id):
+        return
+
+    user_id = str(update.effective_user.id)
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{API_URL}/subscriptions", params={"user_id": user_id})
+            subs = resp.json() if resp.status_code == 200 else []
+    except Exception:
+        subs = []
+
+    if not subs:
+        await update.message.reply_text("💭 У вас нет активных подписок.\n💡 Добавьте через /track <тема>")
+        return
+
+    lines = ["📌 Ваши подписки:\n"]
+    for s in subs:
+        lines.append(f"• `{s['query']}`")
+    lines.append("\nУдалить: /untrack <тема>")
+    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
+
+
+async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """Ask the OpenClaw agent a question directly."""
+    if not is_allowed(update.effective_user.id):
+        return
+
+    question = " ".join(ctx.args or "").strip()
+    if not question:
+        await update.message.reply_text("Usage: /ask <question>\nExample: /ask What is happening with Ethereum today?")
+        return
+
+    user_id = str(update.effective_user.id)
+    woke = await wake_openclaw(
+        f"[NEWS-RADAR COMMAND: ask]\n"
+        f"User: {user_id}\n"
+        f"Question: {question}\n"
+        f"Action: Answer using news context from news-radar API, reply to the user."
+    )
+
+    if woke:
+        await update.message.reply_text("🤖 Агент получил вопрос, ответит в ближайшее время...")
+    else:
+        await update.message.reply_text("⚠️ OpenClaw недоступен. Проверьте OPENCLAW_WEBHOOK_URL в .env")
 
 
 # ──────────────────────────────────────────────
@@ -228,6 +371,10 @@ def main():
     app.add_handler(CommandHandler("hot", cmd_hot))
     app.add_handler(CommandHandler("digest", cmd_digest))
     app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("track", cmd_track))
+    app.add_handler(CommandHandler("untrack", cmd_untrack))
+    app.add_handler(CommandHandler("my_tracks", cmd_my_tracks))
+    app.add_handler(CommandHandler("ask", cmd_ask))
 
     # Schedule auto-digest
     app.job_queue.run_repeating(
