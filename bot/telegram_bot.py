@@ -187,7 +187,11 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Digest not found and could not generate one.")
         return
 
-    content = digest["content_md"]
+    if "status" in digest and digest["status"] == "dispatched":
+        await update.message.reply_text("⏳ Data collected and dispatched to the agent. Please wait...")
+        return
+
+    content = digest.get("content_md", "")
 
     # Telegram message limit is 4096 chars
     if len(content) > 4000:
@@ -243,11 +247,11 @@ async def cmd_track(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
     if woke:
-        await update.message.reply_text(f"✅ Подписка `{query}` активирована. Агент будет следить и уведомлять вас о новостях.", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ Subscription `{query}` activated. The agent will monitor and notify you.", parse_mode="Markdown")
     elif saved:
-        await update.message.reply_text(f"✅ Подписка `{query}` сохранена. Будем искать новости для вас каждые 30 мин.", parse_mode="Markdown")
+        await update.message.reply_text(f"✅ Subscription `{query}` saved.", parse_mode="Markdown")
     else:
-        await update.message.reply_text(f"⚠️ Не удалось сохранить подписку. API недоступен.")
+        await update.message.reply_text(f"⚠️ Failed to save subscription. API unavailable.")
 
 
 async def cmd_untrack(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -277,9 +281,9 @@ async def cmd_untrack(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
     if ok:
-        await update.message.reply_text(f"❌ Подписка `{query}` удалена.", parse_mode="Markdown")
+        await update.message.reply_text(f"❌ Subscription `{query}` removed.", parse_mode="Markdown")
     else:
-        await update.message.reply_text(f"⚠️ Подписка `{query}` не найдена.")
+        await update.message.reply_text(f"⚠️ Subscription `{query}` not found.")
 
 
 async def cmd_my_tracks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -296,13 +300,13 @@ async def cmd_my_tracks(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         subs = []
 
     if not subs:
-        await update.message.reply_text("💭 У вас нет активных подписок.\n💡 Добавьте через /track <тема>")
+        await update.message.reply_text("💭 You have no active subscriptions.\n💡 Add one via /track <topic>")
         return
 
-    lines = ["📌 Ваши подписки:\n"]
+    lines = ["📌 Your subscriptions:\n"]
     for s in subs:
         lines.append(f"• `{s['query']}`")
-    lines.append("\nУдалить: /untrack <тема>")
+    lines.append("\nRemove: /untrack <topic>")
     await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
 
 
@@ -325,9 +329,9 @@ async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     )
 
     if woke:
-        await update.message.reply_text("🤖 Агент получил вопрос, ответит в ближайшее время...")
+        await update.message.reply_text("🤖 Agent received your question and will reply shortly...")
     else:
-        await update.message.reply_text("⚠️ OpenClaw недоступен. Проверьте OPENCLAW_WEBHOOK_URL в .env")
+        await update.message.reply_text("⚠️ OpenClaw agent unavailable. Check your connection.")
 
 
 # ──────────────────────────────────────────────

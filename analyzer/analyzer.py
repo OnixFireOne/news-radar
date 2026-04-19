@@ -610,32 +610,75 @@ class NewsAnalyzer:
             messages=messages_text,
         )
 
-        try:
-            digest = await self.llm.complete(
-                user_prompt=prompt,
-                system_prompt=SYSTEM_PROMPT,
-                temperature=0.4,
-                max_tokens=1500,
-            )
+        # ── 1. Try sending raw payload to OpenClaw Agent ──
+        agent_succeeded = False
+        webhook_url = os.getenv("OPENCLAW_WEBHOOK_URL", "").strip()
+        route_enabled = self.cfg.get("route_via_openclaw", False) if self.cfg else False
 
+        if webhook_url.endswith("/hooks/wake"):
+            webhook_url = webhook_url.replace("/hooks/wake", "/v1/chat/completions")
+        elif not webhook_url.endswith("/v1/chat/completions"):
+            webhook_url = "http://openclaw:18789/v1/chat/completions"
+
+        if webhook_url and route_enabled:
+            token = os.getenv("OPENCLAW_WEBHOOK_TOKEN", "").strip()
+            headers = {"Authorization": f"Bearer {token}"} if token else {}
+            
+            payload_text = (
+                f"[NEWS-RADAR EVENT: digest_raw]\n"
+                f"Period: {period}\n"
+                f"Messages: {len(selected)}\n\n"
+                f"{messages_text}\n\n"
+                f"Action: Generate a markdown digest based on these messages and send it to the user. Do not return the raw messages."
+            )
+            
+            payload = {
+                "model": "main",
+                "messages": [
+                    {"role": "system", "content": "You are the RoutingAgent. Process this event according to AGENTS.md instructions."},
+                    {"role": "user", "content": payload_text}
+                ]
+            }
+
+            try:
+                async with httpx.AsyncClient(timeout=15) as client:
+                    resp = await client.post(webhook_url, json=payload, headers=headers)
+                    resp.raise_for_status()
+                    agent_succeeded = True
+                    logger.info("Successfully dispatched raw digest data to OpenClaw Agent")
+            except Exception as e:
+                logger.error(f"Failed to dispatch raw digest to Agent: {e}. Fallback to Local LLM.")
+
+        # ── 2. Fallback: Local LLM Generation ──
+        digest_content = ""
+        if not agent_succeeded:
+            try:
+                digest_content = await self.llm.complete(
+                    user_prompt=prompt,
+                    system_prompt=SYSTEM_PROMPT,
+                    temperature=0.4,
+                    max_tokens=1500,
+                )
+            except Exception as e:
+                logger.error(f"Local LLM fallback failed: {e}")
+                return None
+
+        # ── 3. Mark in DB (Success or Fallback) ──
+        try:
             conn = get_db(self.db_path)
             try:
-                conn.execute(
-                    "INSERT INTO digests (content_md, period_start, period_end) VALUES (?, ?, ?)",
-                    (digest, since.isoformat(), datetime.utcnow().isoformat()),
-                )
+                if not agent_succeeded and digest_content:
+                    conn.execute(
+                        "INSERT INTO digests (content_md, period_start, period_end) VALUES (?, ?, ?)",
+                        (digest_content, since.isoformat(), datetime.utcnow().isoformat()),
+                    )
 
                 selected_ids = [row["id"] for row in selected]
-
-                # Mark the selected messages themselves
                 conn.executemany(
                     "UPDATE messages SET in_digest=1 WHERE id=?",
                     [(mid,) for mid in selected_ids]
                 )
 
-                # Also mark ALL messages in the same trend clusters — so the
-                # same story (covered by 10 channels) doesn't resurface next
-                # digest cycle from a different channel.
                 if selected_ids:
                     placeholders = ",".join("?" * len(selected_ids))
                     conn.execute(f"""
@@ -652,17 +695,16 @@ class NewsAnalyzer:
             finally:
                 conn.close()
 
-            # ── Route digest to OpenClaw or fallback to direct Telegram ──
-            await self._route_event("digest", {
-                "period": period,
-                "text": digest,
-                "message_count": len(selected),
-            })
-
-            return digest
+            # ── 4. Return Output ──
+            if agent_succeeded:
+                return "dispatched"
+            else:
+                # Send fallback directly to telegram
+                await self._fallback_telegram("digest", {"text": digest_content})
+                return digest_content
 
         except Exception as e:
-            logger.error(f"Failed to generate digest: {e}")
+            logger.error(f"Failed to finalise digest DB state: {e}")
             return None
 
     def _dedup_by_similarity(self, candidates: list[dict], threshold: float) -> list[dict]:
@@ -727,11 +769,7 @@ class NewsAnalyzer:
         trend_interval = int(os.environ.get("TREND_INTERVAL_MINUTES", "15")) * 60
         last_trend_run = datetime.utcnow() - timedelta(seconds=trend_interval)  # run immediately on start
 
-        digest_interval_hours = int(os.environ.get("DIGEST_INTERVAL_HOURS", "6"))
-        digest_interval = digest_interval_hours * 3600
-        # Don't run immediately on start so it doesn't send broken empty digests on fast restarts,
-        # but let's say it ran `digest_interval - 1_minute` ago to trigger soon.
-        last_digest_run = datetime.utcnow() - timedelta(seconds=digest_interval - 60)
+
 
         # Shared TrendTracker instance (reuses self.chroma, self.llm)
         trend_tracker = TrendTracker(
@@ -764,21 +802,7 @@ class NewsAnalyzer:
                     logger.error(f"TrendTracker cycle error: {e}")
                     last_trend_run = now  # don't retry immediately on error
                     
-            # ─── Digest generation cycle ───
-            now = datetime.utcnow()
-            if (now - last_digest_run).total_seconds() >= digest_interval:
-                engine = self.cfg.get("digest_engine", "legacy") if self.cfg else "legacy"
-                if engine == "agent":
-                    logger.info("digest_engine=agent — skipping legacy digest, waiting for OpenClaw NarrativeAgent")
-                    last_digest_run = now
-                else:
-                    try:
-                        logger.info(f"Generating periodic digest (last {digest_interval_hours} hours)...")
-                        await self.generate_digest(hours=digest_interval_hours)
-                        last_digest_run = now
-                    except Exception as e:
-                        logger.error(f"Digest generation cycle error: {e}")
-                        last_digest_run = now
+
 
             await asyncio.sleep(self.interval)
 
