@@ -400,9 +400,118 @@ async def health():
     }
 
 
+
+# ──────────────────────────────────────────────
+# SETTINGS — live config management
+# ──────────────────────────────────────────────
+
+CONFIG_PATH = Path(os.environ.get("CONFIG_PATH", "/app/config/settings.json"))
+
+# Keys that define the valid settings and their types for validation
+_SETTINGS_SCHEMA: dict[str, type] = {
+    "min_message_length":      int,
+    "load_history_limit":      int,
+    "analyze_interval_minutes": int,
+    "digest_interval_hours":   int,
+    "trend_window_hours":      int,
+    "trend_min_sources":       int,
+    "trend_min_temperature":   float,
+    "digest_max_items":        int,
+    "digest_min_temperature":  float,
+    "breaking_alert_min_temp": float,
+    "hot_trend_min_sources":   int,
+    "instant_alerts_temperature": bool,
+    "route_via_openclaw":      bool,
+    "digest_engine":           str,   # 'agent' | 'legacy'
+}
+
+
+def _read_settings() -> dict:
+    try:
+        return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot read settings.json: {e}")
+
+
+def _write_settings(data: dict) -> None:
+    try:
+        CONFIG_PATH.write_text(
+            json.dumps(data, indent=2, ensure_ascii=False),
+            encoding="utf-8"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot write settings.json: {e}")
+
+
+@app.get("/settings")
+async def get_settings():
+    """Return the current live configuration.
+
+    This is the settings.json the analyzer hot-reloads every 3 seconds.
+    The agent can use this to read current thresholds before adjusting them.
+    """
+    return _read_settings()
+
+
+@app.patch("/settings")
+async def patch_settings(updates: dict):
+    """Update one or more settings keys.
+
+    Only known keys are accepted (schema-validated).
+    Types are coerced automatically (e.g. \"5\" → 5 for int fields).
+    Changes apply within 3 seconds without any restart.
+
+    Example body:
+    ```json
+    {\"hot_trend_min_sources\": 3, \"breaking_alert_min_temp\": 9}
+    ```
+    """
+    if not updates:
+        raise HTTPException(status_code=400, detail="No fields provided")
+
+    unknown = [k for k in updates if k not in _SETTINGS_SCHEMA and not k.startswith("_")]
+    if unknown:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown settings keys: {unknown}. Known: {list(_SETTINGS_SCHEMA)}"
+        )
+
+    current = _read_settings()
+    applied = {}
+    errors = {}
+
+    for key, raw_value in updates.items():
+        if key.startswith("_"):
+            continue  # skip comment fields
+        expected_type = _SETTINGS_SCHEMA.get(key)
+        if expected_type is None:
+            continue
+        try:
+            if expected_type is bool:
+                # JSON bools come as bool, strings like "true"/"false" also handled
+                if isinstance(raw_value, bool):
+                    value = raw_value
+                else:
+                    value = str(raw_value).lower() in ("true", "1", "yes")
+            else:
+                value = expected_type(raw_value)
+            current[key] = value
+            applied[key] = value
+        except (ValueError, TypeError) as e:
+            errors[key] = str(e)
+
+    if errors:
+        raise HTTPException(status_code=422, detail={"type_errors": errors})
+
+    _write_settings(current)
+    logger.info(f"Settings updated: {applied}")
+    return {"status": "applied", "updated": applied}
+
+
 # ──────────────────────────────────────────────
 # Phase 1: SEMANTIC SEARCH
 # ──────────────────────────────────────────────
+
 
 @app.get("/search", response_model=list[SearchResult])
 async def semantic_search(
