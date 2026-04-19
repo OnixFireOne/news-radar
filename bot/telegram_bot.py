@@ -46,15 +46,24 @@ OPENCLAW_WEBHOOK_TOKEN = os.environ.get("OPENCLAW_WEBHOOK_TOKEN", "").strip()
 
 
 async def wake_openclaw(text: str) -> bool:
-    """Send a message to OpenClaw via /hooks/wake. Returns True if successful."""
-    if not OPENCLAW_WEBHOOK_URL:
-        return False
+    """Send a message to OpenClaw via /v1/chat/completions (OpenAI-compatible schema). Returns True if successful."""
+    # Override URL to standard gateway URL for inference
+    url = "http://host.docker.internal:18789/v1/chat/completions"
     headers = {"Authorization": f"Bearer {OPENCLAW_WEBHOOK_TOKEN}"} if OPENCLAW_WEBHOOK_TOKEN else {}
+    
+    payload = {
+        "model": "main", # Targets the main agent session
+        "messages": [
+            {"role": "system", "content": "You are the RoutingAgent. Process this event according to AGENTS.md instructions."},
+            {"role": "user", "content": text}
+        ]
+    }
+    
     try:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
-                OPENCLAW_WEBHOOK_URL,
-                json={"text": text, "mode": "now"},
+                url,
+                json=payload,
                 headers=headers,
             )
             return resp.status_code in (200, 202)

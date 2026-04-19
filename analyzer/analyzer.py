@@ -218,17 +218,20 @@ class NewsAnalyzer:
 
     async def _route_event(self, event_type: str, data: dict):
         """
-        Route an event to OpenClaw via POST /hooks/wake (fire-and-forget).
+        Route an event to OpenClaw via OpenAI-compatible completion endpoint.
 
-        OpenClaw /hooks/wake expects: {"text": "<message>", "mode": "now"}
         We format each event as readable text so the agent understands the context.
 
         Toggle: config/settings.json -> "route_via_openclaw": true  (hot-reload)
-        URL:    .env -> OPENCLAW_WEBHOOK_URL=http://host.docker.internal:18789/hooks/wake
-        Token:  .env -> OPENCLAW_WEBHOOK_TOKEN=<token> (optional, if configured in openclaw)
         """
         webhook_url = os.getenv("OPENCLAW_WEBHOOK_URL", "").strip()
         route_enabled = self.cfg.get("route_via_openclaw", False) if self.cfg else False
+
+        # Convert old /hooks/wake URL to OpenAI /v1/chat/completions
+        if webhook_url.endswith("/hooks/wake"):
+            webhook_url = webhook_url.replace("/hooks/wake", "/v1/chat/completions")
+        elif not webhook_url.endswith("/v1/chat/completions"):
+            webhook_url = "http://host.docker.internal:18789/v1/chat/completions"
 
         if webhook_url and route_enabled:
             # Build human-readable text for OpenClaw /hooks/wake
@@ -269,11 +272,19 @@ class NewsAnalyzer:
             token = os.getenv("OPENCLAW_WEBHOOK_TOKEN", "").strip()
             headers = {"Authorization": f"Bearer {token}"} if token else {}
 
+            payload = {
+                "model": "main",
+                "messages": [
+                    {"role": "system", "content": "You are the RoutingAgent. Process this event according to AGENTS.md instructions."},
+                    {"role": "user", "content": text}
+                ]
+            }
+
             try:
                 async with httpx.AsyncClient(timeout=10) as client:
                     resp = await client.post(
                         webhook_url,
-                        json={"text": text, "mode": "now"},
+                        json=payload,
                         headers=headers,
                     )
                     logger.info(f"Event '{event_type}' \u2192 OpenClaw (HTTP {resp.status_code})")
