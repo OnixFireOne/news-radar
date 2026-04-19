@@ -287,6 +287,7 @@ class NewsAnalyzer:
                         json=payload,
                         headers=headers,
                     )
+                    resp.raise_for_status()
                     logger.info(f"Event '{event_type}' \u2192 OpenClaw (HTTP {resp.status_code})")
             except Exception as e:
                 logger.error(f"OpenClaw webhook failed ({event_type}): {e} \u2014 falling back to Telegram")
@@ -321,6 +322,12 @@ class NewsAnalyzer:
             )
         elif event_type == "digest":
             message = data.get("text", "")
+        elif event_type == "subscription_match":
+            message = (
+                f"🔔 *Сработала подписка: {data.get('query')}*\n\n"
+                f"📝 {data.get('summary')}\n\n"
+                f"[источник](https://t.me/{data.get('source')})"
+            )
         else:
             return
 
