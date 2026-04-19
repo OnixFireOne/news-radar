@@ -47,15 +47,17 @@ Write a punchy and easy-to-read digest in RUSSIAN using Markdown format. Limit t
 IMPORTANT: Every story MUST end with a Markdown link using the PostURL from the message context.
 Use EXACTLY this format for the link: [источник](PostURL) — the word must be 'источник', no channel name visible.
 
-Format exactly like this example:
+Format exactly like this example, STRICTLY keeping the Topic and Temperature in the header:
 
 *🔥 Главное за {period}:*
 
-🔹 *Bitcoin / Температура: 9/10*
-BTC пробил $70k на фоне рекордного притока ETF. Аналитики ждут продолжения роста. [источник](https://t.me/some_channel/12345)
+🔹 *[TOPIC FROM CONTEXT] / Температура: [TEMPERATURE FROM CONTEXT]/10*
+*Название или суть новости*
+Краткое описание события из 2-3 предложений. [источник](PostURL)
 
-🔹 *Regulation / Температура: 8/10*
-SEC подала новый иск против биржи. Рынок отреагировал снижением на 3%. [источник](https://t.me/another_channel/67890)
+🔹 *Bitcoin / Температура: 9/10*
+*Рекордные притоки в ETF*
+BTC пробил $70k на фоне рекордного притока ETF. Аналитики ждут продолжения роста. [источник](https://t.me/some_channel/12345)
 
 [... include up to 5 top stories maximum, one per 🔹 bullet]
 

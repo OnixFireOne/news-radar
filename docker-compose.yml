@@ -83,6 +83,8 @@ services:
     restart: unless-stopped
     networks:
       - news-radar-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   # ─────────────────────────────────────────
   # TELEGRAM BOT — вывод дайджестов
@@ -102,6 +104,8 @@ services:
     restart: unless-stopped
     networks:
       - news-radar-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
 networks:
   news-radar-network:
