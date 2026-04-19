@@ -163,7 +163,7 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚙️ Generating new digest... This may take up to a minute.")
         try:
             async with httpx.AsyncClient(timeout=120) as client:
-                resp = await client.post(f"{API_URL}/digest/generate?hours=6")
+                resp = await client.post(f"{API_URL}/digest/generate?hours=6&force=true")
                 if resp.status_code == 200:
                     digest = resp.json()
                 else:
@@ -339,9 +339,51 @@ async def send_auto_digest(app: Application) -> None:
 
     for user_id in list(ALLOWED_USERS):
         try:
-            await app.bot.send_message(chat_id=user_id, text=text, parse_mode="Markdown")
+            await app.bot.send_message(chat_id=user_id, text=text, parse_mode="Markdown", disable_web_page_preview=True)
         except Exception as e:
             logger.error(f"Failed to send digest to {user_id}: {e}")
+
+async def check_subscriptions(app: Application) -> None:
+    """Background task to check subscriptions for new matches."""
+    for user_id in list(ALLOWED_USERS):
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.get(f"{API_URL}/subscriptions", params={"user_id": str(user_id)})
+                subs = resp.json() if resp.status_code == 200 else []
+        except Exception as e:
+            logger.error(f"Failed to fetch subscriptions for {user_id}: {e}")
+            continue
+
+        for sub in subs:
+            query = sub["query"]
+            try:
+                # Query the /search endpoint (last 6 hours only for background check)
+                async with httpx.AsyncClient(timeout=10) as client:
+                    resp = await client.get(f"{API_URL}/search", params={"q": query, "hours": 1, "limit": 3})
+                    results = resp.json() if resp.status_code == 200 else []
+            except Exception as e:
+                logger.error(f"Search failed for query '{query}': {e}")
+                continue
+
+            if results:
+                lines = [f"🔔 *Новые посты по подписке: {query}*"]
+                for r in results:
+                    summary = r.get("summary") or r.get("text", "")[:100] + "..."
+                    url = f"https://t.me/{r['source_name']}" if r.get('source_name') else ""
+                    lines.append(f"\n\u2022 {summary}")
+                    if url:
+                        lines[-1] += f" \u2014 [источник]({url})"
+                
+                try:
+                    await app.bot.send_message(
+                        chat_id=user_id,
+                        text="\n".join(lines),
+                        parse_mode="Markdown",
+                        disable_web_page_preview=True
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send sub alert to {user_id}: {e}")
+
 
 
 def main():
@@ -383,7 +425,31 @@ def main():
         first=interval_hours * 3600,
     )
 
+    # Schedule subscription checks every 30 minutes
+    app.job_queue.run_repeating(
+        callback=lambda ctx: check_subscriptions(app),
+        interval=1800, # 30 mins
+        first=60,      # Run first check 1 min after startup
+    )
+
     logger.info("News Radar Bot started")
+
+    # Register commands in Telegram menu (shows up as / hint in the chat)
+    async def set_commands(app):
+        await app.bot.set_my_commands([
+            BotCommand("start",     "Запустить бота"),
+            BotCommand("hot",       "Горячие тренды прямо сейчас"),
+            BotCommand("digest",    "Последний AI дайджест"),
+            BotCommand("track",     "Подписаться на тему: /track SEC"),
+            BotCommand("untrack",   "Отписаться от темы"),
+            BotCommand("my_tracks", "Мои активные подписки"),
+            BotCommand("ask",       "Спросить агента: /ask что с BTC?"),
+            BotCommand("status",    "Статистика системы"),
+            BotCommand("help",      "Справка"),
+        ])
+        logger.info("Bot commands registered in Telegram menu")
+
+    app.post_init = set_commands
 
     # python-telegram-bot v20+ manages its own event loop
     app.run_polling(drop_pending_updates=True)

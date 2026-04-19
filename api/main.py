@@ -238,12 +238,15 @@ async def get_topics(
 # ──────────────────────────────────────────────
 
 @app.post("/digest/generate", response_model=DigestResponse)
-async def generate_digest(hours: int = Query(6, ge=1, le=48)):
-    """Manually trigger AI digest generation for the last N hours."""
+async def generate_digest(hours: int = Query(6, ge=1, le=48), force: bool = Query(False)):
+    """Manually trigger AI digest generation for the last N hours.
+    
+    Use ?force=true to bypass the in_digest filter (re-generate even if all msgs were used).
+    """
     llm = LLMClient()
     analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm)
-    
-    digest_text = await analyzer.generate_digest(hours=hours)
+
+    digest_text = await analyzer.generate_digest(hours=hours, force=force)
     if not digest_text:
         raise HTTPException(status_code=400, detail="Could not generate digest (no news or LLM error)")
 

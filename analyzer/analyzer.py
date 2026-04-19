@@ -402,7 +402,7 @@ class NewsAnalyzer:
         meta = self._topics.get(topic, {})
         return bool(meta.get("alert", False))
 
-    async def generate_digest(self, hours: int = 3) -> str | None:
+    async def generate_digest(self, hours: int = 3, force: bool = False) -> str | None:
         """
         Generate a digest using a 4-tier priority queue.
 
@@ -417,6 +417,8 @@ class NewsAnalyzer:
           always_include_alerts — inserts alerts regardless of cap
           dedup_threshold     — cosine similarity threshold for semantic dedup
           digest_max_items    — total cap
+
+        force=True: bypass in_digest filter (for manual /digest new command).
         """
         # ── Load rules (hot-reload from settings if cfg available) ──
         rules = {}
@@ -435,8 +437,10 @@ class NewsAnalyzer:
         since = datetime.utcnow() - timedelta(hours=hours)
         conn = get_db(self.db_path)
 
+        in_digest_filter = "" if force else "AND m.in_digest = 0"
+
         try:
-            rows = conn.execute("""
+            rows = conn.execute(f"""
                 SELECT
                     m.id,
                     m.external_id,
@@ -458,7 +462,7 @@ class NewsAnalyzer:
                 LEFT JOIN analysis a ON a.message_id = m.id
                 WHERE datetime(m.collected_at) >= datetime(?)
                   AND m.analyzed = 1
-                  AND m.in_digest = 0
+                  {in_digest_filter}
                   AND a.temperature IS NOT NULL
                 ORDER BY a.temperature DESC
                 LIMIT 100
