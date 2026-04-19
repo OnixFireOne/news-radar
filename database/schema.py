@@ -142,7 +142,6 @@ CREATE TABLE IF NOT EXISTS trend_messages (
     PRIMARY KEY (trend_id, message_id)
 );
 
--- Indexes
 CREATE INDEX IF NOT EXISTS idx_messages_analyzed     ON messages(analyzed);
 CREATE INDEX IF NOT EXISTS idx_messages_collected_at ON messages(collected_at);
 CREATE INDEX IF NOT EXISTS idx_messages_source_id    ON messages(source_id);
@@ -153,6 +152,19 @@ CREATE INDEX IF NOT EXISTS idx_trends_status         ON trends(status);
 CREATE INDEX IF NOT EXISTS idx_trends_score          ON trends(trend_score DESC);
 CREATE INDEX IF NOT EXISTS idx_source_stats_date     ON source_stats(period_date DESC);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_sources_type_name ON sources(type, name);
+
+-- Dispatch log: tracks every event sent to agent or fallback Telegram
+CREATE TABLE IF NOT EXISTS dispatch_log (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_type      TEXT NOT NULL,     -- breaking_alert, hot_trend, digest, subscription_match
+    sent_to         TEXT NOT NULL,     -- 'agent' or 'fallback_telegram'
+    status          TEXT NOT NULL,     -- 'ok', 'error'
+    payload_preview TEXT,              -- first 300 chars of the message payload
+    http_status     INTEGER,           -- HTTP response code (agent calls only)
+    created_at      DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_dispatch_log_created  ON dispatch_log(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_dispatch_log_type     ON dispatch_log(event_type);
 """
 
 
@@ -208,6 +220,8 @@ MIGRATIONS = [
      "ALTER TABLE sources ADD COLUMN reliability_score REAL DEFAULT 1.0"),
     ("add_message_in_digest",
      "ALTER TABLE messages ADD COLUMN in_digest INTEGER DEFAULT 0"),
+    ("add_trends_alerted_at",
+     "ALTER TABLE trends ADD COLUMN alerted_at DATETIME DEFAULT NULL"),
 ]
 
 

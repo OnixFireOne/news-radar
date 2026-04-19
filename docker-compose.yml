@@ -61,6 +61,7 @@ services:
     restart: unless-stopped
     networks:
       - news-radar-network
+      - openclaw-net
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

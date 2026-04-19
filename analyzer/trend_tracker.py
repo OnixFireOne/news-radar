@@ -253,6 +253,7 @@ class TrendTracker:
                     m.views,
                     m.collected_at,
                     s.name AS source_name,
+                    m.forward_from_channel,
                     a.temperature,
                     a.topic AS llm_topic
                 FROM messages m
@@ -404,7 +405,13 @@ class TrendTracker:
         return clusters
 
     def _build_cluster(self, label: str, messages: list[dict]) -> TrendCluster:
-        """Build a TrendCluster from a group of messages."""
+        """Build a TrendCluster from a group of messages.
+
+        Uses the effective source for unique counting:
+        - If a message is a forward (forward_from_channel is set), use that as the source key.
+        - Otherwise use source_name (the channel that published natively).
+        This prevents aggregators that forward content from inflating unique_sources.
+        """
         timestamps = []
         for msg in messages:
             try:
@@ -412,7 +419,13 @@ class TrendTracker:
             except Exception:
                 timestamps.append(datetime.now(timezone.utc))
 
-        sources = [m["source_name"] for m in messages]
+        # Effective source: forward origin > publisher name
+        sources = [
+            (m.get("forward_from_channel") or m["source_name"])
+            for m in messages
+        ]
+        # Always include the publisher name too so subscriber channels get credit
+        all_channel_names = [m["source_name"] for m in messages]
 
         return TrendCluster(
             topic=label,
@@ -548,15 +561,31 @@ class TrendTracker:
                     trend_id = cursor.lastrowid
                     existing_status = "emerging" # New trend, default to emerging to see if it hit hot
 
-                # Phase 5: Instant Alerts based on Trend
-                if status == "hot" and existing_status != "hot":
-                    if self.analyzer and self.analyzer.cfg and self.analyzer.cfg.get("instant_alerts_trend", True):
+                # Hot Trend Alert: fires ONCE when unique_sources crosses the threshold
+                # and the trend has never been alerted before (alerted_at IS NULL)
+                existing_alerted_at = conn.execute(
+                    "SELECT alerted_at FROM trends WHERE id=?", (trend_id,)
+                ).fetchone()
+                alerted_at_val = existing_alerted_at["alerted_at"] if existing_alerted_at else None
+
+                min_sources = int(os.getenv(
+                    "HOT_TREND_MIN_SOURCES",
+                    str((self.analyzer.cfg or {}).get("hot_trend_min_sources", 5) if self.analyzer else 5)
+                ))
+                if cluster.unique_sources >= min_sources and not alerted_at_val:
+                    conn.execute(
+                        "UPDATE trends SET alerted_at = CURRENT_TIMESTAMP WHERE id = ?",
+                        (trend_id,)
+                    )
+                    if self.analyzer:
                         asyncio.create_task(
-                            self.analyzer._route_event("trend_alert", {
+                            self.analyzer._route_event("hot_trend", {
                                 "topic": cluster.topic,
                                 "score": score,
                                 "sources": cluster.unique_sources,
-                                "summary": summary or "Trend summary pending."
+                                "channels": list(set(cluster.sources))[:8],
+                                "message_count": cluster.message_count,
+                                "summary": summary or "Hot trend detected.",
                             })
                         )
 

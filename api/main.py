@@ -765,6 +765,40 @@ async def push_alert(alert: AlertRequest):
                 logger.error(f"Failed to send OpenClaw alert: {e}")
     return {"status": "dispatched", "users_alerted": len(allowed_users)}
 
+@app.get("/dispatch-log")
+async def get_dispatch_log(
+    limit: int = Query(50, ge=1, le=500),
+    event_type: str = Query(None),
+    sent_to: str = Query(None),
+):
+    """Audit log of all events dispatched to the agent or Telegram fallback.
+
+    Useful for debugging: see who sent what, when, and whether it succeeded.
+    Filter by event_type (breaking_alert, hot_trend, digest, subscription_match)
+    or sent_to (agent, fallback_telegram).
+    """
+    conn = get_db(DB_PATH)
+    try:
+        conditions = []
+        params = []
+        if event_type:
+            conditions.append("event_type = ?")
+            params.append(event_type)
+        if sent_to:
+            conditions.append("sent_to = ?")
+            params.append(sent_to)
+        where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+        params.append(limit)
+        rows = conn.execute(
+            f"SELECT * FROM dispatch_log {where} ORDER BY created_at DESC LIMIT ?",
+            params
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+
 @app.patch("/messages/{id}/noise", response_model=dict)
 async def mark_noise(id: int):
     """Mark a message as noise/spam by setting temperature=1 and analyzed=1."""

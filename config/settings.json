@@ -30,6 +30,7 @@
   },
   "digest_engine": "agent",
   "instant_alerts_temperature": true,
-  "instant_alerts_trend": true,
-  "route_via_openclaw": true
+  "route_via_openclaw": true,
+  "breaking_alert_min_temp": 10,
+  "hot_trend_min_sources": 5
 }

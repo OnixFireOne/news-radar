@@ -146,9 +146,12 @@ class NewsAnalyzer:
                     conn.commit()
                     count += 1
 
-                    # Phase 5: Instant Alerts -> directly to Telegram if temperature >= 9.0
+                    # Phase 5: Instant Alerts — only for temp = 10 (true emergency)
                     temp = float(result.get("temperature", 5.0))
-                    if temp >= 9.0 and self.cfg and self.cfg.get("instant_alerts_temperature", True):
+                    min_alert_temp = float(
+                        self.cfg.get("breaking_alert_min_temp", 10) if self.cfg else 10
+                    )
+                    if temp >= min_alert_temp and self.cfg and self.cfg.get("instant_alerts_temperature", True):
                         source_n = row["source_name"]
                         raw_topic = result.get("topic", "general")
                         summary = result.get("summary", "No summary provided.")
@@ -289,15 +292,32 @@ class NewsAnalyzer:
                     )
                     resp.raise_for_status()
                     logger.info(f"Event '{event_type}' \u2192 OpenClaw (HTTP {resp.status_code})")
+                    self._log_dispatch(event_type, "agent", "ok", text, resp.status_code)
             except Exception as e:
                 logger.error(f"OpenClaw webhook failed ({event_type}): {e} \u2014 falling back to Telegram")
+                self._log_dispatch(event_type, "agent", "error", text)
                 await self._fallback_telegram(event_type, data)
         else:
-            # \u2500\u2500 Direct Telegram (OpenClaw disabled or not configured) \u2500\u2500
+            # Direct Telegram (OpenClaw disabled or not configured)
             await self._fallback_telegram(event_type, data)
 
+    def _log_dispatch(self, event_type: str, sent_to: str, status: str,
+                      payload_preview: str = "", http_status: int = None) -> None:
+        """Persist a dispatch record to dispatch_log for audit and debugging."""
+        try:
+            conn = get_db(self.db_path)
+            conn.execute(
+                "INSERT INTO dispatch_log (event_type, sent_to, status, payload_preview, http_status) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (event_type, sent_to, status, payload_preview[:300], http_status)
+            )
+            conn.commit()
+            conn.close()
+        except Exception as e:
+            logger.warning(f"dispatch_log write failed: {e}")
+
     async def _fallback_telegram(self, event_type: str, data: dict):
-        """Send event directly to Telegram when OpenClaw is not configured."""
+        """Send event directly to Telegram when OpenClaw is not configured or is unavailable."""
         bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
         allowed_users = os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",")
         if not bot_token or not allowed_users or not allowed_users[0]:
@@ -307,26 +327,33 @@ class NewsAnalyzer:
             safe_source = data["source"].replace("_", "\_")
             source_url = data.get("source_url", f"https://t.me/{data['source']}")
             message = (
-                f"🚨 *BREAKING NEWS* (Температура: {data['temperature']:.0f}/10)\n\n"
-                f"🕹 Тема: `{data['topic']}`\n\n"
-                f"📝 {data['summary']}\n\n"
-                f"[\u0438\u0441\u0442\u043e\u0447\u043d\u0438\u043a]({source_url})"
+                f"\U0001f6a8 *BREAKING* (Temp: {data['temperature']:.0f}/10)\n\n"
+                f"\U0001f3ae Topic: `{data['topic']}`\n\n"
+                f"\U0001f4dd {data['summary']}\n\n"
+                f"[source]({source_url})"
+            )
+        elif event_type == "hot_trend":
+            channels = ", ".join(f"@{c}" for c in data.get("channels", [])[:5])
+            message = (
+                f"\U0001f525 *HOT TREND: {data.get('topic')}*\n\n"
+                f"\U0001f4e1 {data.get('sources')} independent channels: {channels}\n"
+                f"\U0001f4c8 Score: *{data.get('score', 0):.1f}* | Messages: {data.get('message_count', 0)}\n\n"
+                f"\U0001f4dd {data.get('summary', '')}"
             )
         elif event_type == "trend_alert":
             safe_topic = data["topic"].replace("_", "\_")
             message = (
-                f"🔥 *TRENDING NOW*\n\n"
-                f"📡 `{safe_topic}`\n"
-                f"📈 Score: *{data['score']:.1f}* \u2014 {data['sources']} независимых канала\n\n"
-                f"📝 {data['summary']}"
+                f"\U0001f525 *TRENDING*: `{safe_topic}`\n"
+                f"\U0001f4c8 Score: *{data['score']:.1f}* \u2014 {data['sources']} channels\n\n"
+                f"\U0001f4dd {data['summary']}"
             )
         elif event_type == "digest":
             message = data.get("text", "")
         elif event_type == "subscription_match":
             message = (
-                f"🔔 *Сработала подписка: {data.get('query')}*\n\n"
-                f"📝 {data.get('summary')}\n\n"
-                f"[источник](https://t.me/{data.get('source')})"
+                f"\U0001f514 *Subscription match: {data.get('query')}*\n\n"
+                f"\U0001f4dd {data.get('summary')}\n\n"
+                f"[source](https://t.me/{data.get('source')})"
             )
         else:
             return
@@ -341,8 +368,10 @@ class NewsAnalyzer:
                         json={"chat_id": uid, "text": message, "parse_mode": "Markdown",
                               "disable_web_page_preview": True}
                     )
+                    self._log_dispatch(event_type, "fallback_telegram", "ok", message[:300])
                 except Exception as e:
                     logger.error(f"Telegram fallback failed for {uid}: {e}")
+                    self._log_dispatch(event_type, "fallback_telegram", "error", message[:300])
 
     async def _store_embedding(
         self,
