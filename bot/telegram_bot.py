@@ -343,48 +343,7 @@ async def send_auto_digest(app: Application) -> None:
         except Exception as e:
             logger.error(f"Failed to send digest to {user_id}: {e}")
 
-async def check_subscriptions(app: Application) -> None:
-    """Background task to check subscriptions for new matches."""
-    for user_id in list(ALLOWED_USERS):
-        try:
-            async with httpx.AsyncClient(timeout=10) as client:
-                resp = await client.get(f"{API_URL}/subscriptions", params={"user_id": str(user_id)})
-                subs = resp.json() if resp.status_code == 200 else []
-        except Exception as e:
-            logger.error(f"Failed to fetch subscriptions for {user_id}: {e}")
-            continue
 
-        for sub in subs:
-            query = sub["query"]
-            try:
-                # Query the /search endpoint (last 6 hours only for background check)
-                async with httpx.AsyncClient(timeout=10) as client:
-                    resp = await client.get(f"{API_URL}/search", params={"q": query, "hours": 1, "limit": 3})
-                    results = resp.json() if resp.status_code == 200 else []
-            except Exception as e:
-                logger.error(f"Search failed for query '{query}': {e}")
-                continue
-
-            if results:
-                payload = (
-                    f"[NEWS-RADAR EVENT: subscription_match]\n"
-                    f"User: {user_id}\n"
-                    f"Query: {query}\n"
-                    f"Matches found: {len(results)}\n\n"
-                )
-                for r in results:
-                    summary = r.get("summary") or r.get("text", "")[:100] + "..."
-                    url = f"https://t.me/{r.get('source_name', '')}"
-                    payload += f"- {summary} (Source: {url})\n"
-                
-                payload += "\nAction: Review these matches and notify the user using your best judgement. Provide the source links."
-
-                try:
-                    woke = await wake_openclaw(payload)
-                    if not woke:
-                        logger.warning(f"Failed to route subscription matches for {query} to OpenClaw.")
-                except Exception as e:
-                    logger.error(f"Failed to wake OpenClaw for subscription matches: {e}")
 
 
 
@@ -427,12 +386,7 @@ def main():
         first=interval_hours * 3600,
     )
 
-    # Schedule subscription checks every 30 minutes
-    app.job_queue.run_repeating(
-        callback=lambda ctx: check_subscriptions(app),
-        interval=1800, # 30 mins
-        first=60,      # Run first check 1 min after startup
-    )
+
 
     logger.info("News Radar Bot started")
 

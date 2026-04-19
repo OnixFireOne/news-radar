@@ -76,6 +76,13 @@ class NewsAnalyzer:
         count = 0
 
         try:
+            # Load active subscriptions for real-time alerting
+            active_subs = conn.execute("SELECT user_id, query FROM subscriptions WHERE active=1").fetchall()
+            subs_list = [{"user_id": s["user_id"], "query": s["query"], "q_lower": s["query"].lower()} for s in active_subs]
+        except Exception:
+            subs_list = []
+
+        try:
             rows = conn.execute("""
                 SELECT m.id, m.text, s.name as source_name
                 FROM messages m
@@ -149,6 +156,22 @@ class NewsAnalyzer:
                         asyncio.create_task(
                             self._send_instant_alert(row["id"], source_n, temp, raw_topic, summary, text)
                         )
+
+                    # Real-time subscription matching
+                    if subs_list and result:
+                        text_lower = row["text"].lower()
+                        summary_lower = result.get("summary", "").lower()
+                        for sub in subs_list:
+                            if sub["q_lower"] in text_lower or sub["q_lower"] in summary_lower:
+                                asyncio.create_task(
+                                    self._route_event("subscription_match", {
+                                        "user_id": sub["user_id"],
+                                        "query": sub["query"],
+                                        "summary": result.get("summary", ""),
+                                        "source": row["source_name"],
+                                        "text": row["text"][:300]
+                                    })
+                                )
 
                     # Small delay to avoid overloading the LLM
                     await asyncio.sleep(0.5)
@@ -230,6 +253,15 @@ class NewsAnalyzer:
                     f"Period: {data.get('period')}\n"
                     f"Messages: {data.get('message_count')}\n\n"
                     f"{data.get('text', '')}"
+                )
+            elif event_type == "subscription_match":
+                text = (
+                    f"[NEWS-RADAR EVENT: subscription_match]\n"
+                    f"User: {data.get('user_id')}\n"
+                    f"Query: {data.get('query')}\n"
+                    f"Source: {data.get('source')}\n"
+                    f"Summary: {data.get('summary')}\n\n"
+                    f"Action: Review this real-time match and immediately notify the user if relevant. Provide the source link (https://t.me/{data.get('source')})."
                 )
             else:
                 text = f"[NEWS-RADAR EVENT: {event_type}]\n{json.dumps(data, ensure_ascii=False)}"
