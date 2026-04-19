@@ -366,23 +366,25 @@ async def check_subscriptions(app: Application) -> None:
                 continue
 
             if results:
-                lines = [f"🔔 *Новые посты по подписке: {query}*"]
+                payload = (
+                    f"[NEWS-RADAR EVENT: subscription_match]\n"
+                    f"User: {user_id}\n"
+                    f"Query: {query}\n"
+                    f"Matches found: {len(results)}\n\n"
+                )
                 for r in results:
                     summary = r.get("summary") or r.get("text", "")[:100] + "..."
-                    url = f"https://t.me/{r['source_name']}" if r.get('source_name') else ""
-                    lines.append(f"\n\u2022 {summary}")
-                    if url:
-                        lines[-1] += f" \u2014 [источник]({url})"
+                    url = f"https://t.me/{r.get('source_name', '')}"
+                    payload += f"- {summary} (Source: {url})\n"
                 
+                payload += "\nAction: Review these matches and notify the user using your best judgement. Provide the source links."
+
                 try:
-                    await app.bot.send_message(
-                        chat_id=user_id,
-                        text="\n".join(lines),
-                        parse_mode="Markdown",
-                        disable_web_page_preview=True
-                    )
+                    woke = await wake_openclaw(payload)
+                    if not woke:
+                        logger.warning(f"Failed to route subscription matches for {query} to OpenClaw.")
                 except Exception as e:
-                    logger.error(f"Failed to send sub alert to {user_id}: {e}")
+                    logger.error(f"Failed to wake OpenClaw for subscription matches: {e}")
 
 
 
