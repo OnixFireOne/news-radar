@@ -250,10 +250,10 @@ async def get_topics(
 # ──────────────────────────────────────────────
 
 @app.post("/digest/raw")
-async def get_raw_digest(hours: int = Query(6, ge=1, le=48), force: bool = Query(False)):
+async def get_raw_digest(hours: Optional[int] = Query(None, ge=1, le=48), force: bool = Query(False)):
     """Generate and return raw digest messages text without pushing via webhook."""
     from config.config_watcher import ConfigWatcher
-    llm = LLMClient()
+    llm = LLMClient(timeout=300)
     analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm, cfg=ConfigWatcher())
     
     result = await analyzer.generate_digest(hours=hours, force=force, return_raw=True)
@@ -262,13 +262,13 @@ async def get_raw_digest(hours: int = Query(6, ge=1, le=48), force: bool = Query
     return {"raw_text": result}
 
 @app.post("/digest/generate")
-async def generate_digest(hours: int = Query(6, ge=1, le=48), force: bool = Query(False)):
+async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force: bool = Query(False)):
     """Manually trigger AI digest generation for the last N hours.
     
     Use ?force=true to bypass the in_digest filter (re-generate even if all msgs were used).
     """
     from config.config_watcher import ConfigWatcher
-    llm = LLMClient()
+    llm = LLMClient(timeout=300)
     analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm, cfg=ConfigWatcher())
 
     result = await analyzer.generate_digest(hours=hours, force=force)
@@ -979,6 +979,16 @@ async def queue_digest(digest: DigestQueueRequest):
         conn.commit()
     except Exception as e:
         logger.error(f"Failed to save Agent digest to DB: {e}")
+    finally:
+        conn.close()
+
+    # Now officially confirm pending messages as processed
+    conn = get_db(DB_PATH)
+    try:
+        conn.execute("UPDATE messages SET in_digest=1 WHERE in_digest=2")
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to confirm pending agent digest: {e}")
     finally:
         conn.close()
 

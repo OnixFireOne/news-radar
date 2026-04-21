@@ -24,11 +24,11 @@
   "digest_max_items": 7,
   "digest_min_temperature": 5.0,
   "digest_rules": {
-    "max_per_topic": 2,
+    "max_per_topic": 1,
     "always_include_alerts": true,
     "min_unique_sources_for_trend": 3,
     "dedup_threshold": 0.85,
-    "cross_dedup_threshold": 0.75
+    "cross_dedup_threshold": 0.82
   },
   "instant_alerts_temperature": true,
   "route_via_openclaw": false,

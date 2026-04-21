@@ -16,7 +16,8 @@ import asyncio
 import logging
 import os
 import sys
-from datetime import datetime
+from datetime import datetime, time
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 import httpx
@@ -167,8 +168,9 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     digest = await fetch_api("/digest/latest")
 
-    args = ctx.args or []
-    force_new = "new" in map(str.lower, args)
+    args = [str(a).lower() for a in (ctx.args or [])]
+    force_new = "new" in args
+    force_flag = "force" in args
 
     if not digest or force_new:
         # Check current routing mode from API settings
@@ -176,10 +178,11 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         use_agent = settings.get("route_via_openclaw", False)
 
         if use_agent:
+            force_param = "true" if force_flag else "false"
             woke = await wake_openclaw(
                 "/reset /no_think\n"
                 "[NEWS-RADAR COMMAND: manual_digest]\n"
-                "Action: User requested a manual digest. Fetch data from /digest/raw?hours=6&force=true using Python, write a news summary, and push it to /digest/queue."
+                f"Action: User requested a manual digest. Fetch data from /digest/raw?force={force_param}&hours=6 using Python, write a news summary, and push it to /digest/queue."
             )
             if woke:
                 await update.message.reply_text("⏳ Request sent to AI agent. Digest will be published shortly...")
@@ -191,7 +194,8 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚙️ Generating digest via local LLM...")
             try:
                 async with httpx.AsyncClient(timeout=180) as client:
-                    resp = await client.post(f"{API_URL}/digest/generate?hours=6&force=true")
+                    force_param = "true" if force_flag else "false"
+                    resp = await client.post(f"{API_URL}/digest/generate?force={force_param}&hours=6")
                     if resp.status_code == 200:
                         digest = resp.json()
                     else:
@@ -216,7 +220,11 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if len(content) > 4000:
         content = content[:4000] + "\n\n... (truncated)"
 
-    await update.message.reply_text(content, parse_mode="Markdown")
+    try:
+        await update.message.reply_text(content, parse_mode="Markdown")
+    except Exception as e:
+        logger.error(f"Markdown parse failed for digest: {e}")
+        await update.message.reply_text(content)
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -357,17 +365,33 @@ async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # AUTO-DIGEST (scheduled)
 # ──────────────────────────────────────────────
 
-async def send_auto_digest(app: Application) -> None:
-    """Send automatic digest to all authorized users."""
-    digest = await fetch_api("/digest/latest")
-    if not digest:
+async def perform_scheduled_digest(app: Application) -> None:
+    """Trigger digest generation automatically if legacy mode is active."""
+    settings = await fetch_api("/settings") or {}
+    use_agent = settings.get("route_via_openclaw", False)
+    
+    if use_agent:
+        logger.info("Skipping scheduled local digest: route_via_openclaw is enabled.")
         return
 
-    content = digest["content_md"]
-    if len(content) > 4000:
-        content = content[:4000] + "\n\n..."
+    logger.info("Triggering scheduled legacy digest generation...")
+    try:
+        async with httpx.AsyncClient(timeout=180) as client:
+            resp = await client.post(f"{API_URL}/digest/generate")
+            if resp.status_code == 200:
+                digest = resp.json()
+            else:
+                logger.error(f"Failed to generate scheduled digest: {resp.text}")
+                return
+    except Exception as e:
+        logger.error(f"Error triggering scheduled digest: {e}")
+        return
 
-    text = f"⏰ Auto Digest\n\n{content}"
+    content = digest.get("content_md", "")
+    if len(content) > 4000:
+        content = content[:4000] + "\n\n...(truncated)"
+
+    text = f"⏰ Авто-Дайджест\n\n{content}"
 
     for user_id in list(ALLOWED_USERS):
         try:
@@ -411,11 +435,16 @@ def main():
     app.add_handler(CommandHandler("my_tracks", cmd_my_tracks))
     app.add_handler(CommandHandler("ask", cmd_ask))
 
-    # Schedule auto-digest
-    app.job_queue.run_repeating(
-        callback=lambda ctx: send_auto_digest(app),
-        interval=interval_hours * 3600,
-        first=interval_hours * 3600,
+    msk_tz = ZoneInfo("Europe/Moscow")
+
+    # Schedule legacy auto-digest at 12:00 MSK and 20:00 MSK
+    app.job_queue.run_daily(
+        callback=lambda ctx: perform_scheduled_digest(app),
+        time=time(hour=12, minute=0, tzinfo=msk_tz)
+    )
+    app.job_queue.run_daily(
+        callback=lambda ctx: perform_scheduled_digest(app),
+        time=time(hour=20, minute=0, tzinfo=msk_tz)
     )
 
 

@@ -527,7 +527,7 @@ class NewsAnalyzer:
         meta = self._topics.get(topic, {})
         return bool(meta.get("alert", False))
 
-    async def generate_digest(self, hours: int = 3, force: bool = False, return_raw: bool = False) -> str | None:
+    async def generate_digest(self, hours: int | None = None, force: bool = False, return_raw: bool = False) -> str | None:
         """
         Generate a digest using a 4-tier priority queue.
 
@@ -559,8 +559,24 @@ class NewsAnalyzer:
         trend_src_min     = rules.get("min_unique_sources_for_trend", 3)
         dedup_threshold   = rules.get("dedup_threshold", 0.85)
 
-        since = datetime.utcnow() - timedelta(hours=hours)
         conn = get_db(self.db_path)
+        try:
+            conn.execute("UPDATE messages SET in_digest=0 WHERE in_digest=2")
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to reset pending digests: {e}")
+
+        if hours is not None:
+            since = datetime.utcnow() - timedelta(hours=hours)
+        else:
+            try:
+                last_row = conn.execute("SELECT period_end FROM digests ORDER BY created_at DESC LIMIT 1").fetchone()
+                if last_row:
+                    since = datetime.fromisoformat(last_row["period_end"])
+                else:
+                    since = datetime.utcnow() - timedelta(hours=12)
+            except Exception:
+                since = datetime.utcnow() - timedelta(hours=12)
 
         in_digest_filter = "" if force else "AND m.in_digest = 0"
 
@@ -628,21 +644,23 @@ class NewsAnalyzer:
                 return True
             return False
 
+        oversample_multiplier = 1
+
         # Alerts bypass cap
         for item in alerts:
-            if len(selected) >= digest_max:
+            if len(selected) >= digest_max * oversample_multiplier:
                 break
             try_add(item, force=True)
 
         for item in trends_tier + high_tier:
-            if len(selected) >= digest_max:
+            if len(selected) >= digest_max * oversample_multiplier:
                 break
             try_add(item)
 
         # Diversity fill: one best per remaining topic
         seen_topics = set(topic_counts.keys())
         for item in fill_tier:
-            if len(selected) >= digest_max:
+            if len(selected) >= digest_max * oversample_multiplier:
                 break
             topic = item["topic"] or "general"
             if topic not in seen_topics:
@@ -667,6 +685,11 @@ class NewsAnalyzer:
             f"Digest: {len(alerts)} alerts, {len(trends_tier)} trend msgs, "
             f"{len(high_tier)} high-temp → {len(selected)} selected after dedup"
         )
+
+        # For Agent mode, strictly enforce the max limit after dedup.
+        # For Legacy Mode, we KEEP the oversized `selected` list and let the LLM prune it.
+        if return_raw:
+            selected = selected[:digest_max]
 
         # ── Build LLM prompt ──
         # Build post URLs for source linking in the digest
@@ -713,19 +736,20 @@ class NewsAnalyzer:
             count=len(selected),
             messages=messages_text,
             ongoing_trends_section=ongoing_trends_section,
+            digest_max=digest_max,
         )
 
         if return_raw:
-            # ── Pull Architecture: Mark in DB and return raw text immediately ──
+            # ── Pull Architecture: Mark in DB as pending and return raw text immediately ──
             try:
                 conn = get_db(self.db_path)
                 selected_ids = [row["id"] for row in selected]
-                conn.executemany("UPDATE messages SET in_digest=1 WHERE id=?", [(mid,) for mid in selected_ids])
+                conn.executemany("UPDATE messages SET in_digest=2 WHERE id=?", [(mid,) for mid in selected_ids])
                 
                 if selected_ids:
                     placeholders = ",".join("?" * len(selected_ids))
                     conn.execute(f"""
-                        UPDATE messages SET in_digest=1
+                        UPDATE messages SET in_digest=2
                         WHERE id IN (
                             SELECT tm2.message_id
                             FROM trend_messages tm1
@@ -790,9 +814,16 @@ class NewsAnalyzer:
                     user_prompt=prompt,
                     system_prompt=SYSTEM_PROMPT,
                     temperature=0.4,
-                    max_tokens=1500,
-                    enable_thinking=True,
+                    enable_thinking=False,
                 )
+                if digest_content:
+                    # Fix LLM hallucinated GitHub bold (**) to Telegram bold (*)
+                    digest_content = digest_content.replace("**", "*")
+                    # Force bold on the main header if LLM dropped the asterisks
+                    lines = digest_content.splitlines()
+                    if lines and "🔥 Главное за" in lines[0] and not lines[0].startswith("*"):
+                        lines[0] = f"*{lines[0]}*"
+                    digest_content = "\n".join(lines)
             except Exception as e:
                 logger.error(f"Local LLM digest generation failed: {e}")
                 return None
@@ -1057,7 +1088,7 @@ async def main():
 
     init_db(db_path)
 
-    llm = LLMClient()
+    llm = LLMClient(timeout=300)  # 5 min — covers digest with full thinking
 
     logger.info(f"Checking LLM at {llm.base_url}...")
     if await llm.health_check():

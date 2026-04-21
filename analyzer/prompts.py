@@ -37,36 +37,44 @@ Temperature scale:
 # BATCH DIGEST (multiple messages over a time period)
 # ──────────────────────────────────────────────
 
-DIGEST_PROMPT = """You are creating a short, engaging crypto news digest for the period: {period}.
+DIGEST_PROMPT = """You are a crypto news editor. Write a digest in RUSSIAN for a Telegram channel.
 
-Here are {count} fresh messages from different Telegram channels:
+Time period: {period}
+You have {count} source messages below. Analyze them and write the digest NOW. Do not explain your reasoning.
 
+SOURCE MESSAGES:
 {messages}
 {ongoing_trends_section}
-Write a punchy, easy-to-read digest in RUSSIAN using Markdown. Limit text to the essentials.
-IMPORTANT: Fresh stories MUST end with a Markdown link: [источник](PostURL)
+---
+STEP 1 — MERGE (do this silently before writing):
+Scan all source messages. Find any groups that cover the SAME event/story from different angles (e.g. two articles about the same hack, or same protocol vulnerability). Merge each such group into ONE slot with the most complete information. You must do this — always prefer 1 merged slot over 2 overlapping slots.
 
-Format:
-
+STEP 2 — WRITE UP TO {digest_max} blocks (write fewer if you merged stories):
+Start your response exactly with this text (including asterisks!):
 *🔥 Главное за {period}:*
 
-🔹 *[TOPIC] / Температура: [TEMP]/10*
-*Суть новости*
-Описание 2-3 предложения. [источник](PostURL)
+CRITICAL FORMATTING:
+- Use Telegram Markdown: single *asterisks* for bold. NEVER use double **asterisks**.
 
-[up to 5 fresh stories]
+Format for each block (copy this exact structure):
+*🔹 TopicName (X/10)*
+*Заголовок новости одной строкой*
+2-3 предложения контекста на русском. [источник](PostURL)
 
-If ONGOING TRENDS section is present above:
-Add this block BEFORE the market sentiment:
+STEP 3 — CLOSING blocks (always add after the news blocks):
 
-🔄 *Продолжение: [main ongoing topic]*
-[Write 2-3 sentences synthesizing all the ongoing updates — what’s new compared to last digest, how the story is developing, any numbers or outcomes]
-
-*📊 Настроения на рынке:*
-[Bullish / Bearish / Neutral — one sentence in Russian]
+*📊 Настроение на рынке:*
+Одно предложение: Bullish / Bearish / Neutral и почему.
 
 *⚡ На радаре:*
-[One trend or token to watch, one sentence in Russian]"""
+Одно предложение: один токен или тренд для наблюдения.
+
+STEP 4 — If ONGOING TRENDS section is present above, insert BETWEEN news blocks and closing:
+*🔄 Продолжение: [topic name]*
+2-3 предложения: что изменилось vs прошлый дайджест, ключевые цифры.
+(CRITICAL: DO NOT write a Продолжение block for an event if you already covered it in the main blocks above!)
+
+CRITICAL: Output ONLY the digest text. No meta-commentary. No "Wait," or "Let me". Start directly with *🔥 Главное за {period}:* (with the asterisks)."""
 
 
 # ──────────────────────────────────────────────

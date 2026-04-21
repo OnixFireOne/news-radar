@@ -41,7 +41,7 @@ class LLMClient:
         user_prompt: str,
         system_prompt: str = "",
         temperature: float = 0.3,
-        max_tokens: int = 1024,
+        max_tokens: int = -1,
         enable_thinking: bool = False,
     ) -> str:
         """
@@ -51,28 +51,25 @@ class LLMClient:
             user_prompt: main user message
             system_prompt: system instruction
             temperature: 0 = deterministic, 1 = creative
-            max_tokens: max tokens in response
-            enable_thinking: strictly toggle Jinja-based reasoning process for Qwen3/Llama servers
+            max_tokens: max tokens in response. -1 = unlimited (server default).
+            enable_thinking: passed to Jinja-based servers (e.g. Qwen3 with --jinja)
 
         Returns:
-            Model response as plain text
+            Model response as plain text (from content field)
         """
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": user_prompt})
 
-        overhead = self._thinking_overhead if enable_thinking else 0
         payload = {
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens + overhead,
             "enable_thinking": enable_thinking,
-            # llama.cpp server and vLLM parse Jinja template kwargs here:
-            "chat_template_kwargs": {
-                "enable_thinking": enable_thinking
-            }
+            "chat_template_kwargs": {"enable_thinking": enable_thinking},
         }
+        if max_tokens != -1:
+            payload["max_tokens"] = max_tokens
         if self.model:
             payload["model"] = self.model
 
@@ -90,21 +87,24 @@ class LLMClient:
                 data = resp.json()
                 message = data["choices"][0]["message"]
 
+                # Primary answer is always in content
                 content = (message.get("content") or "").strip()
 
-                # Strip <think>...</think> blocks (some servers wrap thinking in tags)
                 import re as _re
+                import json as _json
+
+                # Strip <think>...</think> blocks (non-Jinja servers may wrap thinking in tags)
                 content = _re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
 
-                # llama.cpp with --jinja + Qwen3: when enable_thinking is not honored,
-                # the model puts everything (thinking + answer) into reasoning_content
-                # and leaves content empty. Extract the real answer from reasoning_content.
-                if not content:
+                if content:
+                    logger.info(f"LLM: content present ({len(content)} chars)")
+                else:
+                    # Fallback: Jinja-mode server put everything in reasoning_content
+                    # Only used for JSON responses (single message analysis)
                     raw_reasoning = (message.get("reasoning_content") or "").strip()
+                    logger.info(f"LLM: content empty, reasoning_content len={len(raw_reasoning)}")
                     if raw_reasoning:
-                        import json as _json
-                        # Find all JSON-like blocks and validate them
-                        # Scan from the END — the actual answer is always last
+                        # Try to extract valid JSON
                         extracted = None
                         for m in reversed(list(_re.finditer(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}", raw_reasoning))):
                             candidate = m.group(0).strip()
@@ -114,19 +114,18 @@ class LLMClient:
                                 break
                             except (ValueError, _json.JSONDecodeError):
                                 continue
-
                         if extracted:
                             content = extracted
-                            logger.debug("LLM: extracted valid JSON from reasoning_content")
+                            logger.info("LLM: extracted valid JSON from reasoning_content")
                         else:
-                            # Plain-text response: last paragraph that isn't thinking/list
-                            skip_markers = ("Thinking Process:", "**Analyze", "*   Role:", "Wait,", "Let me")
+                            # Last resort: grab the last meaningful paragraph
+                            skip_markers = ("Thinking Process:", "Wait,", "Let me", "**Analyze")
                             parts = [p.strip() for p in _re.split(r"\n{2,}", raw_reasoning) if p.strip()]
                             for part in reversed(parts):
-                                if not any(m in part for m in skip_markers) \
+                                if not any(sk in part for sk in skip_markers) \
                                         and not _re.match(r"^\s*(\d+\.|-|\*|\[)", part):
                                     content = part
-                                    logger.debug("LLM: extracted plain text from reasoning_content")
+                                    logger.info("LLM: extracted plain text from reasoning_content")
                                     break
                             if not content and parts:
                                 content = parts[-1]
