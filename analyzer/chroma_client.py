@@ -183,6 +183,7 @@ class ChromaClient:
         """
         Find messages semantically similar to a given message.
         The message must already be stored in ChromaDB.
+        Returns empty list on any error (non-fatal).
         """
         self._connect()
 
@@ -192,19 +193,24 @@ class ChromaClient:
                 ids=[str(message_id)],
                 include=["embeddings"],
             )
-            if not result["embeddings"]:
-                raise ValueError(f"Message {message_id} not found in ChromaDB")
+            # Use len() instead of truthiness — ChromaDB may return numpy arrays
+            # which raise "truth value of array is ambiguous" with plain `if not`
+            embeddings = result.get("embeddings") or []
+            if len(embeddings) == 0:
+                return []
 
-            embedding = result["embeddings"][0]
+            embedding = embeddings[0]
+            if embedding is None or len(embedding) == 0:
+                return []
 
             # Then: search for similar (exclude itself)
-            similar = self.search(query_embedding=embedding, limit=limit + 1)
+            similar = self.search(query_embedding=list(embedding), limit=limit + 1)
             # Filter out the message itself from results
             return [r for r in similar if r["message_id"] != message_id][:limit]
 
         except Exception as e:
-            logger.error(f"find_similar failed for message {message_id}: {e}")
-            raise
+            logger.warning(f"find_similar skipped for message {message_id}: {e}")
+            return []  # non-fatal — analysis must continue
 
     def find_duplicates(
         self,

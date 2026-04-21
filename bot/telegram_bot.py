@@ -41,8 +41,8 @@ def is_allowed(user_id: int) -> bool:
 
 
 API_URL = os.environ.get("API_URL", "http://localhost:8000")
-OPENCLAW_WEBHOOK_URL = os.environ.get("OPENCLAW_WEBHOOK_URL", "").strip()
-OPENCLAW_WEBHOOK_TOKEN = os.environ.get("OPENCLAW_WEBHOOK_TOKEN", "").strip()
+OPENCLAW_WEBHOOK_URL = (os.environ.get("OPENCLAW_WEBHOOK_URL") or os.environ.get("OPENCLAW_API_URL", "")).strip()
+OPENCLAW_WEBHOOK_TOKEN = (os.environ.get("OPENCLAW_WEBHOOK_TOKEN") or os.environ.get("OPENCLAW_API_TOKEN", "")).strip()
 
 
 async def wake_openclaw(text: str) -> bool:
@@ -51,8 +51,10 @@ async def wake_openclaw(text: str) -> bool:
     url = "http://openclaw:18789/v1/chat/completions"
     headers = {"Authorization": f"Bearer {OPENCLAW_WEBHOOK_TOKEN}"} if OPENCLAW_WEBHOOK_TOKEN else {}
     
+    import uuid
     payload = {
         "model": "main", # Targets the main agent session
+        "user": str(uuid.uuid4()), # Creates an ephemeral isolated session
         "messages": [
             {"role": "system", "content": "You are the RoutingAgent. Process this event according to AGENTS.md instructions."},
             {"role": "user", "content": text}
@@ -169,19 +171,36 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     force_new = "new" in map(str.lower, args)
 
     if not digest or force_new:
-        await update.message.reply_text("⚙️ Generating new digest... This may take up to a minute.")
-        try:
-            async with httpx.AsyncClient(timeout=120) as client:
-                resp = await client.post(f"{API_URL}/digest/generate?hours=6&force=true")
-                if resp.status_code == 200:
-                    digest = resp.json()
-                else:
-                    await update.message.reply_text(f"❌ API Error: {resp.text}")
-                    return
-        except Exception as e:
-            logger.error(f"Failed to generate digest: {e}")
-            await update.message.reply_text("❌ Failed to contact API.")
+        # Check current routing mode from API settings
+        settings = await fetch_api("/settings") or {}
+        use_agent = settings.get("route_via_openclaw", False)
+
+        if use_agent:
+            woke = await wake_openclaw(
+                "/reset /no_think\n"
+                "[NEWS-RADAR COMMAND: manual_digest]\n"
+                "Action: User requested a manual digest. Fetch data from /digest/raw?hours=6&force=true using Python, write a news summary, and push it to /digest/queue."
+            )
+            if woke:
+                await update.message.reply_text("⏳ Request sent to AI agent. Digest will be published shortly...")
+            else:
+                await update.message.reply_text("❌ Failed to contact OpenClaw Agent.")
             return
+        else:
+            # Legacy mode: trigger internal generation directly
+            await update.message.reply_text("⚙️ Generating digest via local LLM...")
+            try:
+                async with httpx.AsyncClient(timeout=180) as client:
+                    resp = await client.post(f"{API_URL}/digest/generate?hours=6&force=true")
+                    if resp.status_code == 200:
+                        digest = resp.json()
+                    else:
+                        await update.message.reply_text(f"❌ API Error: {resp.text}")
+                        return
+            except Exception as e:
+                logger.error(f"Failed to generate digest: {e}")
+                await update.message.reply_text("❌ Failed to contact API.")
+                return
 
     if not digest:
         await update.message.reply_text("❌ Digest not found and could not generate one.")

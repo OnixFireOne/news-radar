@@ -32,6 +32,9 @@ class LLMClient:
         self.api_key = api_key or os.getenv("LLM_API_KEY", "not-needed")
         self.model = model or os.getenv("LLM_MODEL", "")
         self.timeout = timeout
+        # Default max_tokens headroom: Qwen3 with --jinja uses ~300-500 tokens for thinking
+        # before writing the actual answer. Callers can override per-request.
+        self._thinking_overhead = 700  # extra tokens reserved for <think> block
 
     async def complete(
         self,
@@ -39,6 +42,7 @@ class LLMClient:
         system_prompt: str = "",
         temperature: float = 0.3,
         max_tokens: int = 1024,
+        enable_thinking: bool = False,
     ) -> str:
         """
         Send a request to the LLM and return the text response.
@@ -48,6 +52,7 @@ class LLMClient:
             system_prompt: system instruction
             temperature: 0 = deterministic, 1 = creative
             max_tokens: max tokens in response
+            enable_thinking: strictly toggle Jinja-based reasoning process for Qwen3/Llama servers
 
         Returns:
             Model response as plain text
@@ -57,14 +62,16 @@ class LLMClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": user_prompt})
 
+        overhead = self._thinking_overhead if enable_thinking else 0
         payload = {
             "messages": messages,
             "temperature": temperature,
-            "max_tokens": max_tokens,
-            # Disable Qwen3 extended thinking mode.
-            # Without this, Qwen3 spends all tokens on <think> reasoning and
-            # returns content="" — the actual answer never appears.
-            "enable_thinking": False,
+            "max_tokens": max_tokens + overhead,
+            "enable_thinking": enable_thinking,
+            # llama.cpp server and vLLM parse Jinja template kwargs here:
+            "chat_template_kwargs": {
+                "enable_thinking": enable_thinking
+            }
         }
         if self.model:
             payload["model"] = self.model
@@ -85,12 +92,44 @@ class LLMClient:
 
                 content = (message.get("content") or "").strip()
 
-                # Fallback: if content is empty but reasoning_content has data
-                # (some API versions expose thinking even with enable_thinking=False)
+                # Strip <think>...</think> blocks (some servers wrap thinking in tags)
+                import re as _re
+                content = _re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
+
+                # llama.cpp with --jinja + Qwen3: when enable_thinking is not honored,
+                # the model puts everything (thinking + answer) into reasoning_content
+                # and leaves content empty. Extract the real answer from reasoning_content.
                 if not content:
-                    content = (message.get("reasoning_content") or "").strip()
-                    if content:
-                        logger.debug("LLM: using reasoning_content as fallback (content was empty)")
+                    raw_reasoning = (message.get("reasoning_content") or "").strip()
+                    if raw_reasoning:
+                        import json as _json
+                        # Find all JSON-like blocks and validate them
+                        # Scan from the END — the actual answer is always last
+                        extracted = None
+                        for m in reversed(list(_re.finditer(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}", raw_reasoning))):
+                            candidate = m.group(0).strip()
+                            try:
+                                _json.loads(candidate)
+                                extracted = candidate
+                                break
+                            except (ValueError, _json.JSONDecodeError):
+                                continue
+
+                        if extracted:
+                            content = extracted
+                            logger.debug("LLM: extracted valid JSON from reasoning_content")
+                        else:
+                            # Plain-text response: last paragraph that isn't thinking/list
+                            skip_markers = ("Thinking Process:", "**Analyze", "*   Role:", "Wait,", "Let me")
+                            parts = [p.strip() for p in _re.split(r"\n{2,}", raw_reasoning) if p.strip()]
+                            for part in reversed(parts):
+                                if not any(m in part for m in skip_markers) \
+                                        and not _re.match(r"^\s*(\d+\.|-|\*|\[)", part):
+                                    content = part
+                                    logger.debug("LLM: extracted plain text from reasoning_content")
+                                    break
+                            if not content and parts:
+                                content = parts[-1]
 
                 return content
 
@@ -110,6 +149,7 @@ class LLMClient:
         system_prompt: str = "",
         temperature: float = 0.1,
         max_tokens: int = 1024,
+        enable_thinking: bool = False,
     ) -> dict[str, Any]:
         """
         Request expecting a JSON response.
@@ -121,6 +161,7 @@ class LLMClient:
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
+            enable_thinking=enable_thinking,
         )
 
         # Strip markdown code fences if model added them

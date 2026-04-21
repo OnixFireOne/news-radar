@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from analyzer.llm_client import LLMClient
-from analyzer.prompts import SINGLE_MESSAGE_PROMPT, DIGEST_PROMPT, SYSTEM_PROMPT
+from analyzer.prompts import SINGLE_MESSAGE_PROMPT, DIGEST_PROMPT, SYSTEM_PROMPT, ALERT_PROMPT, HOT_TREND_PROMPT
 from analyzer.embedder import get_embedder
 from analyzer.chroma_client import ChromaClient
 from analyzer.trend_tracker import TrendTracker   # Phase 2: trend detection
@@ -83,15 +83,16 @@ class NewsAnalyzer:
             subs_list = []
 
         try:
+            min_len = int(self.cfg.get("min_message_length", 30)) if self.cfg else 30
             rows = conn.execute("""
                 SELECT m.id, m.text, s.name as source_name
                 FROM messages m
                 JOIN sources s ON m.source_id = s.id
                 WHERE m.analyzed = 0
-                  AND length(m.text) >= 30
+                  AND length(m.text) >= ?
                 ORDER BY m.collected_at DESC
                 LIMIT ?
-            """, (self.batch_size,)).fetchall()
+            """, (min_len, self.batch_size,)).fetchall()
 
             if not rows:
                 logger.debug("No pending messages to analyze")
@@ -147,18 +148,19 @@ class NewsAnalyzer:
                     count += 1
 
                     # Phase 5: Instant Alerts — only for temp = 10 (true emergency)
-                    temp = float(result.get("temperature", 5.0))
-                    min_alert_temp = float(
-                        self.cfg.get("breaking_alert_min_temp", 10) if self.cfg else 10
-                    )
-                    if temp >= min_alert_temp and self.cfg and self.cfg.get("instant_alerts_temperature", True):
-                        source_n = row["source_name"]
-                        raw_topic = result.get("topic", "general")
-                        summary = result.get("summary", "No summary provided.")
-                        text = row["text"]
-                        asyncio.create_task(
-                            self._send_instant_alert(row["id"], source_n, temp, raw_topic, summary, text)
+                    if result:
+                        temp = float(result.get("temperature", 5.0))
+                        min_alert_temp = float(
+                            self.cfg.get("breaking_alert_min_temp", 10) if self.cfg else 10
                         )
+                        if temp >= min_alert_temp and self.cfg and self.cfg.get("instant_alerts_temperature", True):
+                            source_n = row["source_name"]
+                            raw_topic = result.get("topic", "general")
+                            summary = result.get("summary", "No summary provided.")
+                            text = row["text"]
+                            asyncio.create_task(
+                                self._send_instant_alert(row["id"], source_n, temp, raw_topic, summary, text)
+                            )
 
                     # Real-time subscription matching
                     if subs_list and result:
@@ -227,7 +229,7 @@ class NewsAnalyzer:
 
         Toggle: config/settings.json -> "route_via_openclaw": true  (hot-reload)
         """
-        webhook_url = os.getenv("OPENCLAW_WEBHOOK_URL", "").strip()
+        webhook_url = (os.getenv("OPENCLAW_WEBHOOK_URL") or os.getenv("OPENCLAW_API_URL", "")).strip()
         route_enabled = self.cfg.get("route_via_openclaw", False) if self.cfg else False
 
         # Convert old /hooks/wake URL to OpenAI /v1/chat/completions
@@ -272,7 +274,7 @@ class NewsAnalyzer:
             else:
                 text = f"[NEWS-RADAR EVENT: {event_type}]\n{json.dumps(data, ensure_ascii=False)}"
 
-            token = os.getenv("OPENCLAW_WEBHOOK_TOKEN", "").strip()
+            token = (os.getenv("OPENCLAW_WEBHOOK_TOKEN") or os.getenv("OPENCLAW_API_TOKEN", "")).strip()
             headers = {"Authorization": f"Bearer {token}"} if token else {}
 
             payload = {
@@ -294,9 +296,8 @@ class NewsAnalyzer:
                     logger.info(f"Event '{event_type}' \u2192 OpenClaw (HTTP {resp.status_code})")
                     self._log_dispatch(event_type, "agent", "ok", text, resp.status_code)
             except Exception as e:
-                logger.error(f"OpenClaw webhook failed ({event_type}): {e} \u2014 falling back to Telegram")
+                logger.error(f"OpenClaw webhook failed ({event_type}): {e}")
                 self._log_dispatch(event_type, "agent", "error", text)
-                await self._fallback_telegram(event_type, data)
         else:
             # Direct Telegram (OpenClaw disabled or not configured)
             await self._fallback_telegram(event_type, data)
@@ -317,29 +318,74 @@ class NewsAnalyzer:
             logger.warning(f"dispatch_log write failed: {e}")
 
     async def _fallback_telegram(self, event_type: str, data: dict):
-        """Send event directly to Telegram when OpenClaw is not configured or is unavailable."""
+        """Send event directly to Telegram in legacy mode. Alerts are LLM-formatted for better Russian output."""
         bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
         allowed_users = os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",")
         if not bot_token or not allowed_users or not allowed_users[0]:
             return
 
+        route_enabled = self.cfg.get("route_via_openclaw", False) if self.cfg else False
+        use_llm = not route_enabled  # in legacy mode: format via LLM
+
         if event_type == "breaking_alert":
-            safe_source = data["source"].replace("_", "\_")
-            source_url = data.get("source_url", f"https://t.me/{data['source']}")
-            message = (
-                f"\U0001f6a8 *BREAKING* (Temp: {data['temperature']:.0f}/10)\n\n"
-                f"\U0001f3ae Topic: `{data['topic']}`\n\n"
-                f"\U0001f4dd {data['summary']}\n\n"
-                f"[source]({source_url})"
-            )
+            if use_llm:
+                try:
+                    source_url = data.get("source_url", f"https://t.me/{data['source']}")
+                    prompt = ALERT_PROMPT.format(
+                        source=data["source"],
+                        topic=data["topic"],
+                        temperature=data["temperature"],
+                        summary=data["summary"],
+                        source_url=source_url,
+                    )
+                    message = await self.llm.complete(
+                        user_prompt=prompt,
+                        system_prompt=SYSTEM_PROMPT,
+                        temperature=0.3,
+                        max_tokens=300,
+                        enable_thinking=True,
+                    )
+                except Exception as e:
+                    logger.warning(f"LLM alert formatting failed, using template: {e}")
+                    use_llm = False  # fall through to template below
+            if not use_llm:
+                safe_source = data["source"].replace("_", "\_")
+                source_url = data.get("source_url", f"https://t.me/{data['source']}")
+                message = (
+                    f"\U0001f6a8 *BREAKING* (Temp: {data['temperature']:.0f}/10)\n\n"
+                    f"\U0001f3ae Topic: `{data['topic']}`\n\n"
+                    f"\U0001f4dd {data['summary']}\n\n"
+                    f"[source]({source_url})"
+                )
         elif event_type == "hot_trend":
-            channels = ", ".join(f"@{c}" for c in data.get("channels", [])[:5])
-            message = (
-                f"\U0001f525 *HOT TREND: {data.get('topic')}*\n\n"
-                f"\U0001f4e1 {data.get('sources')} independent channels: {channels}\n"
-                f"\U0001f4c8 Score: *{data.get('score', 0):.1f}* | Messages: {data.get('message_count', 0)}\n\n"
-                f"\U0001f4dd {data.get('summary', '')}"
-            )
+            if use_llm:
+                try:
+                    channels_str = ", ".join(f"@{c}" for c in data.get("channels", [])[:5])
+                    prompt = HOT_TREND_PROMPT.format(
+                        topic=data.get("topic", ""),
+                        score=data.get("score", 0),
+                        sources=data.get("sources", 0),
+                        summary=data.get("summary", ""),
+                        channels=channels_str,
+                    )
+                    message = await self.llm.complete(
+                        user_prompt=prompt,
+                        system_prompt=SYSTEM_PROMPT,
+                        temperature=0.3,
+                        max_tokens=300,
+                        enable_thinking=True,
+                    )
+                except Exception as e:
+                    logger.warning(f"LLM trend formatting failed, using template: {e}")
+                    use_llm = False
+            if not use_llm:
+                channels = ", ".join(f"@{c}" for c in data.get("channels", [])[:5])
+                message = (
+                    f"\U0001f525 *HOT TREND: {data.get('topic')}*\n\n"
+                    f"\U0001f4e1 {data.get('sources')} independent channels: {channels}\n"
+                    f"\U0001f4c8 Score: *{data.get('score', 0):.1f}* | Messages: {data.get('message_count', 0)}\n\n"
+                    f"\U0001f4dd {data.get('summary', '')}"
+                )
         elif event_type == "trend_alert":
             safe_topic = data["topic"].replace("_", "\_")
             message = (
@@ -366,7 +412,7 @@ class NewsAnalyzer:
                     await client.post(
                         f"https://api.telegram.org/bot{bot_token}/sendMessage",
                         json={"chat_id": uid, "text": message, "parse_mode": "Markdown",
-                              "disable_web_page_preview": True}
+                              "link_preview_options": {"is_disabled": True}}
                     )
                     self._log_dispatch(event_type, "fallback_telegram", "ok", message[:300])
                 except Exception as e:
@@ -437,7 +483,7 @@ class NewsAnalyzer:
                 user_prompt=prompt,
                 system_prompt=SYSTEM_PROMPT,
                 temperature=0.1,
-                max_tokens=512,
+                max_tokens=1024,
             )
 
             # Clamp temperature to valid range
@@ -481,7 +527,7 @@ class NewsAnalyzer:
         meta = self._topics.get(topic, {})
         return bool(meta.get("alert", False))
 
-    async def generate_digest(self, hours: int = 3, force: bool = False) -> str | None:
+    async def generate_digest(self, hours: int = 3, force: bool = False, return_raw: bool = False) -> str | None:
         """
         Generate a digest using a 4-tier priority queue.
 
@@ -611,6 +657,12 @@ class NewsAnalyzer:
         if dedup_threshold < 1.0:
             selected = self._dedup_by_similarity(selected, threshold=dedup_threshold)
 
+        # ── Cross-digest dedup: semantic similarity against previous digests ──
+        cross_dedup_threshold = rules.get("cross_dedup_threshold", 0.75)
+        selected, ongoing_trends = self._dedup_against_previous_digests(
+            selected, threshold=cross_dedup_threshold
+        )
+
         logger.info(
             f"Digest: {len(alerts)} alerts, {len(trends_tier)} trend msgs, "
             f"{len(high_tier)} high-temp → {len(selected)} selected after dedup"
@@ -633,26 +685,75 @@ class NewsAnalyzer:
         ])
 
         period = "последнее время"
+
+        # Build ongoing trends section for the LLM if any carried-over topics detected
+        if ongoing_trends:
+            lines = ["\n--- ONGOING TRENDS (topics continuing from previous digest — synthesize as update) ---"]
+            # Group by topic to avoid repeating the same trend multiple times
+            seen_topics: set[str] = set()
+            for t in ongoing_trends:
+                topic = t["topic"]
+                if topic not in seen_topics:
+                    seen_topics.add(topic)
+                    # Collect all summaries for this topic
+                    topic_summaries = [
+                        t2["summary"] for t2 in ongoing_trends
+                        if t2["topic"] == topic and t2["summary"]
+                    ]
+                    lines.append(f"\nTOPIC: {topic}")
+                    for i, s in enumerate(topic_summaries[:3], 1):
+                        lines.append(f"  Update {i}: {s}")
+            lines.append("--- END ONGOING TRENDS ---\n")
+            ongoing_trends_section = "\n".join(lines)
+        else:
+            ongoing_trends_section = "\n"
+
         prompt = DIGEST_PROMPT.format(
             period=period,
             count=len(selected),
             messages=messages_text,
+            ongoing_trends_section=ongoing_trends_section,
         )
 
-        # ── 1. Try sending raw payload to OpenClaw Agent ──
+        if return_raw:
+            # ── Pull Architecture: Mark in DB and return raw text immediately ──
+            try:
+                conn = get_db(self.db_path)
+                selected_ids = [row["id"] for row in selected]
+                conn.executemany("UPDATE messages SET in_digest=1 WHERE id=?", [(mid,) for mid in selected_ids])
+                
+                if selected_ids:
+                    placeholders = ",".join("?" * len(selected_ids))
+                    conn.execute(f"""
+                        UPDATE messages SET in_digest=1
+                        WHERE id IN (
+                            SELECT tm2.message_id
+                            FROM trend_messages tm1
+                            JOIN trend_messages tm2 ON tm1.trend_id = tm2.trend_id
+                            WHERE tm1.message_id IN ({placeholders})
+                        )
+                    """, selected_ids)
+                conn.commit()
+                conn.close()
+            except Exception as e:
+                logger.error(f"Failed to finalise raw digest DB state: {e}")
+            return messages_text
+
+        # ── 1. Agent Mode: Push raw payload to OpenClaw ──
         agent_succeeded = False
-        webhook_url = os.getenv("OPENCLAW_WEBHOOK_URL", "").strip()
         route_enabled = self.cfg.get("route_via_openclaw", False) if self.cfg else False
 
-        if webhook_url.endswith("/hooks/wake"):
-            webhook_url = webhook_url.replace("/hooks/wake", "/v1/chat/completions")
-        elif not webhook_url.endswith("/v1/chat/completions"):
-            webhook_url = "http://openclaw:18789/v1/chat/completions"
+        if route_enabled:
+            webhook_url = (os.getenv("OPENCLAW_WEBHOOK_URL") or os.getenv("OPENCLAW_API_URL", "")).strip()
 
-        if webhook_url and route_enabled:
-            token = os.getenv("OPENCLAW_WEBHOOK_TOKEN", "").strip()
+            if webhook_url.endswith("/hooks/wake"):
+                webhook_url = webhook_url.replace("/hooks/wake", "/v1/chat/completions")
+            elif not webhook_url.endswith("/v1/chat/completions"):
+                webhook_url = "http://openclaw:18789/v1/chat/completions"
+
+            token = (os.getenv("OPENCLAW_WEBHOOK_TOKEN") or os.getenv("OPENCLAW_API_TOKEN", "")).strip()
             headers = {"Authorization": f"Bearer {token}"} if token else {}
-            
+
             payload_text = (
                 f"[NEWS-RADAR EVENT: digest_raw]\n"
                 f"Period: {period}\n"
@@ -660,7 +761,6 @@ class NewsAnalyzer:
                 f"{messages_text}\n\n"
                 f"Action: Generate a markdown digest based on these messages and send it to the user. Do not return the raw messages."
             )
-            
             payload = {
                 "model": "main",
                 "messages": [
@@ -668,7 +768,6 @@ class NewsAnalyzer:
                     {"role": "user", "content": payload_text}
                 ]
             }
-
             try:
                 async with httpx.AsyncClient(timeout=15) as client:
                     resp = await client.post(webhook_url, json=payload, headers=headers)
@@ -676,27 +775,33 @@ class NewsAnalyzer:
                     agent_succeeded = True
                     logger.info("Successfully dispatched raw digest data to OpenClaw Agent")
             except Exception as e:
-                logger.error(f"Failed to dispatch raw digest to Agent: {e}. Fallback to Local LLM.")
+                logger.error(f"Failed to dispatch raw digest to Agent: {e}")
 
-        # ── 2. Fallback: Local LLM Generation ──
+        # ── 2. Legacy Mode: Local LLM generates digest directly ──
         digest_content = ""
         if not agent_succeeded:
+            if route_enabled:
+                # Agent was enabled but failed
+                logger.error("Agent digest push failed and legacy fallback is disabled when route_via_openclaw=true.")
+                return None
+            # route_via_openclaw=false → use local LLM
             try:
                 digest_content = await self.llm.complete(
                     user_prompt=prompt,
                     system_prompt=SYSTEM_PROMPT,
                     temperature=0.4,
                     max_tokens=1500,
+                    enable_thinking=True,
                 )
             except Exception as e:
-                logger.error(f"Local LLM fallback failed: {e}")
+                logger.error(f"Local LLM digest generation failed: {e}")
                 return None
 
-        # ── 3. Mark in DB (Success or Fallback) ──
+        # ── 3. Mark in DB ──
         try:
             conn = get_db(self.db_path)
             try:
-                if not agent_succeeded and digest_content:
+                if digest_content:
                     conn.execute(
                         "INSERT INTO digests (content_md, period_start, period_end) VALUES (?, ?, ?)",
                         (digest_content, since.isoformat(), datetime.utcnow().isoformat()),
@@ -728,7 +833,7 @@ class NewsAnalyzer:
             if agent_succeeded:
                 return "dispatched"
             else:
-                # Send fallback directly to telegram
+                # Legacy: send directly to Telegram
                 await self._fallback_telegram("digest", {"text": digest_content})
                 return digest_content
 
@@ -785,12 +890,100 @@ class NewsAnalyzer:
             return candidates
 
 
+    def _dedup_against_previous_digests(
+        self, candidates: list[dict], lookback: int = 2, threshold: float = 0.75
+    ) -> tuple[list[dict], list[dict]]:
+        """
+        Semantic dedup against previous digests.
+
+        Returns:
+          - filtered: candidates that are NOT similar to previous digest stories
+          - ongoing: list of dicts {topic, summary, similarity} for stories that
+            ARE similar to previous digests (used by caller to inform the LLM)
+
+        Falls back gracefully: if embedder or DB is unavailable, returns (candidates, []).
+        """
+        try:
+            import re
+
+            # ── 1. Load summaries from last N digests ──
+            conn = get_db(self.db_path)
+            rows = conn.execute(
+                "SELECT content_md FROM digests ORDER BY id DESC LIMIT ?", (lookback,)
+            ).fetchall()
+            conn.close()
+
+            if not rows:
+                return candidates, []
+
+            # Extract per-story summaries from digest markdown
+            past_summaries: list[str] = []
+            for row in rows:
+                content = row["content_md"] or ""
+                blocks = re.split(r"🔹", content)
+                for block in blocks[1:]:  # skip header block
+                    lines = [
+                        ln.strip()
+                        for ln in block.splitlines()
+                        if ln.strip() and not ln.strip().startswith("*") and not ln.strip().startswith("[")
+                    ]
+                    if lines:
+                        past_summaries.append(" ".join(lines[:2]))
+
+            if not past_summaries:
+                return candidates, []
+
+            # ── 2. Encode past summaries ──
+            past_embeddings = [
+                self.embedder.encode(s) for s in past_summaries
+            ]
+
+            # ── 3. Filter candidates by semantic similarity ──
+            import numpy as np
+
+            def cosine(a, b) -> float:
+                a, b = np.array(a), np.array(b)
+                denom = np.linalg.norm(a) * np.linalg.norm(b)
+                return float(np.dot(a, b) / denom) if denom > 0 else 0.0
+
+            filtered = []
+            ongoing = []  # stories that match previous digest = ongoing trends
+            for msg in candidates:
+                candidate_text = (msg.get("summary") or msg.get("text") or "")[:300]
+                cand_emb = self.embedder.encode(candidate_text)
+
+                max_sim = max(cosine(cand_emb, p_emb) for p_emb in past_embeddings)
+                if max_sim >= threshold:
+                    ongoing.append({
+                        "topic": msg.get("topic", "unknown"),
+                        "summary": (msg.get("summary") or "")[:150],
+                        "similarity": max_sim,
+                    })
+                    logger.debug(
+                        f"Cross-digest dedup: ongoing trend '{msg.get('topic')}' "
+                        f"(similarity {max_sim:.2f})"
+                    )
+                else:
+                    filtered.append(msg)
+
+            if ongoing:
+                logger.info(
+                    f"Cross-digest dedup: {len(ongoing)} ongoing trends detected, "
+                    f"{len(filtered)} fresh stories kept"
+                )
+
+            return (filtered if filtered else candidates), ongoing
+
+        except Exception as e:
+            logger.warning(f"Cross-digest semantic dedup skipped: {e}")
+            return candidates, []
+
+
     async def run_loop(self) -> None:
         """
         Main loop — runs things on different schedules:
           1. LLM analysis of new messages (every ANALYZE_INTERVAL_MINUTES)
           2. TrendTracker clustering cycle (every TREND_INTERVAL_MINUTES, default 15 min)
-          3. Digest generation (every DIGEST_INTERVAL_HOURS, default 6 hours)
 
         Both tasks share the same ChromaDB client and embedder instance.
         TrendTracker is non-blocking: if it fails, analysis continues.
@@ -832,8 +1025,24 @@ class NewsAnalyzer:
                     last_trend_run = now  # don't retry immediately on error
                     
 
-
-            await asyncio.sleep(self.interval)
+            slept = 0
+            while slept < self.interval:
+                await asyncio.sleep(10)
+                slept += 10
+                
+                # Wake up early if too many messages accumulated
+                max_pending = int((self.cfg.get("analyze_max_pending", 10)) if self.cfg else 10)
+                if max_pending > 0:
+                    try:
+                        conn = get_db(self.db_path)
+                        min_len = int(self.cfg.get("min_message_length", 30)) if self.cfg else 30
+                        count = conn.execute("SELECT COUNT(*) FROM messages WHERE analyzed = 0 AND length(text) >= ?", (min_len,)).fetchone()[0]
+                        conn.close()
+                        if count >= max_pending:
+                            logger.info(f"Threshold reached ({count} pending >= {max_pending}), waking up early")
+                            break
+                    except Exception as e:
+                        logger.debug(f"Error checking pending count: {e}")
 
 
 async def main():

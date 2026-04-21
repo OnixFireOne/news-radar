@@ -30,10 +30,9 @@ DEFAULT_CONFIG = {
         "min_unique_sources_for_trend": 3,
         "dedup_threshold": 0.85,
     },
-    "digest_engine": "legacy",     # "legacy" or "agent"
     "instant_alerts_temperature": True, # send breaking news immediately based on temp
     "instant_alerts_trend": True,       # send breaking news immediately based on trend status
-    "route_via_openclaw": False         # if True + OPENCLAW_WEBHOOK_URL set -> route all events to agent
+    "route_via_openclaw": False         # true = Agent mode (OpenClaw), false = Legacy (local LLM)
 }
 
 

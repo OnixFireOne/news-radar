@@ -594,11 +594,13 @@ async def main():
     session_name = os.environ.get("TELEGRAM_SESSION_NAME", "news_radar")
     db_path = os.environ.get("DATABASE_PATH", "/app/data/news.db")
 
-    # How many messages to fetch from a truly NEW channel (never seen before)
-    new_source_limit = int(os.environ.get("NEW_SOURCE_LIMIT", "100"))
-
     # Load config (file + env vars)
     cfg = ConfigWatcher("/app/config/settings.json")
+
+    # How many messages to fetch from a truly NEW channel (never seen before)
+    # Read from settings.json -> then ENV -> fallback to 100
+    new_source_limit = int(cfg.get("load_history_limit", os.environ.get("NEW_SOURCE_LIMIT", "100")))
+
 
     collector = TelegramCollector(
         api_id=api_id,

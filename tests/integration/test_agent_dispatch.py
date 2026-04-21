@@ -141,12 +141,12 @@ def run() -> tuple[int, int]:
         try:
             payload_text = (
                 "[NEWS-RADAR COMMAND: get_settings]\n"
-                "Action: Call GET http://api:8000/settings and return the current hot_trend_min_sources value."
+                "Action: Call GET http://news-radar-api:8000/settings and return the current hot_trend_min_sources value."
             )
             r = agent_post({
                 "model": "openclaw",
                 "messages": [
-                    {"role": "system", "content": "You are the RoutingAgent. You have access to the news-radar API at http://api:8000."},
+                    {"role": "system", "content": "You are the RoutingAgent. You have access to the news-radar API at http://news-radar-api:8000."},
                     {"role": "user",   "content": payload_text}
                 ]
             })

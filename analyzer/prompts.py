@@ -39,33 +39,74 @@ Temperature scale:
 
 DIGEST_PROMPT = """You are creating a short, engaging crypto news digest for the period: {period}.
 
-Here are {count} messages from different Telegram channels:
+Here are {count} fresh messages from different Telegram channels:
 
 {messages}
+{ongoing_trends_section}
+Write a punchy, easy-to-read digest in RUSSIAN using Markdown. Limit text to the essentials.
+IMPORTANT: Fresh stories MUST end with a Markdown link: [источник](PostURL)
 
-Write a punchy and easy-to-read digest in RUSSIAN using Markdown format. Limit text to the essentials.
-IMPORTANT: Every story MUST end with a Markdown link using the PostURL from the message context.
-Use EXACTLY this format for the link: [источник](PostURL) — the word must be 'источник', no channel name visible.
-
-Format exactly like this example, STRICTLY keeping the Topic and Temperature in the header:
+Format:
 
 *🔥 Главное за {period}:*
 
-🔹 *[TOPIC FROM CONTEXT] / Температура: [TEMPERATURE FROM CONTEXT]/10*
-*Название или суть новости*
-Краткое описание события из 2-3 предложений. [источник](PostURL)
+🔹 *[TOPIC] / Температура: [TEMP]/10*
+*Суть новости*
+Описание 2-3 предложения. [источник](PostURL)
 
-🔹 *Bitcoin / Температура: 9/10*
-*Рекордные притоки в ETF*
-BTC пробил $70k на фоне рекордного притока ETF. Аналитики ждут продолжения роста. [источник](https://t.me/some_channel/12345)
+[up to 5 fresh stories]
 
-[... include up to 5 top stories maximum, one per 🔹 bullet]
+If ONGOING TRENDS section is present above:
+Add this block BEFORE the market sentiment:
+
+🔄 *Продолжение: [main ongoing topic]*
+[Write 2-3 sentences synthesizing all the ongoing updates — what’s new compared to last digest, how the story is developing, any numbers or outcomes]
 
 *📊 Настроения на рынке:*
-[One short sentence in Russian: Bullish / Bearish / Neutral and main reason]
+[Bullish / Bearish / Neutral — one sentence in Russian]
 
 *⚡ На радаре:*
-[One specific trend, token, or narrative to watch, 1 short sentence in Russian]"""
+[One trend or token to watch, one sentence in Russian]"""
+
+
+# ──────────────────────────────────────────────
+# BREAKING ALERT (legacy mode — direct LLM → Telegram)
+# ──────────────────────────────────────────────
+
+ALERT_PROMPT = """Write a short breaking news alert in Russian for a Telegram crypto channel.
+
+Source: @{source}
+Topic: {topic}
+Temperature: {temperature}/10
+Summary: {summary}
+Link: {source_url}
+
+Rules:
+- Maximum 4 sentences
+- Start with a fitting emoji (🚨, ⚡, 🔥, etc.)
+- Bold the topic using *asterisks*
+- End with [источник]({source_url}) as a clickable link
+- Write ONLY the post text, nothing else"""
+
+
+# ──────────────────────────────────────────────
+# HOT TREND ALERT (legacy mode — direct LLM → Telegram)
+# ──────────────────────────────────────────────
+
+HOT_TREND_PROMPT = """Write a short hot trend report in Russian for a Telegram crypto channel.
+
+Topic: {topic}
+Trend Score: {score:.1f}
+Unique Sources: {sources}
+Summary: {summary}
+Channels: {channels}
+
+Rules:
+- Maximum 4 sentences
+- Start with 🔥
+- Bold the topic using *asterisks*
+- Mention how many channels are covering this
+- Write ONLY the post text, nothing else"""
 
 
 # ──────────────────────────────────────────────

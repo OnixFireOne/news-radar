@@ -97,6 +97,18 @@ async def startup():
     logger.info("News Radar API started")
 
 
+@app.get("/settings")
+async def get_settings():
+    """Return current runtime settings from settings.json (for bots and agents to check mode)."""
+    from config.config_watcher import ConfigWatcher
+    cfg = ConfigWatcher()
+    return {
+        "route_via_openclaw": cfg.get("route_via_openclaw", False),
+        "analyze_interval_minutes": cfg.get("analyze_interval_minutes", 15),
+        "analyze_max_pending": cfg.get("analyze_max_pending", 10),
+    }
+
+
 # ──────────────────────────────────────────────
 # FEED
 # ──────────────────────────────────────────────
@@ -237,14 +249,27 @@ async def get_topics(
 # DIGEST
 # ──────────────────────────────────────────────
 
+@app.post("/digest/raw")
+async def get_raw_digest(hours: int = Query(6, ge=1, le=48), force: bool = Query(False)):
+    """Generate and return raw digest messages text without pushing via webhook."""
+    from config.config_watcher import ConfigWatcher
+    llm = LLMClient()
+    analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm, cfg=ConfigWatcher())
+    
+    result = await analyzer.generate_digest(hours=hours, force=force, return_raw=True)
+    if not result:
+        raise HTTPException(status_code=400, detail="No suitable news for digest")
+    return {"raw_text": result}
+
 @app.post("/digest/generate")
 async def generate_digest(hours: int = Query(6, ge=1, le=48), force: bool = Query(False)):
     """Manually trigger AI digest generation for the last N hours.
     
     Use ?force=true to bypass the in_digest filter (re-generate even if all msgs were used).
     """
+    from config.config_watcher import ConfigWatcher
     llm = LLMClient()
-    analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm)
+    analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm, cfg=ConfigWatcher())
 
     result = await analyzer.generate_digest(hours=hours, force=force)
     if result == "dispatched":
@@ -421,8 +446,7 @@ _SETTINGS_SCHEMA: dict[str, type] = {
     "breaking_alert_min_temp": float,
     "hot_trend_min_sources":   int,
     "instant_alerts_temperature": bool,
-    "route_via_openclaw":      bool,
-    "digest_engine":           str,   # 'agent' | 'legacy'
+    "route_via_openclaw":      bool,   # true = Agent mode, false = Legacy (local LLM)
 }
 
 
@@ -582,6 +606,7 @@ async def semantic_search(
 async def get_trends(
     hours: int = Query(24, ge=1, le=168, description="Look back window in hours"),
     limit: int = Query(20, ge=1, le=100),
+    offset: int = Query(0, ge=0, description="Pagination offset"),
     status: Optional[str] = Query(None, description="Filter by status: emerging|hot|cooling|dead"),
     min_sources: int = Query(1, ge=1, description="Minimum unique channels that reported"),
 ):
@@ -610,8 +635,8 @@ async def get_trends(
         query += " AND status = ?"
         params.append(status)
 
-    query += " ORDER BY trend_score DESC LIMIT ?"
-    params.append(limit)
+    query += " ORDER BY trend_score DESC LIMIT ? OFFSET ?"
+    params.extend([limit, offset])
 
     conn = get_db(DB_PATH)
     try:
@@ -861,6 +886,7 @@ async def push_alert(alert: AlertRequest):
     if not bot_token or not allowed_users or not allowed_users[0]:
         raise HTTPException(status_code=500, detail="Telegram not configured")
 
+    success_count = 0
     async with httpx.AsyncClient() as client:
         for uid in allowed_users:
             uid = uid.strip()
@@ -868,11 +894,26 @@ async def push_alert(alert: AlertRequest):
             try:
                 await client.post(
                     f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                    json={"chat_id": uid, "text": alert.text, "parse_mode": "Markdown"}
+                    json={"chat_id": uid, "text": alert.text, "parse_mode": "Markdown", "link_preview_options": {"is_disabled": True}}
                 )
+                success_count += 1
             except Exception as e:
                 logger.error(f"Failed to send OpenClaw alert: {e}")
-    return {"status": "dispatched", "users_alerted": len(allowed_users)}
+
+    # Record the dispatch in our audit log
+    conn = get_db(DB_PATH)
+    try:
+        conn.execute(
+            "INSERT INTO dispatch_log (event_type, sent_to, status, payload_preview, http_status) VALUES (?, ?, ?, ?, ?)",
+            ("agent_manual_alert", "telegram_users", "ok" if success_count > 0 else "error", alert.text[:300], 200)
+        )
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to write to dispatch_log: {e}")
+    finally:
+        conn.close()
+
+    return {"status": "dispatched", "users_alerted": success_count}
 
 @app.get("/dispatch-log")
 async def get_dispatch_log(
@@ -927,6 +968,20 @@ async def queue_digest(digest: DigestQueueRequest):
     if not bot_token or not allowed_users or not allowed_users[0]:
         raise HTTPException(status_code=500, detail="Telegram not configured")
 
+    # Save to SQLite digests table so /digest/latest can serve it directly
+    conn = get_db(DB_PATH)
+    try:
+        from datetime import datetime, timedelta
+        conn.execute(
+            "INSERT INTO digests (content_md, period_start, period_end) VALUES (?, ?, ?)",
+            (digest.narrative_text, (datetime.utcnow() - timedelta(hours=6)).isoformat(), datetime.utcnow().isoformat())
+        )
+        conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to save Agent digest to DB: {e}")
+    finally:
+        conn.close()
+
     async with httpx.AsyncClient() as client:
         for uid in allowed_users:
             uid = uid.strip()
@@ -934,7 +989,7 @@ async def queue_digest(digest: DigestQueueRequest):
             try:
                 await client.post(
                     f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                    json={"chat_id": uid, "text": digest.narrative_text, "parse_mode": "Markdown"}
+                    json={"chat_id": uid, "text": digest.narrative_text, "parse_mode": "Markdown", "link_preview_options": {"is_disabled": True}}
                 )
             except Exception as e:
                 logger.error(f"Failed to send OpenClaw digest: {e}")

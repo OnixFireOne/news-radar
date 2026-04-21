@@ -246,6 +246,7 @@ class TrendTracker:
         # returns the same space-separated UTC format, avoiding string-compare mismatch.
         conn = get_db(self.db_path)
         try:
+            min_len = int(self.analyzer.cfg.get("min_message_length", 30)) if self.analyzer and self.analyzer.cfg else 30
             rows = conn.execute("""
                 SELECT
                     m.id,
@@ -262,10 +263,10 @@ class TrendTracker:
                 WHERE m.collected_at >= datetime('now', ? )
                   AND m.analyzed = 1
                   AND m.chroma_synced = 1
-                  AND length(m.text) >= 30
+                  AND length(m.text) >= ?
                 ORDER BY m.collected_at DESC
                 LIMIT ?
-            """, (f"-{self.WINDOW_HOURS} hours", self.MAX_MESSAGES)).fetchall()
+            """, (f"-{self.WINDOW_HOURS} hours", min_len, self.MAX_MESSAGES)).fetchall()
             return [dict(r) for r in rows]
         finally:
             conn.close()
@@ -684,7 +685,7 @@ class TrendTracker:
                 try:
                     await client.post(
                         f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                        json={"chat_id": uid, "text": message, "parse_mode": "Markdown"}
+                        json={"chat_id": uid, "text": message, "parse_mode": "Markdown", "link_preview_options": {"is_disabled": True}}
                     )
                 except Exception as e:
                     logger.error(f"Failed to send trend alert to {uid}: {e}")

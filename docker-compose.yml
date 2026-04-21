@@ -69,7 +69,7 @@ services:
   # API — FastAPI backend
   # Phase 1: includes /search, /similar, /duplicates endpoints
   # ─────────────────────────────────────────
-  api:
+  news-radar-api:
     build:
       context: .
       dockerfile: api/Dockerfile
@@ -81,6 +81,8 @@ services:
       - "8100:8000"
     volumes:
       - ./data:/app/data
+      - ./config:/app/config
+      - ./data/models:/root/.cache/chroma   # ChromaDB ONNX model cache (survives rebuilds)
     restart: unless-stopped
     networks:
       - news-radar-network
@@ -97,12 +99,13 @@ services:
       dockerfile: bot/Dockerfile
     container_name: news-radar-bot
     depends_on:
-      - api
+      - news-radar-api
     env_file: .env
     volumes:
       - ./data:/app/data
+      - ./config:/app/config
     environment:
-      - API_URL=http://api:8000
+      - API_URL=http://news-radar-api:8000
     restart: unless-stopped
     networks:
       - news-radar-network
