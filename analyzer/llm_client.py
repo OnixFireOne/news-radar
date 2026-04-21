@@ -10,6 +10,7 @@ import json
 import logging
 import os
 from typing import Any
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
 import httpx
 
@@ -26,7 +27,7 @@ class LLMClient:
         base_url: str | None = None,
         api_key: str = "not-needed",
         model: str | None = None,
-        timeout: int = 60,
+        timeout: int = 300,
     ):
         self.base_url = (base_url or os.getenv("LLM_BASE_URL", "http://localhost:5000/v1")).rstrip("/")
         self.api_key = api_key or os.getenv("LLM_API_KEY", "not-needed")
@@ -36,13 +37,17 @@ class LLMClient:
         # before writing the actual answer. Callers can override per-request.
         self._thinking_overhead = 700  # extra tokens reserved for <think> block
 
+    @retry(
+        stop=stop_after_attempt(3),
+        wait=wait_exponential(multiplier=1, min=2, max=10),
+        retry=retry_if_exception_type(httpx.TimeoutException)
+    )
     async def complete(
         self,
         user_prompt: str,
         system_prompt: str = "",
         temperature: float = 0.3,
         max_tokens: int = -1,
-        enable_thinking: bool = False,
     ) -> str:
         """
         Send a request to the LLM and return the text response.
@@ -52,7 +57,6 @@ class LLMClient:
             system_prompt: system instruction
             temperature: 0 = deterministic, 1 = creative
             max_tokens: max tokens in response. -1 = unlimited (server default).
-            enable_thinking: passed to Jinja-based servers (e.g. Qwen3 with --jinja)
 
         Returns:
             Model response as plain text (from content field)
@@ -65,8 +69,6 @@ class LLMClient:
         payload = {
             "messages": messages,
             "temperature": temperature,
-            "enable_thinking": enable_thinking,
-            "chat_template_kwargs": {"enable_thinking": enable_thinking},
         }
         if max_tokens != -1:
             payload["max_tokens"] = max_tokens
@@ -90,45 +92,12 @@ class LLMClient:
                 # Primary answer is always in content
                 content = (message.get("content") or "").strip()
 
-                import re as _re
-                import json as _json
 
-                # Strip <think>...</think> blocks (non-Jinja servers may wrap thinking in tags)
-                content = _re.sub(r"<think>[\s\S]*?</think>", "", content).strip()
 
                 if content:
                     logger.info(f"LLM: content present ({len(content)} chars)")
                 else:
-                    # Fallback: Jinja-mode server put everything in reasoning_content
-                    # Only used for JSON responses (single message analysis)
-                    raw_reasoning = (message.get("reasoning_content") or "").strip()
-                    logger.info(f"LLM: content empty, reasoning_content len={len(raw_reasoning)}")
-                    if raw_reasoning:
-                        # Try to extract valid JSON
-                        extracted = None
-                        for m in reversed(list(_re.finditer(r"\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}", raw_reasoning))):
-                            candidate = m.group(0).strip()
-                            try:
-                                _json.loads(candidate)
-                                extracted = candidate
-                                break
-                            except (ValueError, _json.JSONDecodeError):
-                                continue
-                        if extracted:
-                            content = extracted
-                            logger.info("LLM: extracted valid JSON from reasoning_content")
-                        else:
-                            # Last resort: grab the last meaningful paragraph
-                            skip_markers = ("Thinking Process:", "Wait,", "Let me", "**Analyze")
-                            parts = [p.strip() for p in _re.split(r"\n{2,}", raw_reasoning) if p.strip()]
-                            for part in reversed(parts):
-                                if not any(sk in part for sk in skip_markers) \
-                                        and not _re.match(r"^\s*(\d+\.|-|\*|\[)", part):
-                                    content = part
-                                    logger.info("LLM: extracted plain text from reasoning_content")
-                                    break
-                            if not content and parts:
-                                content = parts[-1]
+                    logger.info("LLM: content is empty")
 
                 return content
 
@@ -148,7 +117,6 @@ class LLMClient:
         system_prompt: str = "",
         temperature: float = 0.1,
         max_tokens: int = 1024,
-        enable_thinking: bool = False,
     ) -> dict[str, Any]:
         """
         Request expecting a JSON response.
@@ -160,7 +128,6 @@ class LLMClient:
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
-            enable_thinking=enable_thinking,
         )
 
         # Strip markdown code fences if model added them

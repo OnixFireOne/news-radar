@@ -215,13 +215,14 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     content = digest.get("content_md", "")
+    parse_mode = digest.get("parse_mode", "Markdown")
 
     # Telegram message limit is 4096 chars
     if len(content) > 4000:
         content = content[:4000] + "\n\n... (truncated)"
 
     try:
-        await update.message.reply_text(content, parse_mode="Markdown")
+        await update.message.reply_text(content, parse_mode=parse_mode)
     except Exception as e:
         logger.error(f"Markdown parse failed for digest: {e}")
         await update.message.reply_text(content)
@@ -388,6 +389,7 @@ async def perform_scheduled_digest(app: Application) -> None:
         return
 
     content = digest.get("content_md", "")
+    parse_mode = digest.get("parse_mode", "Markdown")
     if len(content) > 4000:
         content = content[:4000] + "\n\n...(truncated)"
 
@@ -395,7 +397,7 @@ async def perform_scheduled_digest(app: Application) -> None:
 
     for user_id in list(ALLOWED_USERS):
         try:
-            await app.bot.send_message(chat_id=user_id, text=text, parse_mode="Markdown", disable_web_page_preview=True)
+            await app.bot.send_message(chat_id=user_id, text=text, parse_mode=parse_mode, disable_web_page_preview=True)
         except Exception as e:
             logger.error(f"Failed to send digest to {user_id}: {e}")
 

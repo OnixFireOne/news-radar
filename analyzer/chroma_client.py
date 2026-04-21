@@ -195,8 +195,8 @@ class ChromaClient:
             )
             # Use len() instead of truthiness — ChromaDB may return numpy arrays
             # which raise "truth value of array is ambiguous" with plain `if not`
-            embeddings = result.get("embeddings") or []
-            if len(embeddings) == 0:
+            embeddings = result.get("embeddings")
+            if embeddings is None or len(embeddings) == 0:
                 return []
 
             embedding = embeddings[0]

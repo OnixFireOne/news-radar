@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS analysis (
 CREATE TABLE IF NOT EXISTS digests (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     content_md   TEXT NOT NULL,          -- Markdown digest text
+    parse_mode   TEXT DEFAULT 'Markdown', -- Telegram parse_mode: Markdown | MarkdownV2
     period_start DATETIME NOT NULL,
     period_end   DATETIME NOT NULL,
     created_at   DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -222,6 +223,9 @@ MIGRATIONS = [
      "ALTER TABLE messages ADD COLUMN in_digest INTEGER DEFAULT 0"),
     ("add_trends_alerted_at",
      "ALTER TABLE trends ADD COLUMN alerted_at DATETIME DEFAULT NULL"),
+
+    ("add_digest_parse_mode",
+     "ALTER TABLE digests ADD COLUMN parse_mode TEXT DEFAULT 'Markdown'"),
 ]
 
 

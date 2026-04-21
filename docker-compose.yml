@@ -56,8 +56,10 @@ services:
     env_file: .env
     volumes:
       - ./data:/app/data
-      - ./data/models:/app/data/models   # HuggingFace model cache (BGE-m3 survives rebuilds)
+      - ./data/models:/app/data/models
       - ./config:/app/config
+      - ./analyzer:/app/analyzer
+      - ./database:/app/database
     restart: unless-stopped
     networks:
       - news-radar-network
@@ -82,7 +84,10 @@ services:
     volumes:
       - ./data:/app/data
       - ./config:/app/config
-      - ./data/models:/root/.cache/chroma   # ChromaDB ONNX model cache (survives rebuilds)
+      - ./data/models:/root/.cache/chroma
+      - ./api:/app/api
+      - ./analyzer:/app/analyzer
+      - ./database:/app/database
     restart: unless-stopped
     networks:
       - news-radar-network

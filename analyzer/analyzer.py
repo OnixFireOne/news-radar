@@ -23,7 +23,12 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from analyzer.llm_client import LLMClient
-from analyzer.prompts import SINGLE_MESSAGE_PROMPT, DIGEST_PROMPT, SYSTEM_PROMPT, ALERT_PROMPT, HOT_TREND_PROMPT
+from analyzer.prompts import (
+    SINGLE_MESSAGE_PROMPT, DIGEST_PROMPT, DIGEST_PROMPT_SPOILER,
+    DIGEST_SPOILER_MERGE_ON, DIGEST_SPOILER_MERGE_OFF,
+    SYSTEM_PROMPT, ALERT_PROMPT, HOT_TREND_PROMPT,
+)
+from analyzer.renderer import render_digest
 from analyzer.embedder import get_embedder
 from analyzer.chroma_client import ChromaClient
 from analyzer.trend_tracker import TrendTracker   # Phase 2: trend detection
@@ -343,7 +348,6 @@ class NewsAnalyzer:
                         system_prompt=SYSTEM_PROMPT,
                         temperature=0.3,
                         max_tokens=300,
-                        enable_thinking=True,
                     )
                 except Exception as e:
                     logger.warning(f"LLM alert formatting failed, using template: {e}")
@@ -373,7 +377,6 @@ class NewsAnalyzer:
                         system_prompt=SYSTEM_PROMPT,
                         temperature=0.3,
                         max_tokens=300,
-                        enable_thinking=True,
                     )
                 except Exception as e:
                     logger.warning(f"LLM trend formatting failed, using template: {e}")
@@ -545,14 +548,25 @@ class NewsAnalyzer:
 
         force=True: bypass in_digest filter (for manual /digest new command).
         """
-        # ── Load rules (hot-reload from settings if cfg available) ──
-        rules = {}
-        digest_max    = 7
-        min_temp      = 5.0
+        # ── Load template config (hot-reload) ──
+        template_name = "classic"
+        template_cfg  = {}
+        rules         = {}
         if self.cfg:
-            rules      = self.cfg.get("digest_rules", {})
-            digest_max = self.cfg.get("digest_max_items", 7)
-            min_temp   = self.cfg.get("digest_min_temperature", 5.0)
+            rules         = self.cfg.get("digest_rules", {})
+            template_name = self.cfg.get("digest_template", "classic")
+            templates_all = self.cfg.get("digest_templates", {})
+            template_cfg  = templates_all.get(template_name, {})
+
+        # Per-template settings (fall back to global keys)
+        digest_max = template_cfg.get(
+            "max_items",
+            self.cfg.get("digest_max_items", 7) if self.cfg else 7
+        )
+        min_temp = template_cfg.get(
+            "min_temperature",
+            self.cfg.get("digest_min_temperature", 5.0) if self.cfg else 5.0
+        )
 
         max_per_topic     = rules.get("max_per_topic", 2)
         include_alerts    = rules.get("always_include_alerts", True)
@@ -615,21 +629,26 @@ class NewsAnalyzer:
             logger.warning("No analyzed messages available for digest")
             return None
 
+        # ── Semantic dedup via ChromaDB FIRST ──
+        rows_dicts = [dict(r) for r in rows]
+        if dedup_threshold < 1.0:
+            rows_dicts = self._dedup_by_similarity(rows_dicts, threshold=dedup_threshold)
+
         # ── Build priority tiers ──
         alerts, trends_tier, high_tier, fill_tier = [], [], [], []
-        for row in rows:
+        for row in rows_dicts:
             topic = row["topic"] or "general"
             temp  = float(row["temperature"] or 5.0)
             is_alert = self._is_alert_topic(topic) or temp >= 9.0
 
             if is_alert and include_alerts:
-                alerts.append(dict(row))
+                alerts.append(row)
             elif row["in_hot_trend"]:
-                trends_tier.append(dict(row))
+                trends_tier.append(row)
             elif temp >= min_temp + 2:
-                high_tier.append(dict(row))
+                high_tier.append(row)
             elif temp >= min_temp:
-                fill_tier.append(dict(row))
+                fill_tier.append(row)
 
         # ── Apply per-topic cap + collect candidates in priority order ──
         topic_counts: dict[str, int] = {}
@@ -671,15 +690,23 @@ class NewsAnalyzer:
             logger.warning("Digest priority queue produced 0 candidates")
             return None
 
-        # ── Semantic dedup via ChromaDB ──
-        if dedup_threshold < 1.0:
-            selected = self._dedup_by_similarity(selected, threshold=dedup_threshold)
+        # ── Cross-digest dedup: driven by template flags ──
+        use_cross_dedup    = template_cfg.get("cross_dedup", True)
+        use_ongoing_trends = template_cfg.get("ongoing_trends", True)
+        lookback_digests   = template_cfg.get("lookback_digests", 2)
 
-        # ── Cross-digest dedup: semantic similarity against previous digests ──
-        cross_dedup_threshold = rules.get("cross_dedup_threshold", 0.75)
-        selected, ongoing_trends = self._dedup_against_previous_digests(
-            selected, threshold=cross_dedup_threshold
-        )
+        ongoing_trends = []
+        if use_cross_dedup and use_ongoing_trends and lookback_digests > 0:
+            cross_dedup_threshold = rules.get("cross_dedup_threshold", 0.75)
+            selected, ongoing_trends = self._dedup_against_previous_digests(
+                selected, lookback=lookback_digests, threshold=cross_dedup_threshold
+            )
+        elif use_cross_dedup and lookback_digests > 0:
+            # Dedup but don't pass ongoing trends to the LLM
+            cross_dedup_threshold = rules.get("cross_dedup_threshold", 0.75)
+            selected, _ = self._dedup_against_previous_digests(
+                selected, lookback=lookback_digests, threshold=cross_dedup_threshold
+            )
 
         logger.info(
             f"Digest: {len(alerts)} alerts, {len(trends_tier)} trend msgs, "
@@ -803,27 +830,48 @@ class NewsAnalyzer:
 
         # ── 2. Legacy Mode: Local LLM generates digest directly ──
         digest_content = ""
+        parse_mode = "Markdown"
         if not agent_succeeded:
             if route_enabled:
-                # Agent was enabled but failed
                 logger.error("Agent digest push failed and legacy fallback is disabled when route_via_openclaw=true.")
                 return None
             # route_via_openclaw=false → use local LLM
             try:
-                digest_content = await self.llm.complete(
-                    user_prompt=prompt,
-                    system_prompt=SYSTEM_PROMPT,
-                    temperature=0.4,
-                    enable_thinking=False,
-                )
-                if digest_content:
-                    # Fix LLM hallucinated GitHub bold (**) to Telegram bold (*)
-                    digest_content = digest_content.replace("**", "*")
-                    # Force bold on the main header if LLM dropped the asterisks
-                    lines = digest_content.splitlines()
-                    if lines and "🔥 Главное за" in lines[0] and not lines[0].startswith("*"):
-                        lines[0] = f"*{lines[0]}*"
-                    digest_content = "\n".join(lines)
+                if template_name == "spoiler":
+                    # Spoiler template: LLM returns JSON → renderer builds MarkdownV2
+                    title_max_words       = template_cfg.get("title_max_words", 8)
+                    summary_max_sentences = template_cfg.get("summary_max_sentences", 3)
+                    llm_merge             = template_cfg.get("llm_merge", True)
+
+                    if llm_merge:
+                        merge_step = DIGEST_SPOILER_MERGE_ON
+                    else:
+                        merge_step = DIGEST_SPOILER_MERGE_OFF.format(digest_max=digest_max)
+
+                    spoiler_prompt = DIGEST_PROMPT_SPOILER.format(
+                        period=period,
+                        count=len(selected),
+                        messages=messages_text,
+                        digest_max=digest_max,
+                        title_max_words=title_max_words,
+                        summary_max_sentences=summary_max_sentences,
+                        merge_step=merge_step,
+                    )
+                    llm_json = await self.llm.complete_json(
+                        user_prompt=spoiler_prompt,
+                        system_prompt=SYSTEM_PROMPT,
+                        temperature=0.3,
+                        max_tokens=4096,
+                    )
+                    digest_content, parse_mode = render_digest(llm_json, "spoiler", template_cfg)
+                else:
+                    # Classic template: LLM returns ready-made Markdown text
+                    raw_text = await self.llm.complete(
+                        user_prompt=prompt,
+                        system_prompt=SYSTEM_PROMPT,
+                        temperature=0.4,
+                    )
+                    digest_content, parse_mode = render_digest(raw_text, "classic", template_cfg)
             except Exception as e:
                 logger.error(f"Local LLM digest generation failed: {e}")
                 return None
@@ -834,8 +882,8 @@ class NewsAnalyzer:
             try:
                 if digest_content:
                     conn.execute(
-                        "INSERT INTO digests (content_md, period_start, period_end) VALUES (?, ?, ?)",
-                        (digest_content, since.isoformat(), datetime.utcnow().isoformat()),
+                        "INSERT INTO digests (content_md, parse_mode, period_start, period_end) VALUES (?, ?, ?, ?)",
+                        (digest_content, parse_mode, since.isoformat(), datetime.utcnow().isoformat()),
                     )
 
                 selected_ids = [row["id"] for row in selected]
@@ -864,8 +912,6 @@ class NewsAnalyzer:
             if agent_succeeded:
                 return "dispatched"
             else:
-                # Legacy: send directly to Telegram
-                await self._fallback_telegram("digest", {"text": digest_content})
                 return digest_content
 
         except Exception as e:
@@ -891,9 +937,10 @@ class NewsAnalyzer:
                     continue
 
                 # Find documents in ChromaDB that are similar to this one
+                vector = self.embedder.encode(msg["text"][:512])
                 result = self.chroma._collection.query(
-                    query_texts=[msg["text"][:512]],
-                    n_results=min(10, len(candidates)),
+                    query_embeddings=[vector],
+                    n_results=min(10, max(1, len(candidates))),
                     include=["distances"],
                 )
                 # ChromaDB returns L2 distances; convert to cosine similarity

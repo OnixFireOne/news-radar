@@ -24,15 +24,26 @@ DEFAULT_CONFIG = {
     "keywords_alert": [],
     "digest_max_items": 7,
     "digest_min_temperature": 5.0,
+    "digest_template": "classic",
+    "digest_templates": {
+        "classic": {
+            "max_items": 7,
+            "min_temperature": 5.0,
+            "cross_dedup": True,
+            "ongoing_trends": True,
+            "lookback_digests": 2,
+            "llm_merge": True
+        }
+    },
     "digest_rules": {
         "max_per_topic": 2,
         "always_include_alerts": True,
         "min_unique_sources_for_trend": 3,
         "dedup_threshold": 0.85,
     },
-    "instant_alerts_temperature": True, # send breaking news immediately based on temp
-    "instant_alerts_trend": True,       # send breaking news immediately based on trend status
-    "route_via_openclaw": False         # true = Agent mode (OpenClaw), false = Legacy (local LLM)
+    "instant_alerts_temperature": True,
+    "instant_alerts_trend": True,
+    "route_via_openclaw": False
 }
 
 

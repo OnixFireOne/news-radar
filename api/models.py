@@ -53,6 +53,7 @@ class TopicResponse(BaseModel):
 class DigestResponse(BaseModel):
     id: int
     content_md: str
+    parse_mode: str = "Markdown"
     period_start: datetime
     period_end: datetime
     created_at: datetime

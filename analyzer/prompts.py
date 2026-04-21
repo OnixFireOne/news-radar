@@ -78,6 +78,53 @@ CRITICAL: Output ONLY the digest text. No meta-commentary. No "Wait," or "Let me
 
 
 # ──────────────────────────────────────────────
+# DIGEST SPOILER TEMPLATE (JSON structured output)
+# Used when digest_template = "spoiler"
+# Python renderer turns this JSON into Telegram MarkdownV2 with spoilers
+# ──────────────────────────────────────────────
+
+DIGEST_PROMPT_SPOILER = """You are a crypto news editor. Analyze the messages below and return a JSON digest in RUSSIAN.
+
+Time period: {period}
+You have {count} source messages below. Do NOT explain your reasoning.
+
+SOURCE MESSAGES:
+{messages}
+
+---
+{merge_step}
+Return a JSON object with exactly {digest_max} items (or fewer only if you merged duplicates):
+
+{{
+  "items": [
+    {{
+      "title": "Броский заголовок новости на русском — не более {title_max_words} слов",
+      "summary": "Краткое саммари — не более {summary_max_sentences} предложений. Ключевые факты: цифры, протоколы, участники.",
+      "source_url": "PostURL from the source message"
+    }},
+    ...
+  ]
+}}
+
+RULES:
+- Write ONLY valid JSON. No markdown, no prose, no extra text outside the JSON.
+- Title: punchy, specific, in Russian. Max {title_max_words} words.
+- Summary: factual, in Russian. Max {summary_max_sentences} sentences. Include key numbers/names.
+- source_url: use the PostURL from the source message exactly as provided."""
+
+# Merge step inserted into the prompt when llm_merge=true
+DIGEST_SPOILER_MERGE_ON = """STEP 1 — MERGE (silently):
+Find groups covering the SAME event from different angles. Merge each group into ONE item using the most complete info. Write fewer items if you merged.
+
+STEP 2 — """
+
+# No merge: trust that deduplication already handled it
+DIGEST_SPOILER_MERGE_OFF = """STEP 1 — Each source message is already deduplicated. Write one item per message. Do NOT merge. Write exactly {digest_max} items.
+
+STEP 2 — """
+
+
+# ──────────────────────────────────────────────
 # BREAKING ALERT (legacy mode — direct LLM → Telegram)
 # ──────────────────────────────────────────────
 

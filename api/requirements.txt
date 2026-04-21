@@ -12,3 +12,4 @@ numpy>=1.24.0
 # PyTorch CPU-only (no GPU needed for embedding)
 --extra-index-url https://download.pytorch.org/whl/cpu
 torch>=2.0.0
+tenacity>=8.0.0

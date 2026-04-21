@@ -286,6 +286,7 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
     return DigestResponse(
         id=row["id"],
         content_md=row["content_md"],
+        parse_mode=row["parse_mode"] if row["parse_mode"] else "Markdown",
         period_start=datetime.fromisoformat(row["period_start"]),
         period_end=datetime.fromisoformat(row["period_end"]),
         created_at=datetime.fromisoformat(row["created_at"]),
@@ -309,6 +310,7 @@ async def get_latest_digest():
     return DigestResponse(
         id=row["id"],
         content_md=row["content_md"],
+        parse_mode=row["parse_mode"] if row["parse_mode"] else "Markdown",
         period_start=datetime.fromisoformat(row["period_start"]),
         period_end=datetime.fromisoformat(row["period_end"]),
         created_at=datetime.fromisoformat(row["created_at"]),
@@ -330,6 +332,7 @@ async def get_digests(limit: int = Query(10, ge=1, le=50)):
         DigestResponse(
             id=row["id"],
             content_md=row["content_md"],
+            parse_mode=row["parse_mode"] if row["parse_mode"] else "Markdown",
             period_start=datetime.fromisoformat(row["period_start"]),
             period_end=datetime.fromisoformat(row["period_end"]),
             created_at=datetime.fromisoformat(row["created_at"]),
