@@ -390,14 +390,15 @@ async def perform_scheduled_digest(app: Application) -> None:
 
     content = digest.get("content_md", "")
     parse_mode = digest.get("parse_mode", "Markdown")
-    if len(content) > 4000:
-        content = content[:4000] + "\n\n...(truncated)"
-
-    text = f"⏰ Авто-Дайджест\n\n{content}"
 
     for user_id in list(ALLOWED_USERS):
         try:
-            await app.bot.send_message(chat_id=user_id, text=text, parse_mode=parse_mode, disable_web_page_preview=True)
+            await app.bot.send_message(
+                chat_id=user_id,
+                text=content,
+                parse_mode=parse_mode,
+                link_preview_options={"is_disabled": True},
+            )
         except Exception as e:
             logger.error(f"Failed to send digest to {user_id}: {e}")
 
