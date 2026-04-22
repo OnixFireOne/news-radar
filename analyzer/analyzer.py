@@ -592,6 +592,12 @@ class NewsAnalyzer:
             except Exception:
                 since = datetime.utcnow() - timedelta(hours=12)
 
+        # Safety cap: never look back more than 24h to avoid LLM context overflow
+        max_lookback = datetime.utcnow() - timedelta(hours=24)
+        if since < max_lookback:
+            logger.warning(f"period_end is too old ({since.isoformat()}), capping since to 24h ago")
+            since = max_lookback
+
         in_digest_filter = "" if force else "AND m.in_digest = 0"
 
         try:

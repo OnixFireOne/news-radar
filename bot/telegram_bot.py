@@ -387,19 +387,21 @@ async def perform_scheduled_digest(app: Application) -> None:
     logger.info("Triggering scheduled legacy digest generation...")
     try:
         async with httpx.AsyncClient(timeout=180) as client:
-            resp = await client.post(f"{API_URL}/digest/generate")
+            # Pass hours=12 explicitly: prevents unbounded lookback if DB period_end is stale.
+            # in_digest=0 filter still prevents duplicate news from the previous digest.
+            resp = await client.post(f"{API_URL}/digest/generate?hours=12")
 
         if resp.status_code != 200:
             err = resp.json().get("detail", resp.text[:200])
             logger.error(f"Scheduled digest failed: {err}")
-            await _notify_users(app, f"⚠️ Авто-дайджест не сгенерирован:\n{err}")
+            await _notify_users(app, f"⚠️ Scheduled digest failed:\n{err}")
             return
 
         digest = resp.json()
 
     except Exception as e:
         logger.error(f"Error triggering scheduled digest: {e}")
-        await _notify_users(app, f"⚠️ Авто-дайджест — ошибка соединения с API:\n{e}")
+        await _notify_users(app, f"⚠️ Scheduled digest failed — API connection error:\n{e}")
         return
 
     content = digest.get("content_md", "")
@@ -407,7 +409,7 @@ async def perform_scheduled_digest(app: Application) -> None:
 
     if not content:
         logger.error("Scheduled digest: empty content returned")
-        await _notify_users(app, "⚠️ Авто-дайджест сгенерирован, но контент пустой.")
+        await _notify_users(app, "⚠️ Scheduled digest generated but content is empty.")
         return
 
     for user_id in list(ALLOWED_USERS):
@@ -423,7 +425,7 @@ async def perform_scheduled_digest(app: Application) -> None:
             try:
                 await app.bot.send_message(
                     chat_id=user_id,
-                    text=f"⚠️ Дайджест сгенерирован, но не удалось отправить с форматированием.\nОшибка: {e}"
+                    text=f"⚠️ Digest generated but failed to send with formatting.\nError: {e}"
                 )
             except Exception:
                 pass
