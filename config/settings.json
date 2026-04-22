@@ -57,6 +57,6 @@
   },
   "instant_alerts_temperature": true,
   "route_via_openclaw": false,
-  "breaking_alert_min_temp": 10,
+  "breaking_alert_min_temp": 9,
   "hot_trend_min_sources": 5
 }

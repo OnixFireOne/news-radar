@@ -26,7 +26,7 @@ from analyzer.llm_client import LLMClient
 from analyzer.prompts import (
     SINGLE_MESSAGE_PROMPT, DIGEST_PROMPT, DIGEST_PROMPT_SPOILER,
     DIGEST_SPOILER_MERGE_ON, DIGEST_SPOILER_MERGE_OFF,
-    SYSTEM_PROMPT, ALERT_PROMPT, HOT_TREND_PROMPT,
+    SYSTEM_PROMPT,
 )
 from analyzer.renderer import render_digest
 from analyzer.embedder import get_embedder
@@ -322,100 +322,189 @@ class NewsAnalyzer:
         except Exception as e:
             logger.warning(f"dispatch_log write failed: {e}")
 
+    async def _enrich_alert_for_telegram(self, event_type: str, data: dict) -> dict:
+        """
+        LLM enrichment step before rendering the alert template.
+
+        breaking_alert:
+            summary is already in Russian, but topic is an English category label
+            and there is no headline yet. LLM generates a punchy Russian headline.
+            Returns: data + {"headline": str}
+
+        hot_trend:
+            topic and summary both come from _name_cluster() which prompts English output.
+            LLM translates both to Russian.
+            Returns: data + {"headline": str, "summary_ru": str}
+
+        Falls back gracefully — returns original data unchanged if LLM fails.
+        """
+        from analyzer.prompts import ALERT_ENRICH_PROMPT, HOT_TREND_ENRICH_PROMPT
+
+        try:
+            if event_type == "breaking_alert":
+                prompt = ALERT_ENRICH_PROMPT.format(
+                    topic=data.get("topic", ""),
+                    summary=data.get("summary", ""),
+                )
+                result = await self.llm.complete_json(
+                    user_prompt=prompt,
+                    system_prompt=(
+                        "Ты редактор русскоязычного крипто-канала. "
+                        "Отвечай строго валидным JSON, без пояснений."
+                    ),
+                    temperature=0.3,
+                )
+                if isinstance(result, dict) and result.get("headline"):
+                    enriched = {**data, "headline": result["headline"]}
+                    if result.get("summary_ru"):
+                        enriched["summary"] = result["summary_ru"]
+                    return enriched
+
+            elif event_type == "hot_trend":
+                prompt = HOT_TREND_ENRICH_PROMPT.format(
+                    topic=data.get("topic", ""),
+                    summary=data.get("summary", ""),
+                )
+                result = await self.llm.complete_json(
+                    user_prompt=prompt,
+                    system_prompt=(
+                        "Ты редактор русскоязычного крипто-канала. "
+                        "Отвечай строго валидным JSON, без пояснений."
+                    ),
+                    temperature=0.3,
+                )
+                if isinstance(result, dict):
+                    enriched = dict(data)
+                    if result.get("headline"):
+                        enriched["headline"] = result["headline"]
+                    if result.get("summary_ru"):
+                        enriched["summary"] = result["summary_ru"]
+                    return enriched
+
+        except Exception as e:
+            logger.warning(f"Alert enrichment LLM call failed ({event_type}): {e} — using raw data")
+
+        return data  # graceful fallback: raw data, no headline
+
     async def _fallback_telegram(self, event_type: str, data: dict):
-        """Send event directly to Telegram in legacy mode. Alerts are LLM-formatted for better Russian output."""
+        """Send event directly to Telegram using structured HTML templates.
+
+        For breaking_alert and hot_trend: calls _enrich_alert_for_telegram first
+        to generate a Russian headline (and translate the summary for hot_trend).
+        The LLM enrichment is best-effort — if it fails, raw data is used as fallback.
+        """
         bot_token = os.getenv("TELEGRAM_BOT_TOKEN")
         allowed_users = os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",")
         if not bot_token or not allowed_users or not allowed_users[0]:
             return
 
-        route_enabled = self.cfg.get("route_via_openclaw", False) if self.cfg else False
-        use_llm = not route_enabled  # in legacy mode: format via LLM
+        # LLM enrichment: generate Russian headline / translate for relevant alert types
+        if event_type in ("breaking_alert", "hot_trend"):
+            data = await self._enrich_alert_for_telegram(event_type, data)
+
+        parse_mode = "HTML"
+        message = ""
+
+        def _h(text: str) -> str:
+            """Escape HTML special chars for Telegram HTML mode."""
+            return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+        def _trim_to_sentences(text: str, max_sentences: int) -> str:
+            """Trim text to at most max_sentences (split by '. ')."""
+            import re
+            sentences = re.split(r"(?<=[.!?])\s+", text.strip())
+            return " ".join(sentences[:max_sentences])
 
         if event_type == "breaking_alert":
-            if use_llm:
-                try:
-                    source_url = data.get("source_url", f"https://t.me/{data['source']}")
-                    prompt = ALERT_PROMPT.format(
-                        source=data["source"],
-                        topic=data["topic"],
-                        temperature=data["temperature"],
-                        summary=data["summary"],
-                        source_url=source_url,
-                    )
-                    message = await self.llm.complete(
-                        user_prompt=prompt,
-                        system_prompt=SYSTEM_PROMPT,
-                        temperature=0.3,
-                        max_tokens=300,
-                    )
-                except Exception as e:
-                    logger.warning(f"LLM alert formatting failed, using template: {e}")
-                    use_llm = False  # fall through to template below
-            if not use_llm:
-                safe_source = data["source"].replace("_", "\_")
-                source_url = data.get("source_url", f"https://t.me/{data['source']}")
-                message = (
-                    f"\U0001f6a8 *BREAKING* (Temp: {data['temperature']:.0f}/10)\n\n"
-                    f"\U0001f3ae Topic: `{data['topic']}`\n\n"
-                    f"\U0001f4dd {data['summary']}\n\n"
-                    f"[source]({source_url})"
-                )
+            # ── Температурный алерт ───────────────────────────────────────────
+            # 🚨 <b>ЗАГОЛОВОК (LLM)</b> (10/10)
+            # <blockquote expandable>саммари макс 10 предложений</blockquote>
+            # <a href="...">источник</a>
+            source_url = data.get("source_url", f"https://t.me/{data['source']}")
+            # Prefer LLM-generated headline; fall back to raw topic category
+            headline = _h(data.get("headline") or data.get("topic", ""))
+            temp = data.get("temperature", 0)
+            summary_raw = _h(_trim_to_sentences(data.get("summary", ""), 10))
+
+            message = (
+                f"🚨 <b>{headline}</b> ({temp:.0f}/10)\n\n"
+                f"<blockquote expandable>{summary_raw}</blockquote>\n\n"
+                f'<a href="{source_url}">источник</a>'
+            )
+
         elif event_type == "hot_trend":
-            if use_llm:
-                try:
-                    channels_str = ", ".join(f"@{c}" for c in data.get("channels", [])[:5])
-                    prompt = HOT_TREND_PROMPT.format(
-                        topic=data.get("topic", ""),
-                        score=data.get("score", 0),
-                        sources=data.get("sources", 0),
-                        summary=data.get("summary", ""),
-                        channels=channels_str,
-                    )
-                    message = await self.llm.complete(
-                        user_prompt=prompt,
-                        system_prompt=SYSTEM_PROMPT,
-                        temperature=0.3,
-                        max_tokens=300,
-                    )
-                except Exception as e:
-                    logger.warning(f"LLM trend formatting failed, using template: {e}")
-                    use_llm = False
-            if not use_llm:
-                channels = ", ".join(f"@{c}" for c in data.get("channels", [])[:5])
-                message = (
-                    f"\U0001f525 *HOT TREND: {data.get('topic')}*\n\n"
-                    f"\U0001f4e1 {data.get('sources')} independent channels: {channels}\n"
-                    f"\U0001f4c8 Score: *{data.get('score', 0):.1f}* | Messages: {data.get('message_count', 0)}\n\n"
-                    f"\U0001f4dd {data.get('summary', '')}"
-                )
+            # ── Тренд-алерт ──────────────────────────────────────────────────
+            # 🔥 HOT TREND
+            #
+            # <b>ЗАГОЛОВОК (LLM-переведённый)</b>
+            # Score: X | Channels: Y
+            # <blockquote expandable>саммари (LLM-переведённое)</blockquote>
+            #
+            # Источники: @ch1, @ch2, ...
+            # Prefer LLM-generated Russian headline; fall back to raw English topic
+            headline = _h(data.get("headline") or data.get("topic", ""))
+            score = data.get("score", 0)
+            sources = data.get("sources", 0)
+            channels = data.get("channels", [])
+            # summary is already replaced with Russian by _enrich_alert_for_telegram
+            summary_raw = _h(data.get("summary", "").strip())
+            channels_str = " ".join(f"@{_h(c)}" for c in channels[:10])
+
+            message = (
+                f"🔥 HOT TREND\n\n"
+                f"<b>{headline}</b>\n"
+                f"Score: {score:.1f} | Channels: {sources}\n\n"
+                f"<blockquote expandable>{summary_raw}</blockquote>"
+            )
+            if channels_str:
+                message += f"\n\nИсточники: {channels_str}"
+
         elif event_type == "trend_alert":
-            safe_topic = data["topic"].replace("_", "\_")
+            # Старый trend_alert (из route_event) — тоже переводим на HTML
+            topic = _h(data.get("topic", ""))
+            score = data.get("score", 0)
+            sources_count = data.get("sources", 0)
+            summary_raw = _h(data.get("summary", "").strip())
+
             message = (
-                f"\U0001f525 *TRENDING*: `{safe_topic}`\n"
-                f"\U0001f4c8 Score: *{data['score']:.1f}* \u2014 {data['sources']} channels\n\n"
-                f"\U0001f4dd {data['summary']}"
+                f"📈 <b>{topic}</b>\n"
+                f"Score: {score:.1f} | Каналов: {sources_count}\n\n"
+                f"<blockquote expandable>{summary_raw}</blockquote>"
             )
+
         elif event_type == "digest":
+            # Дайджест отправляется отдельно со своим parse_mode
             message = data.get("text", "")
+            parse_mode = data.get("parse_mode", "Markdown")
+
         elif event_type == "subscription_match":
+            query = _h(data.get("query", ""))
+            summary_raw = _h(data.get("summary", "").strip())
+            source = data.get("source", "")
+
             message = (
-                f"\U0001f514 *Subscription match: {data.get('query')}*\n\n"
-                f"\U0001f4dd {data.get('summary')}\n\n"
-                f"[source](https://t.me/{data.get('source')})"
+                f"🔔 <b>Совпадение: {query}</b>\n\n"
+                f"<blockquote expandable>{summary_raw}</blockquote>\n\n"
+                f'<a href="https://t.me/{source}">источник</a>'
             )
+
         else:
             return
 
         async with httpx.AsyncClient() as client:
             for uid in allowed_users:
                 uid = uid.strip()
-                if not uid: continue
+                if not uid:
+                    continue
                 try:
                     await client.post(
                         f"https://api.telegram.org/bot{bot_token}/sendMessage",
-                        json={"chat_id": uid, "text": message, "parse_mode": "Markdown",
-                              "link_preview_options": {"is_disabled": True}}
+                        json={
+                            "chat_id": uid,
+                            "text": message,
+                            "parse_mode": parse_mode,
+                            "link_preview_options": {"is_disabled": True},
+                        },
                     )
                     self._log_dispatch(event_type, "fallback_telegram", "ok", message[:300])
                 except Exception as e:

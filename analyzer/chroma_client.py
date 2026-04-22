@@ -47,9 +47,13 @@ class ChromaClient:
         self._client = None
         self._collection = None
 
-    def _connect(self):
-        """Lazy connect to ChromaDB. Called on first use."""
-        if self._client is not None:
+    def _connect(self, force: bool = False):
+        """Lazy connect to ChromaDB. Called on first use.
+        
+        If force=True or collection was lost (ChromaDB restart),
+        drops the cached client and reconnects from scratch.
+        """
+        if self._client is not None and not force:
             return
 
         try:
@@ -58,8 +62,7 @@ class ChromaClient:
                 host=self.host,
                 port=self.port,
             )
-            # Get or create the collection
-            # metadata={"hnsw:space": "cosine"} ensures cosine similarity
+            # get_or_create: safe on both fresh start and reconnect after restart
             self._collection = self._client.get_or_create_collection(
                 name=self.collection_name,
                 metadata={"hnsw:space": "cosine"},
@@ -72,7 +75,22 @@ class ChromaClient:
             raise
         except Exception as e:
             logger.error(f"Failed to connect to ChromaDB at {self.host}:{self.port}: {e}")
+            self._client = None
+            self._collection = None
             raise
+
+    def _reconnect_if_collection_lost(self, e: Exception) -> bool:
+        """If error is 'Collection does not exist', force reconnect. Returns True if reconnected."""
+        if "does not exist" in str(e) or "404" in str(e):
+            logger.warning(f"ChromaDB collection lost (likely restart). Reconnecting...")
+            self._client = None
+            self._collection = None
+            try:
+                self._connect(force=True)
+                return True
+            except Exception as reconnect_err:
+                logger.error(f"Reconnect failed: {reconnect_err}")
+        return False
 
     def health_check(self) -> bool:
         """Check if ChromaDB is reachable and the collection is accessible."""
@@ -112,7 +130,7 @@ class ChromaClient:
             self._collection.upsert(
                 ids=[str(message_id)],
                 embeddings=[embedding],
-                documents=[text[:2000]],   # ChromaDB stores documents for inspection
+                documents=[text[:2000]],
                 metadatas=[{
                     "source": source_name,
                     "timestamp": timestamp,
@@ -122,8 +140,23 @@ class ChromaClient:
                 }],
             )
         except Exception as e:
-            logger.error(f"Failed to add message {message_id} to ChromaDB: {e}")
-            raise
+            if self._reconnect_if_collection_lost(e):
+                # Retry once after reconnect
+                self._collection.upsert(
+                    ids=[str(message_id)],
+                    embeddings=[embedding],
+                    documents=[text[:2000]],
+                    metadatas=[{
+                        "source": source_name,
+                        "timestamp": timestamp,
+                        "temperature": float(temperature),
+                        "topic": topic or "unknown",
+                        "message_id": message_id,
+                    }],
+                )
+            else:
+                logger.error(f"Failed to add message {message_id} to ChromaDB: {e}")
+                raise
 
     def search(
         self,

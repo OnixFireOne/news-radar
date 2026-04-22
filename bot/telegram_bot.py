@@ -217,15 +217,22 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     content = digest.get("content_md", "")
     parse_mode = digest.get("parse_mode", "Markdown")
 
-    # Telegram message limit is 4096 chars
-    if len(content) > 4000:
-        content = content[:4000] + "\n\n... (truncated)"
-
     try:
-        await update.message.reply_text(content, parse_mode=parse_mode)
+        await update.message.reply_text(
+            content,
+            parse_mode=parse_mode,
+            disable_web_page_preview=True,
+        )
     except Exception as e:
-        logger.error(f"Markdown parse failed for digest: {e}")
-        await update.message.reply_text(content)
+        logger.error(f"Digest send failed (parse_mode={parse_mode}): {e} — retrying as plain text")
+        # Strip HTML/Markdown tags so user sees readable plain text
+        import re
+        plain = re.sub(r"<[^>]+>", "", content)   # strip HTML tags
+        plain = plain.replace("*", "").replace("_", "").replace("`", "")  # strip MD
+        try:
+            await update.message.reply_text(plain, disable_web_page_preview=True)
+        except Exception as e2:
+            logger.error(f"Plain text fallback also failed: {e2}")
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -416,17 +423,19 @@ async def perform_scheduled_digest(app: Application) -> None:
                 chat_id=user_id,
                 text=content,
                 parse_mode=parse_mode,
-                link_preview_options={"is_disabled": True},
+                disable_web_page_preview=True,
             )
         except Exception as e:
-            logger.error(f"Failed to send digest to {user_id}: {e}")
+            logger.error(f"Failed to send digest to {user_id} (parse_mode={parse_mode}): {e}")
+            # Fallback: send without formatting — never send error text to user
             try:
                 await app.bot.send_message(
                     chat_id=user_id,
-                    text=f"⚠️ Digest generated but failed to send with formatting.\nError: {e}"
+                    text=content,
+                    disable_web_page_preview=True,
                 )
-            except Exception:
-                pass
+            except Exception as e2:
+                logger.error(f"Fallback send also failed for {user_id}: {e2}")
 
 
 
@@ -467,13 +476,16 @@ def main():
 
     msk_tz = ZoneInfo("Europe/Moscow")
 
-    # Schedule legacy auto-digest at 12:00 MSK and 20:00 MSK
+    # Schedule auto-digest at 12:00 MSK and 20:00 MSK
+    async def _scheduled_digest_job(ctx):
+        await perform_scheduled_digest(app)
+
     app.job_queue.run_daily(
-        callback=lambda ctx: perform_scheduled_digest(app),
+        callback=_scheduled_digest_job,
         time=time(hour=12, minute=0, tzinfo=msk_tz)
     )
     app.job_queue.run_daily(
-        callback=lambda ctx: perform_scheduled_digest(app),
+        callback=_scheduled_digest_job,
         time=time(hour=20, minute=0, tzinfo=msk_tz)
     )
 

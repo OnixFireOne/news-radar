@@ -17,11 +17,13 @@ CHANNEL: {source_name}
 MESSAGE:
 {text}
 
+Write the summary in the same language as the MESSAGE above.
+
 Return ONLY valid JSON with no extra text:
 {{
   "temperature": <number from 1 to 10>,
   "topic": "<one of: bitcoin, ethereum, altcoins, defi, nft, macro, regulation, hack/scam, exchange, general>",
-  "summary": "<2-3 sentences in RUSSIAN: what this news is about>",
+  "summary": "<As detailed as the source allows, up to 10 sentences, in the same language as the message. Cover as many of the following as the source contains: what happened, who is involved, key figures/numbers, background context, market implications, risks and opportunities. Do not pad or invent — only what the source says.>",
   "keywords": ["<keyword>", ...],
   "sentiment": "<positive | negative | neutral>"
 }}
@@ -162,6 +164,38 @@ Rules:
 - Bold the topic using *asterisks*
 - Mention how many channels are covering this
 - Write ONLY the post text, nothing else"""
+
+
+# ──────────────────────────────────────────────
+# ALERT ENRICHMENT (instant alerts — Russian headline + translation)
+# These prompts are used by _enrich_alert_for_telegram() to:
+#   ALERT_ENRICH_PROMPT   → generate a punchy Russian headline for breaking_alert
+#   HOT_TREND_ENRICH_PROMPT → translate English topic/summary to Russian for hot_trend
+# ──────────────────────────────────────────────
+
+ALERT_ENRICH_PROMPT = """Тема категории: {topic}
+Саммари новости (может быть на любом языке): {summary}
+
+Задача:
+1. Если саммари не на русском — переведи его на русский, сохрани все ключевые факты и цифры.
+2. Придумай один броский заголовок (5-9 слов) на русском языке, точно отражающий суть.
+
+Верни ТОЛЬКО валидный JSON без лишнего текста:
+{{
+  "headline": "Броский заголовок здесь",
+  "summary_ru": "Полное саммари на русском языке. Все факты, цифры и участники сохранены."
+}}"""
+
+
+HOT_TREND_ENRICH_PROMPT = """Тема тренда (на английском): {topic}
+Саммари тренда (на английском): {summary}
+
+Переведи и адаптируй для русскоязычной аудитории.
+Верни ТОЛЬКО валидный JSON без лишнего текста:
+{{
+  "headline": "Броский заголовок тренда на русском (4-8 слов)",
+  "summary_ru": "Полное саммари тренда на русском языке. Передай все факты из оригинала."
+}}"""
 
 
 # ──────────────────────────────────────────────
