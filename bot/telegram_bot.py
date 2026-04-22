@@ -387,9 +387,7 @@ async def perform_scheduled_digest(app: Application) -> None:
     logger.info("Triggering scheduled legacy digest generation...")
     try:
         async with httpx.AsyncClient(timeout=180) as client:
-            # Pass hours=12 explicitly: prevents unbounded lookback if DB period_end is stale.
-            # in_digest=0 filter still prevents duplicate news from the previous digest.
-            resp = await client.post(f"{API_URL}/digest/generate?hours=12")
+            resp = await client.post(f"{API_URL}/digest/generate")
 
         if resp.status_code != 200:
             err = resp.json().get("detail", resp.text[:200])
