@@ -366,11 +366,20 @@ async def cmd_ask(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # AUTO-DIGEST (scheduled)
 # ──────────────────────────────────────────────
 
+async def _notify_users(app: Application, text: str) -> None:
+    """Send a plain-text notification to all allowed users (e.g. error alerts)."""
+    for uid in list(ALLOWED_USERS):
+        try:
+            await app.bot.send_message(chat_id=uid, text=text)
+        except Exception as e:
+            logger.error(f"Failed to notify user {uid}: {e}")
+
+
 async def perform_scheduled_digest(app: Application) -> None:
     """Trigger digest generation automatically if legacy mode is active."""
     settings = await fetch_api("/settings") or {}
     use_agent = settings.get("route_via_openclaw", False)
-    
+
     if use_agent:
         logger.info("Skipping scheduled local digest: route_via_openclaw is enabled.")
         return
@@ -379,17 +388,27 @@ async def perform_scheduled_digest(app: Application) -> None:
     try:
         async with httpx.AsyncClient(timeout=180) as client:
             resp = await client.post(f"{API_URL}/digest/generate")
-            if resp.status_code == 200:
-                digest = resp.json()
-            else:
-                logger.error(f"Failed to generate scheduled digest: {resp.text}")
-                return
+
+        if resp.status_code != 200:
+            err = resp.json().get("detail", resp.text[:200])
+            logger.error(f"Scheduled digest failed: {err}")
+            await _notify_users(app, f"⚠️ Авто-дайджест не сгенерирован:\n{err}")
+            return
+
+        digest = resp.json()
+
     except Exception as e:
         logger.error(f"Error triggering scheduled digest: {e}")
+        await _notify_users(app, f"⚠️ Авто-дайджест — ошибка соединения с API:\n{e}")
         return
 
     content = digest.get("content_md", "")
     parse_mode = digest.get("parse_mode", "Markdown")
+
+    if not content:
+        logger.error("Scheduled digest: empty content returned")
+        await _notify_users(app, "⚠️ Авто-дайджест сгенерирован, но контент пустой.")
+        return
 
     for user_id in list(ALLOWED_USERS):
         try:
@@ -401,6 +420,14 @@ async def perform_scheduled_digest(app: Application) -> None:
             )
         except Exception as e:
             logger.error(f"Failed to send digest to {user_id}: {e}")
+            try:
+                await app.bot.send_message(
+                    chat_id=user_id,
+                    text=f"⚠️ Дайджест сгенерирован, но не удалось отправить с форматированием.\nОшибка: {e}"
+                )
+            except Exception:
+                pass
+
 
 
 
