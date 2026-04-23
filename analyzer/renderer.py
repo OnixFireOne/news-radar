@@ -56,7 +56,7 @@ def _html_esc(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
-def _render_spoiler(data: dict, item_emoji: str = "🔹", show_summary: bool = True) -> tuple[str, str]:
+def _render_spoiler(data: dict, item_emoji: str = "🔹", show_summary: bool = True, source_map: dict | None = None) -> tuple[str, str]:
     """
     Spoiler template: LLM returns JSON {items: [{title, summary, source_url}]}.
     Uses Telegram HTML mode with <blockquote expandable> for collapsible blocks.
@@ -79,7 +79,12 @@ def _render_spoiler(data: dict, item_emoji: str = "🔹", show_summary: bool = T
     for item in items:
         title      = _html_esc((item.get("title") or "").strip())
         summary    = _html_esc((item.get("summary") or "").strip())
-        source_url = (item.get("source_url") or "").strip()
+        
+        # Pull URL from source_map if source_id is present, fallback to raw url
+        if source_map and "source_id" in item:
+            source_url = source_map.get(str(item["source_id"]), "")
+        else:
+            source_url = (item.get("source_url") or "").strip()
 
         if not title:
             continue
@@ -103,7 +108,7 @@ def _render_spoiler(data: dict, item_emoji: str = "🔹", show_summary: bool = T
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
-def render_digest(llm_output, template: str, template_cfg: dict | None = None) -> tuple[str, str]:
+def render_digest(llm_output, template: str, template_cfg: dict | None = None, source_map: dict | None = None) -> tuple[str, str]:
     """
     Route LLM output through the correct template renderer.
 
@@ -124,7 +129,7 @@ def render_digest(llm_output, template: str, template_cfg: dict | None = None) -
                 return "", ""
             item_emoji   = cfg.get("item_emoji", "🔹")
             show_summary = cfg.get("show_summary", True)
-            return _render_spoiler(llm_output, item_emoji=item_emoji, show_summary=show_summary)
+            return _render_spoiler(llm_output, item_emoji=item_emoji, show_summary=show_summary, source_map=source_map)
         else:
             # Default: classic
             if not isinstance(llm_output, str):

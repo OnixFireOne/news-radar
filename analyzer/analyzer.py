@@ -893,11 +893,13 @@ class NewsAnalyzer:
             return f"https://t.me/{src}" if src else ""
 
         messages_text = "\n\n".join([
-            f"[{i+1}] Channel: @{row['source_name']} | PostURL: {post_url(dict(row))} | Temperature: {row['temperature']}/10\n"
+            f"[{i+1}] Channel: @{row['source_name']} | Temperature: {row['temperature']}/10\n"
             f"Topic: {row['topic']}\n"
             f"Text: {row['text'][:300]}"
             for i, row in enumerate(selected)
         ])
+        
+        source_map = {str(i+1): post_url(dict(row)) for i, row in enumerate(selected)}
 
         period = "последнее время"
 
@@ -1031,7 +1033,7 @@ class NewsAnalyzer:
                             # ~5000 токенов на reasoning — жёсткий лимит 4096 обрывал JSON
                             disable_thinking=False,  # digest: always full thinking for quality
                         )
-                        digest_content, parse_mode = render_digest(llm_json, "spoiler", template_cfg)
+                        digest_content, parse_mode = render_digest(llm_json, "spoiler", template_cfg, source_map=source_map)
                     else:
                         # Classic template: LLM returns ready-made Markdown text
                         raw_text = await self.llm.complete(

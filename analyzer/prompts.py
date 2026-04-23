@@ -102,7 +102,7 @@ Return a JSON object with exactly {digest_max} items (or fewer only if you merge
     {{
       "title": "Броский заголовок новости на русском — не более {title_max_words} слов",
       "summary": "Краткое саммари — не более {summary_max_sentences} предложений. Ключевые факты: цифры, протоколы, участники.",
-      "source_url": "PostURL from the source message"
+      "source_id": 1
     }},
     ...
   ]
@@ -112,7 +112,7 @@ RULES:
 - Write ONLY valid JSON. No markdown, no prose, no extra text outside the JSON.
 - Title: punchy, specific, in Russian. Max {title_max_words} words.
 - Summary: factual, in Russian. Max {summary_max_sentences} sentences. Include key numbers/names.
-- source_url: use the PostURL from the source message exactly as provided."""
+- source_id: the integer ID (e.g., 1, 2) corresponding to the [ID] of the primary source message you used."""
 
 # Merge step inserted into the prompt when llm_merge=true
 DIGEST_SPOILER_MERGE_ON = """STEP 1 — MERGE (silently):
