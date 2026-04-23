@@ -1,12 +1,14 @@
 {
   "_comment": "Edit this file to change settings. Changes apply within 3 seconds (no restart needed).",
+  "_comment_thinking": "llm_thinking_mode controls reasoning for MESSAGE ANALYSIS (not digest — digest always uses full thinking). Options: 'full' = best quality, ~15-20s/msg; 'off' = fastest, ~2s/msg but temperature scores are less reliable. Middle ground: start llama-server with --reasoning-budget 500 (caps thinking tokens) and set this to 'full'.",
+  "llm_thinking_mode": "full",
   "telegram_folder": "Ton/DeFi",
   "min_message_length": 5,
   "load_history_limit": 5,
   "analyze_interval_minutes": 30,
   "analyze_max_pending": 10,
   "digest_interval_hours": 3,
-  "llm_model": "Qwen3.5-35B-A3B-Q4_K_M.gguf",
+  "llm_model": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
   "trend_window_hours": 2,
   "trend_min_sources": 3,
   "trend_min_temperature": 6.0,
@@ -58,5 +60,7 @@
   "instant_alerts_temperature": true,
   "route_via_openclaw": false,
   "breaking_alert_min_temp": 9,
-  "hot_trend_min_sources": 5
+  "hot_trend_min_sources": 5,
+  "llm_concurrency": 3,
+  "trend_messages_threshold": 20
 }

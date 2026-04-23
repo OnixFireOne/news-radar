@@ -102,6 +102,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "Commands:\n"
         "/hot — trending topics right now\n"
         "/digest — latest AI digest\n"
+        "/digest new — generate fresh digest now (like scheduled cron)\n"
         "/track <topic> — subscribe to a topic\n"
         "/untrack <topic> — remove subscription\n"
         "/my_tracks — your active subscriptions\n"
@@ -160,7 +161,15 @@ async def cmd_hot(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Send the latest AI-generated digest."""
+    """Send the latest AI-generated digest.
+
+    Usage:
+      /digest              — show latest saved digest
+      /digest new          — generate fresh (period from last digest, like cron)
+      /digest new 6        — generate for last 6 hours
+      /digest new 6 force  — generate for last 6 hours, include already-digested messages
+      /digest new force    — generate with force, auto period
+    """
     if not is_allowed(update.effective_user.id):
         return
 
@@ -169,8 +178,15 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     digest = await fetch_api("/digest/latest")
 
     args = [str(a).lower() for a in (ctx.args or [])]
-    force_new = "new" in args
+    force_new  = "new"   in args
     force_flag = "force" in args
+
+    # Parse optional hours: any integer token in args is treated as window size
+    hours_param: int | None = None
+    for token in args:
+        if token.isdigit():
+            hours_param = int(token)
+            break
 
     if not digest or force_new:
         # Check current routing mode from API settings
@@ -178,11 +194,14 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         use_agent = settings.get("route_via_openclaw", False)
 
         if use_agent:
-            force_param = "true" if force_flag else "false"
+            force_str  = "true" if force_flag else "false"
+            hours_str  = f"&hours={hours_param}" if hours_param else ""
             woke = await wake_openclaw(
                 "/reset /no_think\n"
                 "[NEWS-RADAR COMMAND: manual_digest]\n"
-                f"Action: User requested a manual digest. Fetch data from /digest/raw?force={force_param}&hours=6 using Python, write a news summary, and push it to /digest/queue."
+                f"Action: User requested a manual digest. Fetch data from "
+                f"/digest/raw?force={force_str}{hours_str} using Python, "
+                "write a news summary, and push it to /digest/queue."
             )
             if woke:
                 await update.message.reply_text("⏳ Request sent to AI agent. Digest will be published shortly...")
@@ -190,12 +209,19 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("❌ Failed to contact OpenClaw Agent.")
             return
         else:
-            # Legacy mode: trigger internal generation directly
-            await update.message.reply_text("⚙️ Generating digest via local LLM...")
+            # Legacy mode: trigger internal generation directly.
+            # Without hours → period calculated from last digest period_end (matches cron).
+            # With hours   → explicit window, e.g. /digest new 6 covers last 6 hours.
+            hours_label = f" (last {hours_param}h)" if hours_param else " (auto period)"
+            force_label = " 🔄 force" if force_flag else ""
+            await update.message.reply_text(f"⚙️ Generating digest{hours_label}{force_label}...")
             try:
-                async with httpx.AsyncClient(timeout=180) as client:
-                    force_param = "true" if force_flag else "false"
-                    resp = await client.post(f"{API_URL}/digest/generate?force={force_param}&hours=6")
+                async with httpx.AsyncClient(timeout=300) as client:
+                    force_str = "true" if force_flag else "false"
+                    url = f"{API_URL}/digest/generate?force={force_str}"
+                    if hours_param:
+                        url += f"&hours={hours_param}"
+                    resp = await client.post(url)
                     if resp.status_code == 200:
                         digest = resp.json()
                     else:
@@ -243,7 +269,10 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "📡 News Radar — AI news aggregator\n\n"
         "Commands:\n"
         "/hot — trending topics right now\n"
-        "/digest — latest AI digest\n"
+        "/digest — latest saved digest\n"
+        "/digest new — generate fresh digest (auto period)\n"
+        "/digest new 6 — generate for last 6 hours\n"
+        "/digest new 6 force — force-regenerate for last 6 hours\n"
         "/track <topic> — subscribe to a topic (e.g. /track SEC)\n"
         "/untrack <topic> — remove subscription\n"
         "/my_tracks — your active subscriptions\n"
@@ -498,7 +527,7 @@ def main():
         await app.bot.set_my_commands([
             BotCommand("start",     "Запустить бота"),
             BotCommand("hot",       "Горячие тренды прямо сейчас"),
-            BotCommand("digest",    "Последний AI дайджест"),
+            BotCommand("digest",    "Последний AI дайджест | /digest new — сгенерировать"),
             BotCommand("track",     "Подписаться на тему: /track SEC"),
             BotCommand("untrack",   "Отписаться от темы"),
             BotCommand("my_tracks", "Мои активные подписки"),

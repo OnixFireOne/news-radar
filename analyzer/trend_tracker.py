@@ -184,6 +184,11 @@ class TrendTracker:
             Number of trends upserted into SQLite
         """
         logger.info(f"TrendTracker: starting cycle (window={self.WINDOW_HOURS}h)")
+        
+        from analyzer.llm_client import is_llm_locked
+        if is_llm_locked():
+            logger.info("TrendTracker: LLM is locked (digest generation in progress). Skipping cycle.")
+            return 0
 
         # Step 1: fetch recent analyzed+embedded messages from SQLite
         messages = self._fetch_recent_messages()
@@ -472,7 +477,7 @@ class TrendTracker:
                     "Be concise and precise. Always respond with valid JSON only."
                 ),
                 temperature=0.1,
-                max_tokens=256,
+                disable_thinking=False,  # cluster naming: always full thinking for accuracy
             )
             cluster.topic = result.get("topic", cluster.topic)[:100]  # cap length
             cluster.llm_summary = result.get("summary", "")[:500]

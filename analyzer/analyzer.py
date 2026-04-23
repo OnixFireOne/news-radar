@@ -22,7 +22,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from analyzer.llm_client import LLMClient
+from analyzer.llm_client import LLMClient, is_llm_locked, LLMLock
 from analyzer.prompts import (
     SINGLE_MESSAGE_PROMPT, DIGEST_PROMPT, DIGEST_PROMPT_SPOILER,
     DIGEST_SPOILER_MERGE_ON, DIGEST_SPOILER_MERGE_OFF,
@@ -80,6 +80,11 @@ class NewsAnalyzer:
         conn = get_db(self.db_path)
         count = 0
 
+        # Don't start analyzing if the LLM is busy (e.g. generating a digest)
+        if is_llm_locked():
+            logger.info("analyze_pending: LLM is locked (digest generation in progress). Pausing...")
+            return 0
+
         try:
             # Load active subscriptions for real-time alerting
             active_subs = conn.execute("SELECT user_id, query FROM subscriptions WHERE active=1").fetchall()
@@ -89,13 +94,14 @@ class NewsAnalyzer:
 
         try:
             min_len = int(self.cfg.get("min_message_length", 30)) if self.cfg else 30
+            # PRIORITY QUEUE: sort by views and length instead of just time
             rows = conn.execute("""
-                SELECT m.id, m.text, s.name as source_name
+                SELECT m.id, m.text, s.name as source_name, m.collected_at, m.views, m.forwards
                 FROM messages m
                 JOIN sources s ON m.source_id = s.id
                 WHERE m.analyzed = 0
                   AND length(m.text) >= ?
-                ORDER BY m.collected_at DESC
+                ORDER BY COALESCE(m.views, 0) DESC, length(m.text) DESC, m.collected_at DESC
                 LIMIT ?
             """, (min_len, self.batch_size,)).fetchall()
 
@@ -103,18 +109,66 @@ class NewsAnalyzer:
                 logger.debug("No pending messages to analyze")
                 return 0
 
-            logger.info(f"Analyzing {len(rows)} pending messages...")
+            # Convert to list of dicts for safe async access
+            pending_batch = [dict(r) for r in rows]
 
-            for row in rows:
+            logger.info(f"Analyzing {len(pending_batch)} pending messages (Priority Queue)...")
+
+            # Semaphore for concurrent batching (LLM parallelism)
+            concurrency = int(self.cfg.get("llm_concurrency", 3)) if self.cfg else 3
+            sem = asyncio.Semaphore(concurrency)
+
+            async def process_row(row: dict):
+                async with sem:
+                    # 1. Pre-flight Semantic Deduplication
+                    embedding = None
+                    try:
+                        # Encode using thread pool (BGE-m3 is CPU bound)
+                        loop = asyncio.get_running_loop()
+                        embedding = await loop.run_in_executor(None, self.embedder.encode, row["text"])
+                        
+                        if self.chroma.health_check():
+                            # Chroma search
+                            matches = self.chroma.search(query_embedding=embedding, limit=1)
+                            if matches:
+                                best = matches[0]
+                                if best.get("similarity", 0) > 0.90:
+                                    logger.info(f"Message {row['id']} is duplicate of {best['message_id']} (sim={best['similarity']}). Cloning AI response.")
+                                    cloned_result = {
+                                        "topic": best.get("topic", "general"),
+                                        "temperature": best.get("temperature", 5.0),
+                                        "summary": best.get("document", row["text"][:200])[:500],
+                                        "keywords": ["duplicate"],
+                                        "sentiment": "neutral",
+                                        "embedding": embedding
+                                    }
+                                    return row, cloned_result
+                    except Exception as e:
+                        logger.warning(f"Pre-flight deduplication failed for msg {row['id']}: {e}")
+
+                    # 2. Actual LLM Analysis (if not duplicate)
+                    try:
+                        result = await self._analyze_message(
+                            message_id=row["id"],
+                            text=row["text"],
+                            source_name=row["source_name"],
+                        )
+                        if result:
+                            result["embedding"] = embedding
+                        return row, result
+                    except Exception as e:
+                        logger.error(f"Analysis failed for msg {row['id']}: {e}")
+                        return row, None
+
+            # Execute all tasks concurrently and wait
+            tasks = [process_row(r) for r in pending_batch]
+            results = await asyncio.gather(*tasks)
+
+            # 3. Transactional Database Write Layer (Sequential)
+            for row, result in results:
                 try:
-                    result = await self._analyze_message(
-                        message_id=row["id"],
-                        text=row["text"],
-                        source_name=row["source_name"],
-                    )
-
-                    if result:
-                        # Phase 3: normalize topic label using topics.json aliases
+                    if result and result.get("summary"):
+                        # Normalize 
                         raw_topic = result.get("topic", "general")
                         normalized_topic = self._normalize_topic(raw_topic)
 
@@ -131,68 +185,59 @@ class NewsAnalyzer:
                             result.get("sentiment", "neutral"),
                         ))
 
-                        # Phase 1: store embedding in ChromaDB for semantic search
-                        # Pass the already-open conn so _store_embedding
-                        # doesn't need to open a second connection (avoids "database is locked")
-                        await self._store_embedding(
-                            conn=conn,
+                        # Use pre-computed embedding if available, otherwise compute sync
+                        emb = result.get("embedding")
+                        if emb is None:
+                            emb = self.embedder.encode(row["text"])
+
+                        # Add to Chroma
+                        self.chroma.add_message(
                             message_id=row["id"],
+                            embedding=emb,
                             text=row["text"],
                             source_name=row["source_name"],
-                            timestamp=row["collected_at"] if "collected_at" in row.keys() else datetime.utcnow().isoformat(),
+                            timestamp=row.get("collected_at", datetime.utcnow().isoformat()),
                             temperature=result.get("temperature", 5.0),
-                            topic=result.get("topic", "general"),
+                            topic=normalized_topic,
                         )
 
-                    # Mark as analyzed + commit everything for this message at once
-                    conn.execute(
-                        "UPDATE messages SET analyzed=1 WHERE id=?",
-                        (row["id"],)
-                    )
-                    conn.commit()
-                    count += 1
+                        # Commit message
+                        conn.execute("UPDATE messages SET analyzed=1 WHERE id=?", (row["id"],))
+                        conn.commit()
+                        count += 1
 
-                    # Phase 5: Instant Alerts — only for temp = 10 (true emergency)
-                    if result:
+                        # Alerts and Subs ...
                         temp = float(result.get("temperature", 5.0))
-                        min_alert_temp = float(
-                            self.cfg.get("breaking_alert_min_temp", 10) if self.cfg else 10
-                        )
+                        min_alert_temp = float(self.cfg.get("breaking_alert_min_temp", 10) if self.cfg else 10)
                         if temp >= min_alert_temp and self.cfg and self.cfg.get("instant_alerts_temperature", True):
-                            source_n = row["source_name"]
-                            raw_topic = result.get("topic", "general")
-                            summary = result.get("summary", "No summary provided.")
-                            text = row["text"]
                             asyncio.create_task(
-                                self._send_instant_alert(row["id"], source_n, temp, raw_topic, summary, text)
+                                self._send_instant_alert(row["id"], row["source_name"], temp, raw_topic, result.get("summary", ""), row["text"])
                             )
 
-                    # Real-time subscription matching
-                    if subs_list and result:
-                        text_lower = row["text"].lower()
-                        summary_lower = result.get("summary", "").lower()
-                        for sub in subs_list:
-                            if sub["q_lower"] in text_lower or sub["q_lower"] in summary_lower:
-                                asyncio.create_task(
-                                    self._route_event("subscription_match", {
-                                        "user_id": sub["user_id"],
-                                        "query": sub["query"],
-                                        "summary": result.get("summary", ""),
-                                        "source": row["source_name"],
-                                        "text": row["text"][:300]
-                                    })
-                                )
-
-                    # Small delay to avoid overloading the LLM
-                    await asyncio.sleep(0.5)
+                        if subs_list:
+                            text_lower = row["text"].lower()
+                            summary_lower = result.get("summary", "").lower()
+                            for sub in subs_list:
+                                if sub["q_lower"] in text_lower or sub["q_lower"] in summary_lower:
+                                    asyncio.create_task(
+                                        self._route_event("subscription_match", {
+                                            "user_id": sub["user_id"],
+                                            "query": sub["query"],
+                                            "summary": result.get("summary", ""),
+                                            "source": row["source_name"],
+                                            "text": row["text"][:300]
+                                        })
+                                    )
+                    else:
+                        logger.warning(f"Message {row['id']}: Empty result, will retry.")
+                        conn.rollback()
 
                 except Exception as e:
-                    logger.error(f"Failed to analyze message {row['id']}: {e}")
-                    conn.execute(
-                        "UPDATE messages SET analyzed=1 WHERE id=?",
-                        (row["id"],)
-                    )
-                    conn.commit()
+                    logger.error(f"Failed DB write for message {row['id']}: {e}")
+                    try:
+                        conn.rollback()
+                    except Exception:
+                        pass
 
         finally:
             conn.close()
@@ -353,6 +398,7 @@ class NewsAnalyzer:
                         "Отвечай строго валидным JSON, без пояснений."
                     ),
                     temperature=0.3,
+                    disable_thinking=False,  # alert enrichment: quality > speed
                 )
                 if isinstance(result, dict) and result.get("headline"):
                     enriched = {**data, "headline": result["headline"]}
@@ -372,6 +418,7 @@ class NewsAnalyzer:
                         "Отвечай строго валидным JSON, без пояснений."
                     ),
                     temperature=0.3,
+                    disable_thinking=False,  # alert enrichment: quality > speed
                 )
                 if isinstance(result, dict):
                     enriched = dict(data)
@@ -564,18 +611,31 @@ class NewsAnalyzer:
         text: str,
         source_name: str,
     ) -> dict | None:
-        """Send a single message to the LLM for analysis."""
+        """Send a single message to the LLM for analysis.
+
+        Thinking mode is read hot from settings.json (llm_thinking_mode):
+          'full' — full reasoning, best quality (~15-20s/msg)
+          'off'  — no reasoning, ~8-16x faster but lower quality
+        Digest LLM calls always use full thinking regardless of this setting.
+        """
         prompt = SINGLE_MESSAGE_PROMPT.format(
             source_name=source_name,
             text=text[:2000],  # truncate very long messages
         )
+
+        # Hot-reload: re-read thinking mode on every analysis cycle
+        thinking_mode = self.cfg.get("llm_thinking_mode", "full") if self.cfg else "full"
+        disable_thinking = (thinking_mode == "off")
+        if disable_thinking:
+            logger.debug(f"Message {message_id}: thinking disabled (llm_thinking_mode=off)")
 
         try:
             result = await self.llm.complete_json(
                 user_prompt=prompt,
                 system_prompt=SYSTEM_PROMPT,
                 temperature=0.1,
-                max_tokens=1024,
+                disable_thinking=disable_thinking,
+                # max_tokens не задан → используется дефолт 4096 (достаточно для reasoning + JSON)
             )
 
             # Clamp temperature to valid range
@@ -931,45 +991,49 @@ class NewsAnalyzer:
                 logger.error("Agent digest push failed and legacy fallback is disabled when route_via_openclaw=true.")
                 return None
             # route_via_openclaw=false → use local LLM
-            try:
-                if template_name == "spoiler":
-                    # Spoiler template: LLM returns JSON → renderer builds MarkdownV2
-                    title_max_words       = template_cfg.get("title_max_words", 8)
-                    summary_max_sentences = template_cfg.get("summary_max_sentences", 3)
-                    llm_merge             = template_cfg.get("llm_merge", True)
+            with LLMLock():
+                try:
+                    if template_name == "spoiler":
+                        # Spoiler template: LLM returns JSON → renderer builds MarkdownV2
+                        title_max_words       = template_cfg.get("title_max_words", 8)
+                        summary_max_sentences = template_cfg.get("summary_max_sentences", 3)
+                        llm_merge             = template_cfg.get("llm_merge", True)
 
-                    if llm_merge:
-                        merge_step = DIGEST_SPOILER_MERGE_ON
+                        if llm_merge:
+                            merge_step = DIGEST_SPOILER_MERGE_ON
+                        else:
+                            merge_step = DIGEST_SPOILER_MERGE_OFF.format(digest_max=digest_max)
+
+                        spoiler_prompt = DIGEST_PROMPT_SPOILER.format(
+                            period=period,
+                            count=len(selected),
+                            messages=messages_text,
+                            digest_max=digest_max,
+                            title_max_words=title_max_words,
+                            summary_max_sentences=summary_max_sentences,
+                            merge_step=merge_step,
+                        )
+                        llm_json = await self.llm.complete_json(
+                            user_prompt=spoiler_prompt,
+                            system_prompt=SYSTEM_PROMPT,
+                            temperature=0.3,
+                            # max_tokens не ограничен: с включённым thinking модель тратит
+                            # ~5000 токенов на reasoning — жёсткий лимит 4096 обрывал JSON
+                            disable_thinking=False,  # digest: always full thinking for quality
+                        )
+                        digest_content, parse_mode = render_digest(llm_json, "spoiler", template_cfg)
                     else:
-                        merge_step = DIGEST_SPOILER_MERGE_OFF.format(digest_max=digest_max)
-
-                    spoiler_prompt = DIGEST_PROMPT_SPOILER.format(
-                        period=period,
-                        count=len(selected),
-                        messages=messages_text,
-                        digest_max=digest_max,
-                        title_max_words=title_max_words,
-                        summary_max_sentences=summary_max_sentences,
-                        merge_step=merge_step,
-                    )
-                    llm_json = await self.llm.complete_json(
-                        user_prompt=spoiler_prompt,
-                        system_prompt=SYSTEM_PROMPT,
-                        temperature=0.3,
-                        max_tokens=4096,
-                    )
-                    digest_content, parse_mode = render_digest(llm_json, "spoiler", template_cfg)
-                else:
-                    # Classic template: LLM returns ready-made Markdown text
-                    raw_text = await self.llm.complete(
-                        user_prompt=prompt,
-                        system_prompt=SYSTEM_PROMPT,
-                        temperature=0.4,
-                    )
-                    digest_content, parse_mode = render_digest(raw_text, "classic", template_cfg)
-            except Exception as e:
-                logger.error(f"Local LLM digest generation failed: {e}")
-                return None
+                        # Classic template: LLM returns ready-made Markdown text
+                        raw_text = await self.llm.complete(
+                            user_prompt=prompt,
+                            system_prompt=SYSTEM_PROMPT,
+                            temperature=0.4,
+                            disable_thinking=False,  # digest: always full thinking for quality
+                        )
+                        digest_content, parse_mode = render_digest(raw_text, "classic", template_cfg)
+                except Exception as e:
+                    logger.error(f"Local LLM digest generation failed: {e}")
+                    return None
 
         # ── 3. Mark in DB ──
         try:
@@ -1163,8 +1227,7 @@ class NewsAnalyzer:
         """
         trend_interval = int(os.environ.get("TREND_INTERVAL_MINUTES", "15")) * 60
         last_trend_run = datetime.utcnow() - timedelta(seconds=trend_interval)  # run immediately on start
-
-
+        messages_analyzed_since_trend = 0
 
         # Shared TrendTracker instance (reuses self.chroma, self.llm)
         trend_tracker = TrendTracker(
@@ -1183,19 +1246,30 @@ class NewsAnalyzer:
         while True:
             # ─── LLM analysis cycle ───
             try:
-                await self.analyze_pending()
+                analyzed_count = await self.analyze_pending()
+                if analyzed_count > 0:
+                    messages_analyzed_since_trend += analyzed_count
             except Exception as e:
                 logger.error(f"Analyzer loop error: {e}")
 
-            # ─── TrendTracker cycle (every 15 min) ───
+            # ─── TrendTracker cycle (Time-based OR Event-based) ───
             now = datetime.utcnow()
-            if (now - last_trend_run).total_seconds() >= trend_interval:
+            time_elapsed = (now - last_trend_run).total_seconds() >= trend_interval
+            
+            threshold = int((self.cfg.get("trend_messages_threshold", 20)) if self.cfg else 20)
+            threshold_met = (messages_analyzed_since_trend >= threshold)
+
+            if time_elapsed or threshold_met:
+                trigger_reason = "threshold met" if threshold_met else "timer elapsed"
+                logger.info(f"Triggering TrendTracker run_cycle ({trigger_reason}). Analyzed since last run: {messages_analyzed_since_trend}")
                 try:
                     await trend_tracker.run_cycle()
                     last_trend_run = now
+                    messages_analyzed_since_trend = 0
                 except Exception as e:
                     logger.error(f"TrendTracker cycle error: {e}")
                     last_trend_run = now  # don't retry immediately on error
+                    messages_analyzed_since_trend = 0
                     
 
             slept = 0

@@ -450,6 +450,8 @@ _SETTINGS_SCHEMA: dict[str, type] = {
     "hot_trend_min_sources":   int,
     "instant_alerts_temperature": bool,
     "route_via_openclaw":      bool,   # true = Agent mode, false = Legacy (local LLM)
+    "llm_concurrency":         int,
+    "trend_messages_threshold": int,
 }
 
 

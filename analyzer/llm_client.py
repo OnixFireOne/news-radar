@@ -12,9 +12,42 @@ import os
 from typing import Any
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+import time
 import httpx
 
 logger = logging.getLogger(__name__)
+
+LLM_LOCK_FILE = "/app/data/llm.lock"
+
+def is_llm_locked() -> bool:
+    """Check if the LLM is currently locked by another process (e.g. digest generation)."""
+    if os.path.exists(LLM_LOCK_FILE):
+        if time.time() - os.path.getmtime(LLM_LOCK_FILE) < 900:  # 15 min max lock
+            return True
+        else:
+            try:
+                os.remove(LLM_LOCK_FILE)
+            except Exception:
+                pass
+    return False
+
+class LLMLock:
+    """Context manager for locking the LLM across processes."""
+    def __enter__(self):
+        try:
+            with open(LLM_LOCK_FILE, "w") as f:
+                f.write("1")
+        except Exception:
+            pass
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        try:
+            if os.path.exists(LLM_LOCK_FILE):
+                os.remove(LLM_LOCK_FILE)
+        except Exception:
+            pass
+
 
 
 class LLMClient:
@@ -36,6 +69,11 @@ class LLMClient:
         # Default max_tokens headroom: Qwen3 with --jinja uses ~300-500 tokens for thinking
         # before writing the actual answer. Callers can override per-request.
         self._thinking_overhead = 700  # extra tokens reserved for <think> block
+        # Instance-level default for thinking (from env). Per-call override is preferred —
+        # pass disable_thinking=True/False to complete()/complete_json() directly.
+        # LLM_DISABLE_THINKING=true: fast but lower quality (see settings.json llm_thinking_mode)
+        _dt = os.getenv("LLM_DISABLE_THINKING", "false").lower()
+        self.disable_thinking: bool = _dt in ("1", "true", "yes")
 
     @retry(
         stop=stop_after_attempt(3),
@@ -48,6 +86,7 @@ class LLMClient:
         system_prompt: str = "",
         temperature: float = 0.3,
         max_tokens: int = -1,
+        disable_thinking: bool | None = None,
     ) -> str:
         """
         Send a request to the LLM and return the text response.
@@ -57,6 +96,8 @@ class LLMClient:
             system_prompt: system instruction
             temperature: 0 = deterministic, 1 = creative
             max_tokens: max tokens in response. -1 = unlimited (server default).
+            disable_thinking: override instance default. True=skip reasoning (fast),
+                False=full thinking (quality). None=use LLM_DISABLE_THINKING env var.
 
         Returns:
             Model response as plain text (from content field)
@@ -74,6 +115,12 @@ class LLMClient:
             payload["max_tokens"] = max_tokens
         if self.model:
             payload["model"] = self.model
+        # Disable reasoning via Jinja chat template (llama.cpp / Qwen3).
+        # Tested: ~8-16x speedup, but lower quality (temp underestimated, topic less precise).
+        # Per-call override takes priority; falls back to instance default from env.
+        _no_think = self.disable_thinking if disable_thinking is None else disable_thinking
+        if _no_think:
+            payload["chat_template_kwargs"] = {"enable_thinking": False}
 
         try:
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -116,7 +163,8 @@ class LLMClient:
         user_prompt: str,
         system_prompt: str = "",
         temperature: float = 0.1,
-        max_tokens: int = 1024,
+        max_tokens: int = -1,  # без лимита — модель сама решает
+        disable_thinking: bool | None = None,
     ) -> dict[str, Any]:
         """
         Request expecting a JSON response.
@@ -128,6 +176,7 @@ class LLMClient:
             system_prompt=system_prompt,
             temperature=temperature,
             max_tokens=max_tokens,
+            disable_thinking=disable_thinking,
         )
 
         # Strip markdown code fences if model added them

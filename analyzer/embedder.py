@@ -36,16 +36,21 @@ class Embedder:
     """
 
     def __init__(self, model_name: str, cache_dir: str):
+        import threading
         self.model_name = model_name
         self.cache_dir = cache_dir
         self._model = None  # lazy load
+        self._lock = threading.Lock()
 
     def _load(self):
         """Load the model into memory. Called on first encode() call."""
         if self._model is not None:
             return
 
-        logger.info(f"Loading embedding model '{self.model_name}' (first run may take a while)...")
+        with self._lock:
+            if self._model is not None:
+                return
+            logger.info(f"Loading embedding model '{self.model_name}' (first run may take a while)...")
 
         try:
             from sentence_transformers import SentenceTransformer
