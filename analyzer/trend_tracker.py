@@ -62,6 +62,7 @@ class TrendCluster:
     views: list[int]            # Telegram view count per message
     timestamps: list[datetime]
     texts: list[str]            # message texts (for LLM summarization)
+    source_urls: dict[str, str] = field(default_factory=dict) # channel -> newest message url
 
     # Set by _name_cluster() after LLM call
     llm_summary: str = ""
@@ -433,6 +434,17 @@ class TrendTracker:
         # Always include the publisher name too so subscriber channels get credit
         all_channel_names = [m["source_name"] for m in messages]
 
+        # Build source URLs (keep the latest message URL per source)
+        source_urls = {}
+        for m in sorted(messages, key=lambda x: x.get("collected_at", ""), reverse=True):
+            source = m.get("forward_from_channel") or m["source_name"]
+            if source not in source_urls and m.get("external_id"):
+                source_urls[source] = f"https://t.me/{source}/{m['external_id']}"
+            # Also keep URL for the direct publisher in case they are mentioned
+            publisher = m["source_name"]
+            if publisher not in source_urls and m.get("external_id"):
+                source_urls[publisher] = f"https://t.me/{publisher}/{m['external_id']}"
+
         return TrendCluster(
             topic=label,
             message_ids=[m["id"] for m in messages],
@@ -442,6 +454,7 @@ class TrendTracker:
             views=[int(m.get("views") or 0) for m in messages],
             timestamps=timestamps,
             texts=[m["text"][:600] for m in messages],
+            source_urls=source_urls,
         )
 
     # ─────────────────────────────────────────────────
@@ -617,6 +630,7 @@ class TrendTracker:
                                 "score": score,
                                 "sources": cluster.unique_sources,
                                 "channels": list(set(cluster.sources))[:8],
+                                "source_urls": cluster.source_urls,
                                 "message_count": cluster.message_count,
                                 "summary": summary or "Hot trend detected.",
                             })

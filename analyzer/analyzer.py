@@ -493,9 +493,19 @@ class NewsAnalyzer:
             score = data.get("score", 0)
             sources = data.get("sources", 0)
             channels = data.get("channels", [])
+            source_urls = data.get("source_urls", {})
             # summary is already replaced with Russian by _enrich_alert_for_telegram
             summary_raw = _h(data.get("summary", "").strip())
-            channels_str = " ".join(f"@{_h(c)}" for c in channels[:10])
+            
+            # Map channel to A tag if URL is present
+            channel_links = []
+            for c in channels[:10]:
+                c_html = _h(c)
+                if c in source_urls:
+                    channel_links.append(f"<a href='{source_urls[c]}'>@{c_html}</a>")
+                else:
+                    channel_links.append(f"@{c_html}")
+            channels_str = " ".join(channel_links)
 
             message = (
                 f"🔥 HOT TREND\n\n"
