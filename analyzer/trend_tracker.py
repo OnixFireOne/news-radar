@@ -618,7 +618,8 @@ class TrendTracker:
                     "HOT_TREND_MIN_SOURCES",
                     str((self.analyzer.cfg or {}).get("hot_trend_min_sources", 5) if self.analyzer else 5)
                 ))
-                if cluster.unique_sources >= min_sources and not alerted_at_val:
+                is_fresh = (datetime.now(timezone.utc) - cluster.last_seen).total_seconds() < 7200 # 2 hours
+                if cluster.unique_sources >= min_sources and not alerted_at_val and is_fresh:
                     conn.execute(
                         "UPDATE trends SET alerted_at = CURRENT_TIMESTAMP WHERE id = ?",
                         (trend_id,)
