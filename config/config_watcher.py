@@ -43,7 +43,15 @@ DEFAULT_CONFIG = {
     },
     "instant_alerts_temperature": True,
     "instant_alerts_trend": True,
-    "route_via_openclaw": False
+    "route_via_openclaw": False,
+    "breaking_alert_min_temp": 9.0,
+    "hot_trend_min_sources": 5,
+    "llm_concurrency": 3,
+    "trend_messages_threshold": 20,
+    "trend_window_hours": 4,
+    "trend_min_sources": 2,
+    "trend_min_cluster_size": 2,
+    "trend_min_temperature": 5.0
 }
 
 
