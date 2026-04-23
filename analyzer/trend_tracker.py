@@ -177,6 +177,18 @@ class TrendTracker:
         self.chroma = chroma_client
         self.analyzer = analyzer
 
+    @property
+    def window_hours(self) -> int:
+        return int((self.analyzer.cfg or {}).get("trend_window_hours", self.WINDOW_HOURS)) if self.analyzer else self.WINDOW_HOURS
+
+    @property
+    def min_unique_sources(self) -> int:
+        return int((self.analyzer.cfg or {}).get("trend_min_sources", self.MIN_UNIQUE_SOURCES)) if self.analyzer else self.MIN_UNIQUE_SOURCES
+
+    @property
+    def min_cluster_size(self) -> int:
+        return int((self.analyzer.cfg or {}).get("trend_min_cluster_size", self.MIN_CLUSTER_SIZE)) if self.analyzer else self.MIN_CLUSTER_SIZE
+
     async def run_cycle(self) -> int:
         """
         Execute one full detection cycle.
@@ -184,7 +196,7 @@ class TrendTracker:
         Returns:
             Number of trends upserted into SQLite
         """
-        logger.info(f"TrendTracker: starting cycle (window={self.WINDOW_HOURS}h)")
+        logger.info(f"TrendTracker: starting cycle (window={self.window_hours}h)")
         
         from analyzer.llm_client import is_llm_locked
         if is_llm_locked():
@@ -193,7 +205,7 @@ class TrendTracker:
 
         # Step 1: fetch recent analyzed+embedded messages from SQLite
         messages = self._fetch_recent_messages()
-        if len(messages) < self.MIN_CLUSTER_SIZE * 2:
+        if len(messages) < self.min_cluster_size * 2:
             logger.info(f"TrendTracker: only {len(messages)} messages in window, skipping")
             return 0
 
@@ -212,10 +224,10 @@ class TrendTracker:
             return 0
 
         # Step 4: filter — only clusters with enough unique sources
-        significant = [c for c in clusters if c.unique_sources >= self.MIN_UNIQUE_SOURCES]
+        significant = [c for c in clusters if c.unique_sources >= self.min_unique_sources]
         logger.info(
             f"TrendTracker: {len(clusters)} total clusters, "
-            f"{len(significant)} with unique_sources >= {self.MIN_UNIQUE_SOURCES}"
+            f"{len(significant)} with unique_sources >= {self.min_unique_sources}"
         )
 
         if not significant:
@@ -272,7 +284,7 @@ class TrendTracker:
                   AND length(m.text) >= ?
                 ORDER BY m.collected_at DESC
                 LIMIT ?
-            """, (f"-{self.WINDOW_HOURS} hours", min_len, self.MAX_MESSAGES)).fetchall()
+            """, (f"-{self.window_hours} hours", min_len, self.MAX_MESSAGES)).fetchall()
             return [dict(r) for r in rows]
         finally:
             conn.close()
@@ -360,7 +372,7 @@ class TrendTracker:
         def _run_hdbscan():
             arr = np.array(embeddings, dtype=np.float32)
             clusterer = HDBSCAN(
-                min_cluster_size=self.MIN_CLUSTER_SIZE,
+                min_cluster_size=self.min_cluster_size,
                 min_samples=1,
                 metric="euclidean",
                 cluster_selection_epsilon=self.HDBSCAN_EPSILON,
@@ -404,7 +416,7 @@ class TrendTracker:
 
         clusters = []
         for topic, msgs in topic_map.items():
-            if len(msgs) < self.MIN_CLUSTER_SIZE:
+            if len(msgs) < self.min_cluster_size:
                 continue
             cluster = self._build_cluster(topic, msgs)
             clusters.append(cluster)
