@@ -23,7 +23,7 @@ Return ONLY valid JSON with no extra text:
 {{
   "temperature": <number from 1 to 10>,
   "topic": "<one of: bitcoin, ethereum, altcoins, defi, nft, macro, regulation, hack/scam, exchange, general>",
-  "summary": "<As detailed as the source allows, up to 10 sentences, in the same language as the message. Cover as many of the following as the source contains: what happened, who is involved, key figures/numbers, background context, market implications, risks and opportunities. Do not pad or invent — only what the source says.>",
+  "summary": "<As detailed as the source allows, up to 10 sentences, in the same language as the message. First cover key facts (numbers, protocols). CRITICAL: If the post contains strong subjective opinions, sarcasm, or philosophical takeaways (features of shitposting/editorial), you MUST capture the author's main point and attitude in your summary. Do not reduce editorial posts to dry facts only.>",
   "keywords": ["<keyword>", ...],
   "sentiment": "<positive | negative | neutral>"
 }}
@@ -226,7 +226,7 @@ Maximum 5 clusters. Merge similar topics."""
 # SYSTEM PROMPT (used for all requests)
 # ──────────────────────────────────────────────
 
-SYSTEM_PROMPT = """You are a cryptocurrency market analyst.
-Your job: analyze news briefly, accurately, and objectively.
+SYSTEM_PROMPT = """You are an expert cryptocurrency market analyst and content editor.
+Your job: analyze context accurately, capturing both the objective facts and the unique subjective opinions/attitude of the authors.
 Always respond strictly in the requested format.
 Do not add anything outside the format."""

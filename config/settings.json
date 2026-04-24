@@ -3,7 +3,7 @@
   "_comment_thinking": "llm_thinking_mode controls reasoning for MESSAGE ANALYSIS (not digest — digest always uses full thinking). Options: 'full' = best quality, ~15-20s/msg; 'off' = fastest, ~2s/msg but temperature scores are less reliable. Middle ground: start llama-server with --reasoning-budget 500 (caps thinking tokens) and set this to 'full'.",
   "llm_thinking_mode": "full",
   "telegram_folder": "Ton/DeFi",
-  "min_message_length": 5,
+  "min_message_length": 15,
   "load_history_limit": 5,
   "analyze_interval_minutes": 30,
   "analyze_max_pending": 10,
