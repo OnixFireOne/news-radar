@@ -554,6 +554,11 @@ class NewsAnalyzer:
                 if not uid:
                     continue
                 try:
+                    with open("/tmp/debug_telegram_msg.html", "w", encoding="utf-8") as f:
+                        f.write(message)
+                except Exception: pass
+
+                try:
                     await client.post(
                         f"https://api.telegram.org/bot{bot_token}/sendMessage",
                         json={
@@ -563,7 +568,20 @@ class NewsAnalyzer:
                             "link_preview_options": {"is_disabled": True},
                         },
                     )
-                    self._log_dispatch(event_type, "fallback_telegram", "ok", message[:300])
+                    # Write full message to file for inspection
+                    try:
+                        with open("/tmp/debug_telegram_msg.html", "w", encoding="utf-8") as _f:
+                            _f.write(message)
+                    except Exception:
+                        pass
+                    missing = [ch for ch in channels if ch not in source_urls]
+                    debug_str = (
+                        f"CHANNELS={channels}\n"
+                        f"URL_KEYS={list(source_urls.keys())}\n"
+                        f"MISSING_URLS={missing}\n"
+                        f"{message}"
+                    )
+                    self._log_dispatch(event_type, "fallback_telegram", "ok", debug_str[:2000])
                 except Exception as e:
                     logger.error(f"Telegram fallback failed for {uid}: {e}")
                     self._log_dispatch(event_type, "fallback_telegram", "error", message[:300])

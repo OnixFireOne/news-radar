@@ -268,6 +268,7 @@ class TrendTracker:
             rows = conn.execute("""
                 SELECT
                     m.id,
+                    m.external_id,
                     m.text,
                     m.views,
                     m.collected_at,
