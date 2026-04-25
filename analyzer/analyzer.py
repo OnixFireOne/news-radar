@@ -202,7 +202,7 @@ class NewsAnalyzer:
                         )
 
                         # Commit message
-                        conn.execute("UPDATE messages SET analyzed=1 WHERE id=?", (row["id"],))
+                        conn.execute("UPDATE messages SET analyzed=1, chroma_synced=1 WHERE id=?", (row["id"],))
                         conn.commit()
                         count += 1
 
