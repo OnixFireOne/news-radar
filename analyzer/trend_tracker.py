@@ -438,11 +438,9 @@ class TrendTracker:
             except Exception:
                 timestamps.append(datetime.now(timezone.utc))
 
-        # Effective source: forward origin > publisher name
-        sources = [
-            (m.get("forward_from_channel") or m["source_name"])
-            for m in messages
-        ]
+        # Use strictly the public publisher channel!
+        # Do not use forward origin to avoid confusing numeric private channel IDs
+        sources = [ m["source_name"] for m in messages ]
         # Always include the publisher name too so subscriber channels get credit
         all_channel_names = [m["source_name"] for m in messages]
 
@@ -462,16 +460,10 @@ class TrendTracker:
             return f"https://t.me/{channel_name}"
 
         for m in sorted(messages, key=lambda x: x.get("collected_at", ""), reverse=True):
-            source = m.get("forward_from_channel") or m["source_name"]
-            # To ensure the link works, ALWAYS link to the public source_name where we scraped it from,
-            # even if the visual label (source) credits the original private author.
+            source = m["source_name"]
+            # To ensure the link works, ALWAYS link to the public source_name where we scraped it from
             if source not in source_urls and m.get("external_id"):
                 source_urls[source] = build_tme_url(m["source_name"], m['external_id'])
-            
-            # Also keep URL for the direct publisher in case they are mentioned
-            publisher = m["source_name"]
-            if publisher not in source_urls and m.get("external_id"):
-                source_urls[publisher] = build_tme_url(publisher, m['external_id'])
 
         return TrendCluster(
             topic=label,
