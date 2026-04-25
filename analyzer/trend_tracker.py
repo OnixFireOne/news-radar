@@ -39,9 +39,36 @@ import os
 import httpx
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+from typing import TypedDict
+
+if TYPE_CHECKING:
+    from analyzer.analyzer import NewsAnalyzer
 
 logger = logging.getLogger(__name__)
+
+
+# ─────────────────────────────────────────────────────────
+# Typed shapes for SQLite rows flowing through the pipeline.
+# Adding a field here + to the SELECT query = mypy catches mismatches.
+# ─────────────────────────────────────────────────────────
+
+class MessageRow(TypedDict):
+    """Shape of a row returned by _fetch_recent_messages."""
+    id: int
+    external_id: str          # Telegram message ID in the source channel
+    text: str
+    views: int
+    collected_at: str
+    source_name: str          # public @username of the channel we scraped
+    forward_from_channel: Optional[str]  # private/numeric origin if forwarded
+    temperature: float
+    llm_topic: str
+
+
+class SourceUrlMap(TypedDict, total=False):
+    """channel_name -> canonical t.me URL for the latest post."""
+    pass  # used as dict[str, str] — TypedDict anchor for documentation
 
 
 # ─────────────────────────────────────────────────────────
@@ -171,7 +198,7 @@ class TrendTracker:
     HDBSCAN_EPSILON = 0.35       # cluster_selection_epsilon — tune if too few/many clusters
     DEAD_TREND_HOURS = 12        # mark old trends as dead even if not in current window
 
-    def __init__(self, db_path: str, llm_client, chroma_client, analyzer=None):
+    def __init__(self, db_path: str, llm_client, chroma_client, analyzer: Optional["NewsAnalyzer"] = None) -> None:
         self.db_path = db_path
         self.llm = llm_client
         self.chroma = chroma_client
@@ -252,7 +279,7 @@ class TrendTracker:
     # Private: data fetching
     # ─────────────────────────────────────────────────
 
-    def _fetch_recent_messages(self) -> list[dict]:
+    def _fetch_recent_messages(self) -> list[MessageRow]:
         """
         Load recent analyzed + ChromaDB-synced messages from SQLite.
         Only messages with chroma_synced=1 have embeddings we can cluster.
@@ -291,8 +318,8 @@ class TrendTracker:
             conn.close()
 
     def _fetch_embeddings(
-        self, messages: list[dict]
-    ) -> tuple[list[list[float]], list[dict]]:
+        self, messages: list[MessageRow]
+    ) -> tuple[list[list[float]], list[MessageRow]]:
         """
         Fetch BGE-m3 embeddings from ChromaDB for the given message IDs.
 
@@ -320,15 +347,14 @@ class TrendTracker:
                 for doc_id, emb in zip(result["ids"], result["embeddings"])
             }
 
-            # Keep only messages that have embeddings (some may not be in ChromaDB yet)
-            valid_messages = []
-            embeddings = []
-            for msg in messages:
-                if msg["id"] in id_to_embedding:
-                    valid_messages.append(msg)
-                    embeddings.append(id_to_embedding[msg["id"]])
+            valid_messages: list[MessageRow] = [
+                msg for msg in messages if msg["id"] in id_to_embedding
+            ]
+            embeddings_out: list[list[float]] = [
+                id_to_embedding[msg["id"]] for msg in valid_messages
+            ]
 
-            return embeddings, valid_messages
+            return embeddings_out, valid_messages
 
         except Exception as e:
             logger.error(f"TrendTracker: ChromaDB fetch failed: {e}")
@@ -340,9 +366,9 @@ class TrendTracker:
 
     async def _cluster_messages(
         self,
-        messages: list[dict],
+        messages: list[MessageRow],
         embeddings: list[list[float]],
-    ) -> list[TrendCluster]:
+    ) -> list["TrendCluster"]:
         """
         Cluster messages using HDBSCAN on pre-computed BGE-m3 embeddings.
 
@@ -388,7 +414,7 @@ class TrendTracker:
             return self._fallback_cluster_by_topic(messages)
 
         # Group messages by cluster label (-1 = noise, skip those)
-        cluster_map: dict[int, list[dict]] = {}
+        cluster_map: dict[int, list[MessageRow]] = {}
         for msg, label in zip(messages, labels):
             if label == -1:
                 continue   # noise point — doesn't belong to any cluster
@@ -404,13 +430,13 @@ class TrendTracker:
             for label, msgs in cluster_map.items()
         ]
 
-    def _fallback_cluster_by_topic(self, messages: list[dict]) -> list[TrendCluster]:
+    def _fallback_cluster_by_topic(self, messages: list[MessageRow]) -> list["TrendCluster"]:
         """
         Fallback grouping when HDBSCAN is unavailable.
         Uses LLM-assigned topic labels from the analysis table instead of embeddings.
         Less accurate (LLM can use different labels for the same topic) but always works.
         """
-        topic_map: dict[str, list[dict]] = {}
+        topic_map: dict[str, list[MessageRow]] = {}
         for msg in messages:
             topic = (msg.get("llm_topic") or "unknown").lower().strip()
             topic_map.setdefault(topic, []).append(msg)
@@ -424,7 +450,7 @@ class TrendTracker:
 
         return clusters
 
-    def _build_cluster(self, label: str, messages: list[dict]) -> TrendCluster:
+    def _build_cluster(self, label: str, messages: list[MessageRow]) -> "TrendCluster":
         """Build a TrendCluster from a group of messages.
 
         Uses the effective source for unique counting:

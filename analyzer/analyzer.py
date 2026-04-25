@@ -19,6 +19,7 @@ import sys
 import httpx
 from datetime import datetime, timedelta
 from pathlib import Path
+from typing import Optional, Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -279,7 +280,7 @@ class NewsAnalyzer:
 
         Toggle: config/settings.json -> "route_via_openclaw": true  (hot-reload)
         """
-        webhook_url = (os.getenv("OPENCLAW_WEBHOOK_URL") or os.getenv("OPENCLAW_API_URL", "")).strip()
+        webhook_url = (os.getenv("OPENCLAW_WEBHOOK_URL") or os.getenv("OPENCLAW_API_URL") or "").strip()
         route_enabled = self.cfg.get("route_via_openclaw", False) if self.cfg else False
 
         # Convert old /hooks/wake URL to OpenAI /v1/chat/completions
@@ -324,7 +325,7 @@ class NewsAnalyzer:
             else:
                 text = f"[NEWS-RADAR EVENT: {event_type}]\n{json.dumps(data, ensure_ascii=False)}"
 
-            token = (os.getenv("OPENCLAW_WEBHOOK_TOKEN") or os.getenv("OPENCLAW_API_TOKEN", "")).strip()
+            token = (os.getenv("OPENCLAW_WEBHOOK_TOKEN") or os.getenv("OPENCLAW_API_TOKEN") or "").strip()
             headers = {"Authorization": f"Bearer {token}"} if token else {}
 
             payload = {
@@ -353,7 +354,7 @@ class NewsAnalyzer:
             await self._fallback_telegram(event_type, data)
 
     def _log_dispatch(self, event_type: str, sent_to: str, status: str,
-                      payload_preview: str = "", http_status: int = None) -> None:
+                      payload_preview: str = "", http_status: Optional[int] = None) -> None:
         """Persist a dispatch record to dispatch_log for audit and debugging."""
         try:
             conn = get_db(self.db_path)
@@ -554,12 +555,7 @@ class NewsAnalyzer:
                 if not uid:
                     continue
                 try:
-                    with open("/tmp/debug_telegram_msg.html", "w", encoding="utf-8") as f:
-                        f.write(message)
-                except Exception: pass
-
-                try:
-                    await client.post(
+                    resp = await client.post(
                         f"https://api.telegram.org/bot{bot_token}/sendMessage",
                         json={
                             "chat_id": uid,
@@ -568,23 +564,11 @@ class NewsAnalyzer:
                             "link_preview_options": {"is_disabled": True},
                         },
                     )
-                    # Write full message to file for inspection
-                    try:
-                        with open("/tmp/debug_telegram_msg.html", "w", encoding="utf-8") as _f:
-                            _f.write(message)
-                    except Exception:
-                        pass
-                    missing = [ch for ch in channels if ch not in source_urls]
-                    debug_str = (
-                        f"CHANNELS={channels}\n"
-                        f"URL_KEYS={list(source_urls.keys())}\n"
-                        f"MISSING_URLS={missing}\n"
-                        f"{message}"
-                    )
-                    self._log_dispatch(event_type, "fallback_telegram", "ok", debug_str[:2000])
+                    self._log_dispatch(event_type, "fallback_telegram", "ok", message[:2000])
                 except Exception as e:
                     logger.error(f"Telegram fallback failed for {uid}: {e}")
                     self._log_dispatch(event_type, "fallback_telegram", "error", message[:300])
+
 
     async def _store_embedding(
         self,
@@ -878,7 +862,7 @@ class NewsAnalyzer:
         use_ongoing_trends = template_cfg.get("ongoing_trends", True)
         lookback_digests   = template_cfg.get("lookback_digests", 2)
 
-        ongoing_trends = []
+        ongoing_trends: list[dict[str, Any]] = []
         if use_cross_dedup and use_ongoing_trends and lookback_digests > 0:
             cross_dedup_threshold = rules.get("cross_dedup_threshold", 0.75)
             selected, ongoing_trends = self._dedup_against_previous_digests(
@@ -930,11 +914,11 @@ class NewsAnalyzer:
         if ongoing_trends:
             lines = ["\n--- ONGOING TRENDS (topics continuing from previous digest — synthesize as update) ---"]
             # Group by topic to avoid repeating the same trend multiple times
-            seen_topics: set[str] = set()
+            seen_trend_topics: set[str] = set()
             for t in ongoing_trends:
                 topic = t["topic"]
-                if topic not in seen_topics:
-                    seen_topics.add(topic)
+                if topic not in seen_trend_topics:
+                    seen_trend_topics.add(topic)
                     # Collect all summaries for this topic
                     topic_summaries = [
                         t2["summary"] for t2 in ongoing_trends
@@ -985,14 +969,14 @@ class NewsAnalyzer:
         route_enabled = self.cfg.get("route_via_openclaw", False) if self.cfg else False
 
         if route_enabled:
-            webhook_url = (os.getenv("OPENCLAW_WEBHOOK_URL") or os.getenv("OPENCLAW_API_URL", "")).strip()
+            webhook_url = (os.getenv("OPENCLAW_WEBHOOK_URL") or os.getenv("OPENCLAW_API_URL") or "").strip()
 
             if webhook_url.endswith("/hooks/wake"):
                 webhook_url = webhook_url.replace("/hooks/wake", "/v1/chat/completions")
             elif not webhook_url.endswith("/v1/chat/completions"):
                 webhook_url = "http://openclaw:18789/v1/chat/completions"
 
-            token = (os.getenv("OPENCLAW_WEBHOOK_TOKEN") or os.getenv("OPENCLAW_API_TOKEN", "")).strip()
+            token = (os.getenv("OPENCLAW_WEBHOOK_TOKEN") or os.getenv("OPENCLAW_API_TOKEN") or "").strip()
             headers = {"Authorization": f"Bearer {token}"} if token else {}
 
             payload_text = (
