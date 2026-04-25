@@ -886,11 +886,16 @@ class NewsAnalyzer:
         # ── Build LLM prompt ──
         # Build post URLs for source linking in the digest
         def post_url(row: dict) -> str:
-            ext_id = row.get("external_id", "")
-            src = row.get("source_name", "")
-            if ext_id and src and not src.startswith("-"):  # skip private/numeric channel IDs
+            ext_id = str(row.get("external_id", "") or "")
+            src = str(row.get("source_name", "") or "")
+            if not src:
+                return ""
+            if ext_id and src.replace("-", "").isdigit():
+                clean_id = src.replace("-100", "", 1).replace("-", "")
+                return f"https://t.me/c/{clean_id}/{ext_id}"
+            elif ext_id:
                 return f"https://t.me/{src}/{ext_id}"
-            return f"https://t.me/{src}" if src else ""
+            return f"https://t.me/{src}"
 
         messages_text = "\n\n".join([
             f"[{i+1}] Channel: @{row['source_name']} | Temperature: {row['temperature']}/10\n"
