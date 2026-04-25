@@ -463,8 +463,11 @@ class TrendTracker:
 
         for m in sorted(messages, key=lambda x: x.get("collected_at", ""), reverse=True):
             source = m.get("forward_from_channel") or m["source_name"]
+            # To ensure the link works, ALWAYS link to the public source_name where we scraped it from,
+            # even if the visual label (source) credits the original private author.
             if source not in source_urls and m.get("external_id"):
-                source_urls[source] = build_tme_url(source, m['external_id'])
+                source_urls[source] = build_tme_url(m["source_name"], m['external_id'])
+            
             # Also keep URL for the direct publisher in case they are mentioned
             publisher = m["source_name"]
             if publisher not in source_urls and m.get("external_id"):
