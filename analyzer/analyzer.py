@@ -502,7 +502,7 @@ class NewsAnalyzer:
             for c in channels[:10]:
                 c_html = _h(c)
                 if c in source_urls:
-                    channel_links.append(f"<a href='{source_urls[c]}'>{c_html}</a>")
+                    channel_links.append(f'<a href="{source_urls[c]}">{c_html}</a>')
                 else:
                     channel_links.append(f"{c_html}")
             channels_str = " ".join(channel_links)
