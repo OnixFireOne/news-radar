@@ -41,6 +41,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from typing import Optional, TYPE_CHECKING
 from typing import TypedDict
+from pydantic import BaseModel, ValidationError
 
 if TYPE_CHECKING:
     from analyzer.analyzer import NewsAnalyzer
@@ -69,6 +70,19 @@ class MessageRow(TypedDict):
 class SourceUrlMap(TypedDict, total=False):
     """channel_name -> canonical t.me URL for the latest post."""
     pass  # used as dict[str, str] — TypedDict anchor for documentation
+
+
+class MessageValidator(BaseModel):
+    """Runtime Pydantic validation to ensure SQL SELECT matches MessageRow shape."""
+    id: int
+    external_id: str          # Catch missing external_id immediately
+    text: str
+    views: int = 0
+    collected_at: str
+    source_name: str
+    forward_from_channel: Optional[str] = None
+    temperature: float
+    llm_topic: str = ""
 
 
 # ─────────────────────────────────────────────────────────
@@ -195,7 +209,7 @@ class TrendTracker:
     WINDOW_HOURS = int(os.getenv("TREND_WINDOW_HOURS", "4"))
     MAX_MESSAGES = int(os.getenv("TREND_MAX_MESSAGES", "500"))
     LLM_NAME_TOP_N = 10          # name only top N clusters by score (saves LLM calls)
-    HDBSCAN_EPSILON = 0.35       # cluster_selection_epsilon — tune if too few/many clusters
+    HDBSCAN_EPSILON = 0.25       # cluster_selection_epsilon — tune if too few/many clusters
     DEAD_TREND_HOURS = 12        # mark old trends as dead even if not in current window
 
     def __init__(self, db_path: str, llm_client, chroma_client, analyzer: Optional["NewsAnalyzer"] = None) -> None:
@@ -215,6 +229,10 @@ class TrendTracker:
     @property
     def min_cluster_size(self) -> int:
         return int((self.analyzer.cfg or {}).get("trend_min_cluster_size", self.MIN_CLUSTER_SIZE)) if self.analyzer else self.MIN_CLUSTER_SIZE
+
+    @property
+    def hdbscan_epsilon(self) -> float:
+        return float((self.analyzer.cfg or {}).get("trend_hdbscan_epsilon", self.HDBSCAN_EPSILON)) if self.analyzer else self.HDBSCAN_EPSILON
 
     async def run_cycle(self) -> int:
         """
@@ -313,7 +331,19 @@ class TrendTracker:
                 ORDER BY m.collected_at DESC
                 LIMIT ?
             """, (f"-{self.window_hours} hours", min_len, self.MAX_MESSAGES)).fetchall()
-            return [dict(r) for r in rows]
+            messages: list[MessageRow] = []
+            for r in rows:
+                d = dict(r)
+                try:
+                    # Strict runtime check against the Pydantic schema
+                    MessageValidator(**d)
+                    messages.append(d)
+                except ValidationError as e:
+                    logger.error(f"TrendTracker: Pydantic Validation failed for msg_id={d.get('id')}: {e}")
+                    # Skip corrupt rows gracefully rather than breaking the whole cycle
+                    continue
+
+            return messages
         finally:
             conn.close()
 
@@ -402,7 +432,7 @@ class TrendTracker:
                 min_cluster_size=self.min_cluster_size,
                 min_samples=1,
                 metric="euclidean",
-                cluster_selection_epsilon=self.HDBSCAN_EPSILON,
+                cluster_selection_epsilon=self.hdbscan_epsilon,
                 core_dist_n_jobs=1,   # single-threaded for Docker containers
             )
             return clusterer.fit_predict(arr)

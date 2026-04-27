@@ -51,7 +51,8 @@ DEFAULT_CONFIG = {
     "trend_window_hours": 4,
     "trend_min_sources": 2,
     "trend_min_cluster_size": 2,
-    "trend_min_temperature": 5.0
+    "trend_min_temperature": 5.0,
+    "trend_hdbscan_epsilon": 0.25
 }
 
 

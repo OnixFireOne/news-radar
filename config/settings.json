@@ -12,6 +12,7 @@
   "trend_window_hours": 2,
   "trend_min_sources": 3,
   "trend_min_temperature": 6.0,
+  "trend_hdbscan_epsilon": 0.25,
   "ignored_sources": [],
   "keywords_alert": [
     "hack",
