@@ -625,15 +625,12 @@ class TrendTracker:
                 # If exact topic match failed, check ChromaDB for semantic similarity
                 if not existing and self.chroma and cluster.message_ids:
                     try:
-                        # Grab embedding of the first message in cluster (already in ChromaDB)
                         similar_msgs = self.chroma.find_similar(cluster.message_ids[0], limit=15)
-                        # Threshold 0.82 catches paraphrased or heavily related coverage
                         high_sim_ids = [m["message_id"] for m in similar_msgs if m["similarity"] >= 0.82]
-                        
                         if high_sim_ids:
                             placeholders = ",".join("?" for _ in high_sim_ids)
                             query = f"""
-                                SELECT t.id, t.status 
+                                SELECT t.id, t.status
                                 FROM trends t
                                 JOIN trend_messages tm ON tm.trend_id = t.id
                                 WHERE tm.message_id IN ({placeholders})
@@ -641,23 +638,39 @@ class TrendTracker:
                                 ORDER BY t.created_at DESC
                                 LIMIT 1
                             """
-                            params = tuple(high_sim_ids) + (recent_cutoff,)
-                            existing = conn.execute(query, params).fetchone()
-                    except Exception as e:
-                        # This happens if cluster.message_ids[0] hasn't been synced to ChromaDB yet,
-                        # which is rare but possible depending on the pipeline timing.
+                            existing = conn.execute(query, tuple(high_sim_ids) + (recent_cutoff,)).fetchone()
+                    except Exception:
                         pass
+
+                # MESSAGE OVERLAP MERGING:
+                # If both previous methods failed, find an active trend that shares ≥2 messages
+                # with this cluster. This catches re-clustered versions of the same story.
+                if not existing and len(cluster.message_ids) >= 2:
+                    placeholders = ",".join("?" for _ in cluster.message_ids)
+                    row = conn.execute(f"""
+                        SELECT t.id, t.status, COUNT(*) as overlap
+                        FROM trends t
+                        JOIN trend_messages tm ON tm.trend_id = t.id
+                        WHERE tm.message_id IN ({placeholders})
+                          AND datetime(t.last_seen) >= datetime(?)
+                        GROUP BY t.id
+                        HAVING overlap >= 2
+                        ORDER BY overlap DESC, t.created_at DESC
+                        LIMIT 1
+                    """, tuple(cluster.message_ids) + (recent_cutoff,)).fetchone()
+                    if row:
+                        existing = row
 
                 if existing:
                     trend_id = existing["id"]
                     existing_status = existing["status"]
                     conn.execute("""
                         UPDATE trends SET
-                            trend_score    = ?,
-                            unique_sources = ?,
-                            message_count  = ?,
-                            last_seen      = ?,
-                            velocity       = ?,
+                            trend_score    = MAX(trend_score, ?),
+                            unique_sources = MAX(unique_sources, ?),
+                            message_count  = MAX(message_count, ?),
+                            last_seen      = MAX(last_seen, ?),
+                            velocity       = MAX(velocity, ?),
                             status         = ?,
                             summary        = COALESCE(?, summary),
                             updated_at     = CURRENT_TIMESTAMP
