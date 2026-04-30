@@ -258,6 +258,8 @@ class NewsAnalyzer:
             ).fetchone()
             if row and row["external_id"]:
                 source_url = f"https://t.me/{source}/{row['external_id']}"
+            conn.execute("UPDATE messages SET alerted_at = CURRENT_TIMESTAMP WHERE id = ?", (msg_id,))
+            conn.commit()
         except Exception:
             pass
         finally:
@@ -778,7 +780,8 @@ class NewsAnalyzer:
                         WHERE tm.message_id = m.id
                           AND t.unique_sources >= ?
                           AND t.status IN ('emerging', 'hot')
-                    ) AS in_hot_trend
+                    ) AS in_hot_trend,
+                    (m.alerted_at IS NOT NULL) AS was_alerted
                 FROM messages m
                 JOIN sources s ON m.source_id = s.id
                 LEFT JOIN analysis a ON a.message_id = m.id
@@ -806,7 +809,7 @@ class NewsAnalyzer:
         for row in rows_dicts:
             topic = row["topic"] or "general"
             temp  = float(row["temperature"] or 5.0)
-            is_alert = self._is_alert_topic(topic) or temp >= 9.0
+            is_alert = self._is_alert_topic(topic) or temp >= 9.0 or bool(row.get("was_alerted"))
 
             if is_alert and include_alerts:
                 alerts.append(row)

@@ -226,6 +226,8 @@ MIGRATIONS = [
 
     ("add_digest_parse_mode",
      "ALTER TABLE digests ADD COLUMN parse_mode TEXT DEFAULT 'Markdown'"),
+    ("add_message_alerted_at",
+     "ALTER TABLE messages ADD COLUMN alerted_at DATETIME DEFAULT NULL"),
 ]
 
 
