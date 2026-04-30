@@ -883,6 +883,35 @@ class NewsAnalyzer:
             f"{len(high_tier)} high-temp → {len(selected)} selected after dedup"
         )
 
+        # ── Emotional balance: if previous digest started with negative alerts,
+        # push negative items past position 2 so digest opens with neutral/positive news ──
+        negative_keywords = [kw.lower() for kw in (self.cfg.get("keywords_alert", []) if self.cfg else [])]
+        if negative_keywords:
+            def _is_negative(item: dict) -> bool:
+                text = ((item.get("topic") or "") + " " + (item.get("text") or "")).lower()
+                return any(kw in text for kw in negative_keywords)
+
+            # Check if last digest's top-2 were negative (via in_digest messages)
+            prev_was_negative = False
+            try:
+                conn2 = get_db(self.db_path)
+                prev_top = conn2.execute("""
+                    SELECT a.topic, m.text FROM messages m
+                    LEFT JOIN analysis a ON a.message_id = m.id
+                    WHERE m.in_digest = 1
+                    ORDER BY m.id DESC LIMIT 2
+                """).fetchall()
+                conn2.close()
+                prev_was_negative = any(_is_negative(dict(r)) for r in prev_top)
+            except Exception:
+                pass
+
+            if prev_was_negative:
+                negative_items = [i for i in selected if _is_negative(i)]
+                non_negative   = [i for i in selected if not _is_negative(i)]
+                # Keep first 2 slots for non-negative, then interleave rest
+                selected = non_negative[:2] + negative_items + non_negative[2:]
+
         # For Agent mode, strictly enforce the max limit after dedup.
         # For Legacy Mode, we KEEP the oversized `selected` list and let the LLM prune it.
         if return_raw:
