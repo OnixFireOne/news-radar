@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(sqlite3 /c/AI/apps/news-radar/data/news.db ' *)",
+      "Bash(py -c ' *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(docker compose *)"
+    ]
+  }
+}

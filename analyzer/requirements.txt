@@ -15,5 +15,10 @@ torch>=2.0.0
 hdbscan>=0.8.33                 # density-based clustering (used by BERTopic internally)
 tenacity>=8.0.0
 
-# Dev / static analysis
+# Dev / static analysis / testing
 mypy>=1.9.0                     # static type checker — run: python -m mypy analyzer/ database/
+pytest>=8.0.0
+pytest-asyncio>=0.23.0          # For testing async loops in FastApi/Analyzer
+pytest-mock>=3.12.0             # To mock LLM responses
+respx>=0.21.1                   # To mock out OpenClaw HTTP calls
+

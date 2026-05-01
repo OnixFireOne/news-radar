@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
 
   # ─────────────────────────────────────────
@@ -60,6 +58,8 @@ services:
       - ./config:/app/config
       - ./analyzer:/app/analyzer
       - ./database:/app/database
+      - ./tests:/app/tests
+      - ./pytest.ini:/app/pytest.ini
     restart: unless-stopped
     networks:
       - news-radar-network
