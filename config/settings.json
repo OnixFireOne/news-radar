@@ -14,6 +14,17 @@
   "trend_min_temperature": 6.0,
   "trend_hdbscan_epsilon": 0.25,
   "ignored_sources": [],
+  "ad_filter": {
+    "enabled": true,
+    "use_heuristic": true,
+    "heuristic_keywords": [
+      "#реклама", "#ad", "#sponsored", "#партнёрский", "#promotion",
+      "на правах рекламы", "партнёрский материал", "рекламный пост",
+      "используй промокод", "промокод", "реферальная ссылка",
+      "utm_source", "utm_medium", "ref=", "promo=", "aff=",
+      "affiliate", "18+", "спонсор", "спонсорство"
+    ]
+  },
   "keywords_alert": [
     "hack",
     "exploit",

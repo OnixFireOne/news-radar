@@ -121,6 +121,11 @@ class NewsAnalyzer:
 
             async def process_row(row: dict):
                 async with sem:
+                    # 0. Heuristic ad pre-filter (no LLM call needed)
+                    if self._is_heuristic_ad(row["text"]):
+                        logger.info(f"Message {row['id']} flagged as ad by heuristic filter — skipping LLM")
+                        return row, {"__heuristic_ad": True}
+
                     # 1. Pre-flight Semantic Deduplication
                     embedding = None
                     try:
@@ -168,10 +173,22 @@ class NewsAnalyzer:
             # 3. Transactional Database Write Layer (Sequential)
             for row, result in results:
                 try:
+                    # Handle heuristic-detected ads first (no LLM result, just mark and skip)
+                    if result and result.get("__heuristic_ad"):
+                        conn.execute("UPDATE messages SET analyzed=1, is_ad=1 WHERE id=?", (row["id"],))
+                        conn.commit()
+                        count += 1
+                        continue
+
                     if result and result.get("summary"):
                         # Normalize 
                         raw_topic = result.get("topic", "general")
                         normalized_topic = self._normalize_topic(raw_topic)
+
+                        # Extract LLM-detected is_ad flag
+                        is_ad_llm = 1 if result.get("is_ad") else 0
+                        if is_ad_llm:
+                            logger.info(f"Message {row['id']} flagged as ad by LLM")
 
                         conn.execute("""
                             INSERT INTO analysis
@@ -202,33 +219,37 @@ class NewsAnalyzer:
                             topic=normalized_topic,
                         )
 
-                        # Commit message
-                        conn.execute("UPDATE messages SET analyzed=1, chroma_synced=1 WHERE id=?", (row["id"],))
+                        # Commit message (persist is_ad flag alongside analyzed=1)
+                        conn.execute(
+                            "UPDATE messages SET analyzed=1, chroma_synced=1, is_ad=? WHERE id=?",
+                            (is_ad_llm, row["id"])
+                        )
                         conn.commit()
                         count += 1
 
-                        # Alerts and Subs ...
-                        temp = float(result.get("temperature", 5.0))
-                        min_alert_temp = float(self.cfg.get("breaking_alert_min_temp", 10) if self.cfg else 10)
-                        if temp >= min_alert_temp and self.cfg and self.cfg.get("instant_alerts_temperature", True):
-                            asyncio.create_task(
-                                self._send_instant_alert(row["id"], row["source_name"], temp, raw_topic, result.get("summary", ""), row["text"])
-                            )
+                        # Alerts and Subs — skip for ad-flagged messages
+                        if not is_ad_llm:
+                            temp = float(result.get("temperature", 5.0))
+                            min_alert_temp = float(self.cfg.get("breaking_alert_min_temp", 10) if self.cfg else 10)
+                            if temp >= min_alert_temp and self.cfg and self.cfg.get("instant_alerts_temperature", True):
+                                asyncio.create_task(
+                                    self._send_instant_alert(row["id"], row["source_name"], temp, raw_topic, result.get("summary", ""), row["text"])
+                                )
 
-                        if subs_list:
-                            text_lower = row["text"].lower()
-                            summary_lower = result.get("summary", "").lower()
-                            for sub in subs_list:
-                                if sub["q_lower"] in text_lower or sub["q_lower"] in summary_lower:
-                                    asyncio.create_task(
-                                        self._route_event("subscription_match", {
-                                            "user_id": sub["user_id"],
-                                            "query": sub["query"],
-                                            "summary": result.get("summary", ""),
-                                            "source": row["source_name"],
-                                            "text": row["text"][:300]
-                                        })
-                                    )
+                            if subs_list:
+                                text_lower = row["text"].lower()
+                                summary_lower = result.get("summary", "").lower()
+                                for sub in subs_list:
+                                    if sub["q_lower"] in text_lower or sub["q_lower"] in summary_lower:
+                                        asyncio.create_task(
+                                            self._route_event("subscription_match", {
+                                                "user_id": sub["user_id"],
+                                                "query": sub["query"],
+                                                "summary": result.get("summary", ""),
+                                                "source": row["source_name"],
+                                                "text": row["text"][:300]
+                                            })
+                                        )
                     else:
                         logger.warning(f"Message {row['id']}: Empty result, will retry.")
                         conn.rollback()
@@ -693,6 +714,35 @@ class NewsAnalyzer:
         meta = self._topics.get(topic, {})
         return bool(meta.get("alert", False))
 
+    def _is_heuristic_ad(self, text: str) -> bool:
+        """
+        Fast keyword-based ad detector — runs BEFORE the LLM to save tokens.
+
+        Returns True if the message text contains any known ad/promo signal.
+        Reads config hot from settings.json (ad_filter block):
+          - ad_filter.enabled          — master switch (default True)
+          - ad_filter.use_heuristic    — enable this method (default True)
+          - ad_filter.heuristic_keywords — list of keywords/substrings to match
+
+        All checks are case-insensitive.
+        """
+        if not self.cfg:
+            return False
+
+        ad_cfg = self.cfg.get("ad_filter", {})
+        if not ad_cfg.get("enabled", True):
+            return False
+        if not ad_cfg.get("use_heuristic", True):
+            return False
+
+        keywords: list = ad_cfg.get("heuristic_keywords", [])
+        if not keywords:
+            return False
+
+        text_lower = text.lower()
+        return any(kw.lower() in text_lower for kw in keywords)
+
+
     async def generate_digest(self, hours: int | None = None, force: bool = False, return_raw: bool = False) -> str | None:
         """
         Generate a digest using a 4-tier priority queue.
@@ -787,6 +837,7 @@ class NewsAnalyzer:
                 LEFT JOIN analysis a ON a.message_id = m.id
                 WHERE datetime(m.collected_at) >= datetime(?)
                   AND m.analyzed = 1
+                  AND (m.is_ad = 0 OR m.is_ad IS NULL)
                   {in_digest_filter}
                   AND a.temperature IS NOT NULL
                 ORDER BY a.temperature DESC

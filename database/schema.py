@@ -69,6 +69,7 @@ CREATE TABLE IF NOT EXISTS messages (
     analyzed        INTEGER DEFAULT 0,           -- 0 = pending, 1 = done
     chroma_synced   INTEGER DEFAULT 0,           -- 0 = not in ChromaDB, 1 = synced
     in_digest       INTEGER DEFAULT 0,           -- 1 = already included in a digest
+    is_ad           INTEGER DEFAULT 0,           -- 1 = ad/promo post (excluded from digest)
     UNIQUE(source_id, external_id)               -- prevent duplicates
 );
 
@@ -228,6 +229,10 @@ MIGRATIONS = [
      "ALTER TABLE digests ADD COLUMN parse_mode TEXT DEFAULT 'Markdown'"),
     ("add_message_alerted_at",
      "ALTER TABLE messages ADD COLUMN alerted_at DATETIME DEFAULT NULL"),
+
+    # Ad/promo detection: messages flagged is_ad=1 are excluded from digest
+    ("add_message_is_ad",
+     "ALTER TABLE messages ADD COLUMN is_ad INTEGER DEFAULT 0"),
 ]
 
 

@@ -25,7 +25,8 @@ Return ONLY valid JSON with no extra text:
   "topic": "<one of: bitcoin, ethereum, altcoins, defi, nft, macro, regulation, hack/scam, exchange, general>",
   "summary": "<As detailed as the source allows, up to 10 sentences, in the same language as the message. First cover key facts (numbers, protocols). CRITICAL: If the post contains strong subjective opinions, sarcasm, or philosophical takeaways (features of shitposting/editorial), you MUST capture the author's main point and attitude in your summary. Do not reduce editorial posts to dry facts only.>",
   "keywords": ["<keyword>", ...],
-  "sentiment": "<positive | negative | neutral>"
+  "sentiment": "<positive | negative | neutral>",
+  "is_ad": <true if this post is an advertisement, sponsored content, paid promo, affiliate/referral offer, giveaway, contest, or any promotional material; false otherwise>
 }}
 
 Temperature scale:
@@ -127,46 +128,6 @@ STEP 2 — """
 
 
 # ──────────────────────────────────────────────
-# BREAKING ALERT (legacy mode — direct LLM → Telegram)
-# ──────────────────────────────────────────────
-
-ALERT_PROMPT = """Write a short breaking news alert in Russian for a Telegram crypto channel.
-
-Source: @{source}
-Topic: {topic}
-Temperature: {temperature}/10
-Summary: {summary}
-Link: {source_url}
-
-Rules:
-- Maximum 4 sentences
-- Start with a fitting emoji (🚨, ⚡, 🔥, etc.)
-- Bold the topic using *asterisks*
-- End with [источник]({source_url}) as a clickable link
-- Write ONLY the post text, nothing else"""
-
-
-# ──────────────────────────────────────────────
-# HOT TREND ALERT (legacy mode — direct LLM → Telegram)
-# ──────────────────────────────────────────────
-
-HOT_TREND_PROMPT = """Write a short hot trend report in Russian for a Telegram crypto channel.
-
-Topic: {topic}
-Trend Score: {score:.1f}
-Unique Sources: {sources}
-Summary: {summary}
-Channels: {channels}
-
-Rules:
-- Maximum 4 sentences
-- Start with 🔥
-- Bold the topic using *asterisks*
-- Mention how many channels are covering this
-- Write ONLY the post text, nothing else"""
-
-
-# ──────────────────────────────────────────────
 # ALERT ENRICHMENT (instant alerts — Russian headline + translation)
 # These prompts are used by _enrich_alert_for_telegram() to:
 #   ALERT_ENRICH_PROMPT   → generate a punchy Russian headline for breaking_alert
@@ -229,4 +190,5 @@ Maximum 5 clusters. Merge similar topics."""
 SYSTEM_PROMPT = """You are an expert cryptocurrency market analyst and content editor.
 Your job: analyze context accurately, capturing both the objective facts and the unique subjective opinions/attitude of the authors.
 Always respond strictly in the requested format.
-Do not add anything outside the format."""
+Do not add anything outside the format.
+Mark is_ad=true for: paid advertisements, sponsored posts, partner promotions, affiliate/referral offers, giveaways, contests, airdrop promotions, and any post whose primary purpose is commercial promotion rather than news."""
