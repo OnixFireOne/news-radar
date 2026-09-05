@@ -58,8 +58,10 @@ services:
       - ./config:/app/config
       - ./analyzer:/app/analyzer
       - ./database:/app/database
+      - ./llm_core:/app/llm_core
       - ./tests:/app/tests
       - ./pytest.ini:/app/pytest.ini
+      - ./mypy.ini:/app/mypy.ini
     restart: unless-stopped
     networks:
       - news-radar-network
