@@ -52,7 +52,10 @@ DEFAULT_CONFIG = {
     "trend_min_sources": 2,
     "trend_min_cluster_size": 2,
     "trend_min_temperature": 5.0,
-    "trend_hdbscan_epsilon": 0.25
+    "trend_hdbscan_epsilon": 0.25,
+    # ТЗ #4 И1: True = preserve current local-GPU behavior (LLMLock, chat_template_kwargs).
+    # False = cloud proxy mode (see analyzer/llm_client.py set_local_mode()).
+    "llm_local_mode": True
 }
 
 

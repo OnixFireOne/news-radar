@@ -74,5 +74,7 @@
   "breaking_alert_min_temp": 9,
   "hot_trend_min_sources": 5,
   "llm_concurrency": 3,
-  "trend_messages_threshold": 20
+  "trend_messages_threshold": 20,
+  "_comment_llm_local_mode": "true = current local-GPU behavior (LLMLock, chat_template_kwargs). false = cloud proxy (ТЗ #4)",
+  "llm_local_mode": true
 }
