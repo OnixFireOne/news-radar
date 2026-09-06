@@ -12,7 +12,6 @@
       "Read(./secrets/**)",
       "Read(./**/*.pem)",
       "Read(./**/*.key)",
-      "Read(./data/**)",
       "Bash(cat .env)",
       "Bash(printenv*)"
     ]
