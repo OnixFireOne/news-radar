@@ -259,7 +259,8 @@ MIGRATIONS = [
 
 def get_db(db_path: str | None = None) -> sqlite3.Connection:
     """Open and return a database connection with WAL mode and timeouts."""
-    path = db_path or os.getenv("DATABASE_PATH", "/app/data/news.db")
+    default_path = os.getenv("DATABASE_PATH", "/app/data/news.db")
+    path: str = db_path or default_path
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(path, check_same_thread=False, timeout=30)
