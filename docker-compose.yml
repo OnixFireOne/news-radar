@@ -33,6 +33,34 @@ services:
       - ./data:/app/data
       - ./data/sessions:/app/sessions
       - ./config:/app/config
+      - ./tests:/app/tests
+      - ./pytest.ini:/app/pytest.ini
+    restart: unless-stopped
+    networks:
+      - news-radar-network
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ─────────────────────────────────────────
+  # COLLECTOR-FEEDS — poll-mode web collectors (rss, hackernews; ТЗ #4 И2)
+  # Off by default at the config level (sources.*.enabled=false) AND at the
+  # compose level: only starts with `--profile feeds`, so a plain
+  # `docker compose up -d` doesn't change prod's running topology.
+  # ─────────────────────────────────────────
+  collector-feeds:
+    build:
+      context: .
+      dockerfile: collectors/Dockerfile
+    container_name: news-radar-collector-feeds
+    command: ["python", "-m", "collectors.poll_runner"]
+    profiles:
+      - feeds
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+      - ./tests:/app/tests
+      - ./pytest.ini:/app/pytest.ini
     restart: unless-stopped
     networks:
       - news-radar-network
@@ -59,6 +87,7 @@ services:
       - ./analyzer:/app/analyzer
       - ./database:/app/database
       - ./llm_core:/app/llm_core
+      - ./collectors:/app/collectors
       - ./tests:/app/tests
       - ./pytest.ini:/app/pytest.ini
       - ./mypy.ini:/app/mypy.ini

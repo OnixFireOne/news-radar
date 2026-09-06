@@ -2,3 +2,14 @@ telethon>=1.36.0
 aiofiles>=23.0.0
 python-dotenv>=1.0.0
 watchdog>=4.0.0
+
+# ТЗ #4 И2: poll-mode collectors (collectors/rss.py, hackernews.py)
+httpx>=0.27.0
+feedparser>=6.0.0            # RSS/Atom parsing (blogs, Habr, dev.to)
+trafilatura>=1.8.0           # full-article-text extraction when a feed only gives a snippet
+
+# Dev / testing (mirrors analyzer/requirements.txt)
+pytest>=8.0.0
+pytest-asyncio>=0.23.0
+pytest-mock>=3.12.0
+respx>=0.21.1

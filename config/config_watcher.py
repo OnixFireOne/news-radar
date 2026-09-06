@@ -55,7 +55,29 @@ DEFAULT_CONFIG = {
     "trend_hdbscan_epsilon": 0.25,
     # ТЗ #4 И1: True = preserve current local-GPU behavior (LLMLock, chat_template_kwargs).
     # False = cloud proxy mode (see analyzer/llm_client.py set_local_mode()).
-    "llm_local_mode": True
+    "llm_local_mode": True,
+    # ТЗ #4 И2: poll-mode collectors (collectors/poll_runner.py), each off by
+    # default — prod's collector topology doesn't change until switched on.
+    "sources": {
+        "rss": {
+            "enabled": False,
+            "poll_minutes": 60,
+            "feeds": [
+                "https://openai.com/news/rss.xml",
+                "https://deepmind.google/blog/rss.xml",
+                "https://huggingface.co/blog/feed.xml",
+                "https://simonwillison.net/atom/everything/",
+                "https://habr.com/ru/rss/hubs/artificial_intelligence/articles/",
+                "https://dev.to/feed/tag/ai",
+            ],
+        },
+        "hackernews": {
+            "enabled": False,
+            "poll_minutes": 60,
+            "queries": ["llm", "ai agents"],
+            "min_points": 30,
+        },
+    },
 }
 
 

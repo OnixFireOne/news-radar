@@ -44,6 +44,11 @@ class RawMessage:
     # Post lifecycle
     edit_date:            datetime | None = None  # last edit time (None = never edited)
 
+    # Canonical URL (web sources: rss, hackernews, github, reddit). None for
+    # Telegram. Used for URL-based dedup ahead of the semantic ChromaDB pass —
+    # see messages.url's partial unique index (ТЗ #4 И1).
+    url:                  str | None = None
+
     def is_valid(self, min_length: int = 30) -> bool:
         """Check if the message is worth analyzing."""
         return (

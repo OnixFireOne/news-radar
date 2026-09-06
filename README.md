@@ -182,6 +182,16 @@ curl http://localhost:8100/trends
 
 `route_via_openclaw: true` — Agent mode: события уходят в OpenClaw вместо прямого Telegram.
 
+### Поллинг-коллекторы (RSS, Hacker News)
+
+`sources.rss` / `sources.hackernews` в `settings.json` — оба выключены по умолчанию (`enabled: false`), прод не меняется. Включаются флагом, крутятся отдельным сервисом:
+
+```bash
+docker compose --profile feeds up -d collector-feeds
+```
+
+Сервис не поднимается обычным `docker compose up -d` — только явным `--profile feeds`.
+
 ---
 
 ## Telegram Bot
@@ -242,13 +252,18 @@ Digest (12:00 и 20:00 MSK, или /digest new)
 news-radar/
 ├── collectors/
 │   ├── base.py              # BaseCollector + RawMessage dataclass
-│   └── telegram.py          # Telethon userbot
+│   ├── telegram.py          # Telethon userbot
+│   ├── rss.py               # Poll-коллектор: RSS/Atom (блоги, Habr, dev.to)
+│   ├── hackernews.py        # Poll-коллектор: Hacker News (Algolia API)
+│   ├── fulltext_fetcher.py  # Вежливая догрузка полного текста статьи
+│   └── poll_runner.py       # Оркестратор poll-коллекторов (см. sources.* в settings.json)
+├── llm_core/                # Портируемый LLM-плагин (client/providers/usage/mask/validator)
 ├── analyzer/
 │   ├── analyzer.py          # NewsAnalyzer: pipeline + digest
 │   ├── trend_tracker.py     # HDBSCAN trend detection
 │   ├── embedder.py          # BGE-m3 (sentence-transformers)
 │   ├── chroma_client.py     # ChromaDB wrapper
-│   ├── llm_client.py        # OpenAI-compatible client + LLMLock
+│   ├── llm_client.py        # Тонкая обёртка над llm_core + LLMLock (local mode)
 │   ├── prompts.py           # Все LLM промпты
 │   └── renderer.py          # Digest renderer (classic / spoiler)
 ├── api/
