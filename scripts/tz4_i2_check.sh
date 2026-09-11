@@ -59,8 +59,11 @@ docker network inspect ai-network >/dev/null 2>&1 || { echo "создаю вне
 step "A1. build analyzer + collector-feeds"
 $FEEDS build analyzer collector-feeds; rc $?
 
-step "A2. pytest"
-$DC run --rm --no-deps analyzer python -m pytest -q 2>&1 | tail -40; rc ${PIPESTATUS[0]}
+step "A2. pytest (analyzer image — no feedparser/trafilatura there, tests/collector excluded)"
+$DC run --rm --no-deps analyzer python -m pytest -q --ignore=tests/collector 2>&1 | tail -40; rc ${PIPESTATUS[0]}
+
+step "A2b. pytest (collector-feeds image — tests/collector only)"
+$FEEDS run --rm --no-deps collector-feeds python -m pytest -q tests/collector 2>&1 | tail -40; rc ${PIPESTATUS[0]}
 
 step "A3. mypy"
 $DC run --rm --no-deps analyzer python -m mypy 2>&1 | tail -20; rc ${PIPESTATUS[0]}

@@ -59,6 +59,13 @@ DEFAULT_CONFIG = {
     # ТЗ #4 И2: poll-mode collectors (collectors/poll_runner.py), each off by
     # default — prod's collector topology doesn't change until switched on.
     "sources": {
+        # ТЗ #4 И2.1: records older than this are skipped before the full-text
+        # fetch, in both rss.py and hackernews.py.
+        "max_age_hours": 72,
+        # ТЗ #4 И2.1: fetch budget for FullTextFetcher — max_per_cycle across all
+        # feeds/queries, max_per_feed so one feed early in iteration order can't
+        # eat the whole cycle's budget.
+        "fulltext": {"max_per_cycle": 20, "max_per_feed": 5},
         "rss": {
             "enabled": False,
             "poll_minutes": 60,
@@ -76,6 +83,8 @@ DEFAULT_CONFIG = {
             "poll_minutes": 60,
             "queries": ["llm", "ai agents"],
             "min_points": 30,
+            # ТЗ #4 И2.1: page size for the Algolia search_by_date request.
+            "hits_per_page": 50,
         },
     },
 }

@@ -192,6 +192,8 @@ docker compose --profile feeds up -d collector-feeds
 
 Сервис не поднимается обычным `docker compose up -d` — только явным `--profile feeds`.
 
+`sources.max_age_hours` (дефолт 72) — записи старше этого окна пропускаются до догрузки полного текста (фиды вроде OpenAI отдают весь архив, без окна он бы весь ушёл в БД/LLM). `sources.fulltext.max_per_cycle`/`max_per_feed` — общий и по-фидовый лимит догрузок за цикл, чтобы один фид не съедал бюджет остальных. `sources.hackernews.hits_per_page` — размер страницы запроса к Algolia (порог `min_points` и окно по возрасту передаются туда же через `numericFilters`).
+
 ---
 
 ## Telegram Bot
