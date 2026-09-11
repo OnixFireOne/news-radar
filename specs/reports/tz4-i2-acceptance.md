@@ -1,6 +1,6 @@
 # И2 — чеклист приёмки
 
-**Статус:** не пройдена. Код закоммичен 06.09 (`989939a`), тестирования не было.
+**Статус:** прогон 11.09.2026 — ❌ возврат на доработку И2.1 (вердикт в `tz4-i2.md`). Весь сценарий автоматизирован: `bash scripts/tz4_i2_check.sh` (лог `data/tz4_i2_check.log`); ниже — что он делает.
 Этот файл — сценарий следующей сессии. Открываешь новый чат словами «тестируем И2» — дальше по пунктам.
 
 Всё в контейнере, на хост ничего не ставим.
@@ -10,8 +10,10 @@
 ## A. Статика — 4 команды
 
 ```bash
-docker compose build
-docker compose run --rm --no-deps analyzer python -m pytest -q
+docker network inspect ai-network >/dev/null 2>&1 || docker network create ai-network   # сеть external, без llm-stack её нет
+docker compose --profile feeds build analyzer collector-feeds
+docker compose run --rm --no-deps analyzer python -m pytest -q --ignore=tests/collector
+docker compose --profile feeds run --rm --no-deps collector-feeds python -m pytest -q tests/collector
 docker compose run --rm --no-deps analyzer python -m mypy
 docker compose run --rm --no-deps analyzer python -m mypy --strict llm_core
 ```
@@ -24,7 +26,7 @@ docker compose run --rm --no-deps analyzer python -m mypy --strict llm_core
 Смысл: при выключенных флагах всё обязано работать ровно как до ТЗ #4.
 
 1. `sources.rss.enabled` и `sources.hackernews.enabled` в `config/settings.json` = `false` (сейчас так и есть).
-2. Обычный подъём: `docker compose up -d` — сервис `collector-feeds` **не должен подняться** (он под `profiles: ["feeds"]`). Проверить: `docker compose ps`.
+2. `docker compose config --services` — в списке **нет** `collector-feeds` (он под `profiles: ["feeds"]`). ⚠️ Не делать `docker compose up -d` не на прод-хосте: поднимется бот с боевым токеном (конфликт getUpdates с продом) и телеграм-коллектор без сессии.
 3. Живой дайджест на текущем шаблоне (`spoiler` или `classic`) — выглядит как раньше.
 
 ## C. Живой прогон коллекторов
@@ -47,18 +49,19 @@ docker compose logs -f collector-feeds
 ## D. Что проверить в базе
 
 ```bash
+# ✏️ 11.09: исправлено — в messages нет колонки source_type, тип берём из sources
 docker compose run --rm --no-deps analyzer python - <<'EOF'
 import sqlite3
 c = sqlite3.connect('/app/data/news.db')
 c.row_factory = sqlite3.Row
 print('по типам источников:')
-for r in c.execute("SELECT source_type, COUNT(*) n FROM messages GROUP BY source_type"):
-    print(' ', r['source_type'], r['n'])
+for r in c.execute("SELECT s.type t, COUNT(*) n FROM messages m JOIN sources s ON s.id = m.source_id GROUP BY s.type"):
+    print(' ', r['t'], r['n'])
 print('с непустым url:', c.execute("SELECT COUNT(*) FROM messages WHERE url IS NOT NULL AND url != ''").fetchone()[0])
 print('дубли по url:', c.execute("SELECT COUNT(*) FROM (SELECT url FROM messages WHERE url IS NOT NULL AND url != '' GROUP BY url HAVING COUNT(*) > 1)").fetchone()[0])
-print('длина текста, медиана-ish:')
-for r in c.execute("SELECT source_type, MIN(LENGTH(text)) mn, AVG(LENGTH(text)) av, MAX(LENGTH(text)) mx FROM messages WHERE source_type IN ('rss','hackernews') GROUP BY source_type"):
-    print(' ', r['source_type'], int(r['mn'] or 0), int(r['av'] or 0), int(r['mx'] or 0))
+print('длина текста по источникам (min/avg/max):')
+for r in c.execute("SELECT s.type t, s.name nm, MIN(LENGTH(m.text)) mn, AVG(LENGTH(m.text)) av, MAX(LENGTH(m.text)) mx FROM messages m JOIN sources s ON s.id = m.source_id WHERE s.type IN ('rss','hackernews') GROUP BY s.id"):
+    print(' ', r['t'], r['nm'], int(r['mn'] or 0), int(r['av'] or 0), int(r['mx'] or 0))
 EOF
 ```
 
