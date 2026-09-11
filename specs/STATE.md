@@ -10,16 +10,17 @@
 | # | Итерация | Статус | Отчёт |
 |---|---|---|---|
 | И1 | Фундамент: миграция БД, конфиг, `llm_local_mode`, `llm_core/`, retry/usage | ✅ принята владельцем 05–06.09 | `reports/tz4-i1.md` |
-| И2 | Коллекторы, волна 1: RSS + Hacker News, дедуп по URL, полный текст | 🔴 **приёмка 11.09 — возврат на доработку И2.1** (HN почти пуст, нет окна по возрасту, догрузка текста не работает, pytest-команда падает) | `reports/tz4-i2.md` |
-| И2.1 | Доработка И2 по итогам приёмки — задание в конце `reports/tz4-i2.md` | ⏭ **следующая** | `reports/tz4-i2.md` |
-| И3 | Мозг: профиль `ai_value`, golden set + evals, воронка с квотами | ⏸ после приёмки И2.1 | — |
+| И2 | Коллекторы, волна 1: RSS + Hacker News, дедуп по URL, полный текст | ✅ принята 11.09 вместе с И2.1 (первая приёмка — возврат) | `reports/tz4-i2.md` |
+| И2.1 | Доработка И2: окно по возрасту, порог HN в запросе, справедливая догрузка, нормализация URL | ✅ принята 11.09, все 6 критериев | `reports/tz4-i2.md`, раздел «И2.1» |
+| И3 | Мозг: профиль `ai_value`, golden set + evals, воронка с квотами | ⏭ **следующая** — ждёт golden set от владельца | — |
 | И4 | Витрина: шаблон `ai_value`, `DIGEST_PROMPT_AI_VALUE`, `knowledge_publisher.py` | — | — |
 | И5 | Коллекторы, волна 2: GitHub + Reddit, калибровка порогов | — | — |
 
 ## Долги и открытые пункты
 
-- [ ] **СЛЕДУЮЩЕЕ ДЕЙСТВИЕ: исполнитель делает И2.1** — задание и критерий приёмки в конце `specs/reports/tz4-i2.md`. Потом владелец гоняет `bash scripts/tz4_i2_check.sh` на чистой базе (перед этим `mv data/news.db data/news.db.i2`).
-- [ ] **B.3 — живой дайджест `spoiler`/`classic` на прод-хосте** после И2.1 (на маке владельца нет прод-базы и LLM).
+- [ ] **СЛЕДУЮЩЕЕ ДЕЙСТВИЕ: владелец размечает golden set (~25 примеров) → исполнитель делает И3.** Без размеченного набора к классификатору не приступать.
+- [ ] **Сырой HTML в `messages.text` из RSS** (Хабр 38/40, dev.to и Simon — все записи с `<img>`/`<p>`) — чистить в `rss.py` **первым пунктом И3**, до прогона классификатора; порог «короткий сниппет → догрузить» мерить по тексту, а не по HTML. Попутно в `rss.py`: проверку возраста поставить до `is_known_url` (сейчас ~2150 SQLite-соединений за цикл на архивных записях), блок домена логировать одной строкой. Детали — `reports/tz4-i2.md`, «Приёмка И2.1 → Замечания».
+- [ ] **B.3 — живой дайджест `spoiler`/`classic` на прод-хосте** — теперь можно, коллекторы приняты (на маке владельца нет прод-базы и LLM).
 - [ ] **LLM в облачном режиме не подключится (найдено 11.09):** `LLMClient(timeout=300)` в `analyzer.py`/`api/main.py` получает `api_key="not-needed"` по умолчанию, поэтому `LLM_API_KEY` из `.env` не читается никогда; модель берётся только из env `LLM_MODEL`, ключ `llm_model` в settings.json никто не читает. Чинить в И3 до первого облачного прогона. Подключение — прокси aiprimetech.io из morning-post (`/v1/chat/completions`, `claude-sonnet-5`); у этого эндпоинта `prompt_tokens: 0` — учёт входных токенов по нему врёт.
 - [ ] **`analyzer/analyzer.py` в mypy-baseline** (`ignore_errors = True`) — снять при И3, когда файл серьёзно правится.
 - [ ] **Golden set для И3** (~25 примеров, раздел 1 и 9 ТЗ) — размечает владелец. Исполнитель без размеченного набора к классификатору не приступает.
@@ -30,7 +31,7 @@
 ```bash
 docker network inspect ai-network >/dev/null 2>&1 || docker network create ai-network   # на машине без llm-stack
 docker compose --profile feeds build analyzer collector-feeds
-docker compose run --rm --no-deps analyzer python -m pytest -q --ignore=tests/collector   # после И2.1
+docker compose run --rm --no-deps analyzer python -m pytest -q --ignore=tests/collector
 docker compose --profile feeds run --rm --no-deps collector-feeds python -m pytest -q tests/collector
 docker compose run --rm --no-deps analyzer python -m mypy
 docker compose run --rm --no-deps analyzer python -m mypy --strict llm_core
