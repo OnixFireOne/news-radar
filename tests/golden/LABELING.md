@@ -369,10 +369,10 @@ https://openai.com/index/gpt-6-astra-next-generation-work
 
 > Meet GPT-6 Astra, OpenAI’s most capable model for business, with advanced reasoning, computer use, and stronger writing and design judgment.
 
-- метка: хайп
-- тип: hype_news
-- оценка: 2
-- коммент: (Claude) Анонс GPT-6 Astra на 140 символов, деталей и вывода нет.
+- метка: ценно
+- тип: tool_release
+- оценка: 5
+- коммент: (Claude) Решение владельца 11.09, по той же логике, что g22: на самой странице есть бенчмарки (Terminal Bench 4.0 — 57,9%), цены ($10/$50 за млн токенов) и условия доступа — практическая информация для того, кто пользуется API. В базе только 140 символов из-за 403 на openai.com.
 
 ## g33 · Хабр · 2026-09-11
 
