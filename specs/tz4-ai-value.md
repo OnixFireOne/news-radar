@@ -18,6 +18,7 @@
 | 05.09 | v1.4 | Р.1: типизация (`mypy --strict` для нового кода, dataclass/TypedDict) и дисциплина тестов; новый критерий приёмки в р.9 |
 | 05.09 | v1.5 | Р.1: правило Docker-only — все проверки и запуски только в контейнере, на хост ничего не ставить; команды приёмки — через `docker compose run` |
 | 06.09 | v1.6 | Исправлена ошибка спеки (находка исполнителя): в `RawMessage` нет поля `url` — разрешено добавить опциональное `url: str | None = None`; в р.7 добавлен `collectors/poll_runner.py` (оркестратор + compose-сервис под profile); зависимости И2: feedparser + trafilatura (только collectors-образ) |
+| 11.09 | v1.7 | По итогам приёмки И2 (возврат, итерация И2.1): р.2 — окно по возрасту записей, порог HN в запросе Algolia, справедливый лимит догрузки, нормализация URL; р.8.1 — ключи `sources.max_age_hours`, `sources.fulltext`, `hackernews.hits_per_page` |
 
 ---
 
@@ -81,6 +82,9 @@
 - Расширить допустимые `source_type`: `rss`, `hackernews`, `github`, `reddit`. ✏️ Исправлено 06.09 (находка исполнителя в И2): поля `url` в `RawMessage` изначально нет — добавить одно опциональное `url: str | None = None` (дефолт сохраняет поведение TelegramCollector); остальной интерфейс `base.py` не менять.
 - Для веб-статей: если в фиде только сниппет — догружать полный текст (trafilatura или readability); хранить в `messages.text`.
 - Дедуп: сначала по URL (новая колонка/индекс), затем существующий семантический дедуп ChromaDB.
+- ✏️ v1.7 (приёмка И2): **окно по возрасту** — записи старше `sources.max_age_hours` не сохраняются и не догружаются (фиды отдают архивы на годы назад); **URL нормализуется** до дедупа (срезать `utm_*`, `fbclid`, фрагмент, хвостовой `/`); проверки «видели / уже в БД / старая» — **до** догрузки полного текста.
+- ✏️ v1.7: **догрузка полного текста** — общий лимит за цикл плюс потолок на один фид; домен, ответивший 403/401, до конца цикла не фетчим; нет ни сниппета, ни текста — сохраняем заголовок, запись не выкидываем.
+- ✏️ v1.7: **Hacker News** — `min_points` и окно по времени передаются в запрос Algolia (`numericFilters=points>=N,created_at_i>T`), а не фильтруются на клиенте по 20 свежайшим историям.
 - Список источников — в `settings.json → sources` (см. раздел 8), включение каждого коллектора — фич-флагом.
 
 ---
@@ -252,7 +256,9 @@ tags: ["llm", "hr"]
   },
   "sources": {
     "rss": { "enabled": true, "poll_minutes": 60, "feeds": ["..."] },
-    "hackernews": { "enabled": true, "poll_minutes": 60, "queries": ["llm", "ai agents"], "min_points": 30 },
+    "max_age_hours": 72,
+    "fulltext": { "max_per_cycle": 20, "max_per_feed": 5 },
+    "hackernews": { "enabled": true, "poll_minutes": 60, "queries": ["llm", "ai agents"], "min_points": 30, "hits_per_page": 50 },
     "github": { "enabled": true, "poll_minutes": 180, "topics": ["llm", "ai-agents"], "watch_repos": [] },
     "reddit": { "enabled": true, "poll_minutes": 120, "subreddits": ["LocalLLaMA", "MachineLearning"] }
   },
