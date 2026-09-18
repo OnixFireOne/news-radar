@@ -23,7 +23,7 @@ from typing import Optional, Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from analyzer.llm_client import LLMClient, is_llm_locked, LLMLock
+from analyzer.llm_client import LLMClient, is_llm_locked, LLMLock, set_local_mode
 from analyzer.prompts import (
     SINGLE_MESSAGE_PROMPT, DIGEST_PROMPT, DIGEST_PROMPT_SPOILER,
     DIGEST_SPOILER_MERGE_ON, DIGEST_SPOILER_MERGE_OFF,
@@ -1415,6 +1415,13 @@ async def main():
         logger.warning("LLM not available yet — will retry on each cycle")
 
     cfg = ConfigWatcher("/app/config/settings.json")
+
+    # ТЗ #4 И1: llm_local_mode toggles LLMLock/chat_template_kwargs (local-GPU-only
+    # behaviors). Default True preserves current prod behavior. Hot-reload follows
+    # the same cfg.on_change pattern used elsewhere (e.g. collectors/telegram.py) —
+    # note this only takes effect if something in this process also runs cfg.watch().
+    set_local_mode(cfg.get("llm_local_mode", True))
+    cfg.on_change("llm_local_mode", set_local_mode)
 
     analyzer = NewsAnalyzer(
         db_path=db_path,

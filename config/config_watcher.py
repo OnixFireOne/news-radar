@@ -52,7 +52,41 @@ DEFAULT_CONFIG = {
     "trend_min_sources": 2,
     "trend_min_cluster_size": 2,
     "trend_min_temperature": 5.0,
-    "trend_hdbscan_epsilon": 0.25
+    "trend_hdbscan_epsilon": 0.25,
+    # ТЗ #4 И1: True = preserve current local-GPU behavior (LLMLock, chat_template_kwargs).
+    # False = cloud proxy mode (see analyzer/llm_client.py set_local_mode()).
+    "llm_local_mode": True,
+    # ТЗ #4 И2: poll-mode collectors (collectors/poll_runner.py), each off by
+    # default — prod's collector topology doesn't change until switched on.
+    "sources": {
+        # ТЗ #4 И2.1: records older than this are skipped before the full-text
+        # fetch, in both rss.py and hackernews.py.
+        "max_age_hours": 72,
+        # ТЗ #4 И2.1: fetch budget for FullTextFetcher — max_per_cycle across all
+        # feeds/queries, max_per_feed so one feed early in iteration order can't
+        # eat the whole cycle's budget.
+        "fulltext": {"max_per_cycle": 20, "max_per_feed": 5},
+        "rss": {
+            "enabled": False,
+            "poll_minutes": 60,
+            "feeds": [
+                "https://openai.com/news/rss.xml",
+                "https://deepmind.google/blog/rss.xml",
+                "https://huggingface.co/blog/feed.xml",
+                "https://simonwillison.net/atom/everything/",
+                "https://habr.com/ru/rss/hubs/artificial_intelligence/articles/",
+                "https://dev.to/feed/tag/ai",
+            ],
+        },
+        "hackernews": {
+            "enabled": False,
+            "poll_minutes": 60,
+            "queries": ["llm", "ai agents"],
+            "min_points": 30,
+            # ТЗ #4 И2.1: page size for the Algolia search_by_date request.
+            "hits_per_page": 50,
+        },
+    },
 }
 
 

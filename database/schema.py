@@ -233,12 +233,34 @@ MIGRATIONS = [
     # Ad/promo detection: messages flagged is_ad=1 are excluded from digest
     ("add_message_is_ad",
      "ALTER TABLE messages ADD COLUMN is_ad INTEGER DEFAULT 0"),
+
+    # ТЗ #4 И1 — foundation for the ai_value analysis profile (columns unused
+    # until a later iteration turns the profile on; all nullable, no backfill).
+    ("add_analysis_content_type",
+     "ALTER TABLE analysis ADD COLUMN content_type TEXT"),
+    ("add_analysis_value_score",
+     "ALTER TABLE analysis ADD COLUMN value_score REAL"),
+    ("add_analysis_has_outcome",
+     "ALTER TABLE analysis ADD COLUMN has_outcome INTEGER DEFAULT 0"),
+    ("add_analysis_takeaway",
+     "ALTER TABLE analysis ADD COLUMN takeaway TEXT"),
+    ("add_analysis_md_path",
+     "ALTER TABLE analysis ADD COLUMN md_path TEXT"),
+
+    # ТЗ #4 И1 — URL dedup for future collectors (rss/hackernews/github/reddit).
+    # Telegram messages have no URL, so this stays NULL for all existing rows;
+    # the partial index only enforces uniqueness where a URL is actually set.
+    ("add_messages_url",
+     "ALTER TABLE messages ADD COLUMN url TEXT"),
+    ("add_messages_url_unique_index",
+     "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_url ON messages(url) WHERE url IS NOT NULL"),
 ]
 
 
 def get_db(db_path: str | None = None) -> sqlite3.Connection:
     """Open and return a database connection with WAL mode and timeouts."""
-    path = db_path or os.getenv("DATABASE_PATH", "/app/data/news.db")
+    default_path = os.getenv("DATABASE_PATH", "/app/data/news.db")
+    path: str = db_path or default_path
     Path(path).parent.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(path, check_same_thread=False, timeout=30)

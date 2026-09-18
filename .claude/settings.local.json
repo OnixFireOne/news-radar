@@ -6,6 +6,24 @@
       "Bash(git add *)",
       "Bash(git commit -m ' *)",
       "Bash(docker compose *)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./secrets/**)",
+      "Read(./**/*.pem)",
+      "Read(./**/*.key)",
+      "Bash(cat .env)",
+      "Bash(printenv*)"
+    ]
+  },
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          { "type": "command", "command": "ruff check --fix ." }
+        ]
+      }
     ]
   }
 }

@@ -9,3 +9,4 @@ web/.next/
 web/node_modules/
 *.session
 *.session-journal
+.claude
