@@ -8,6 +8,27 @@ Collector — это **Telethon userbot**, а не бот. Разница:
 
 При старте запрашивает SMS-код (`TelegramClient.start()`). Сессия сохраняется в `data/sessions/news_radar.session`.
 
+## Выключатель: `sources.telegram.enabled`
+
+ТЗ #4 И3 поставил крипту на паузу, не удаляя коллектор. `main()` читает
+`sources.telegram.enabled` из `settings.json` **до** чтения `TELEGRAM_*` из
+окружения — выключенному деплою credentials не нужны вовсе.
+
+```python
+if not _is_telegram_enabled(cfg.get("sources", {})):
+    logger.info("Telegram collector disabled (sources.telegram.enabled=false) — idling.")
+    while True:
+        await asyncio.sleep(3600)
+```
+
+Сервис **идлит, а не выходит**: у него `restart: unless-stopped`, и выход
+превратился бы в рестарт-луп. Тот же паттерн — в `collectors/poll_runner.py`,
+когда не включён ни один poll-коллектор.
+
+Отсутствие ключа означает «включён»: деплой со старым `settings.json`
+продолжает собирать как раньше. Возврат крипты — это правка одного значения
+в конфиге, без изменений кода и compose.
+
 ## Startup: три concurrent задачи
 
 ```python

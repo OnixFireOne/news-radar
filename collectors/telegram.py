@@ -582,6 +582,18 @@ class TelegramCollector(BaseCollector):
             conn.close()
 
 
+def _is_telegram_enabled(sources: dict) -> bool:
+    """Whether the Telegram collector should collect (ТЗ #4 И3).
+
+    Absent config means enabled: a deployment whose settings.json predates
+    this key keeps collecting exactly as before. Only an explicit
+    sources.telegram.enabled = false pauses it, and flipping it back is the
+    whole rollback — no code or compose change.
+    """
+    telegram = sources.get("telegram") or {}
+    return bool(telegram.get("enabled", True))
+
+
 async def main():
     """Docker entry point."""
     logging.basicConfig(
@@ -589,13 +601,23 @@ async def main():
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
 
+    # Load config (file + env vars)
+    cfg = ConfigWatcher("/app/config/settings.json")
+
+    # ТЗ #4 И3: crypto is paused by config, not by deleting the collector.
+    # Checked before the TELEGRAM_* env vars are read, so a deployment that
+    # has switched Telegram off does not need credentials at all. The compose
+    # service is restart: unless-stopped, so idle rather than exit — exiting
+    # would just restart-loop (same idle pattern as collectors/poll_runner.py).
+    if not _is_telegram_enabled(cfg.get("sources", {})):
+        logger.info("Telegram collector disabled (sources.telegram.enabled=false) — idling.")
+        while True:
+            await asyncio.sleep(3600)
+
     api_id = int(os.environ["TELEGRAM_API_ID"])
     api_hash = os.environ["TELEGRAM_API_HASH"]
     session_name = os.environ.get("TELEGRAM_SESSION_NAME", "news_radar")
     db_path = os.environ.get("DATABASE_PATH", "/app/data/news.db")
-
-    # Load config (file + env vars)
-    cfg = ConfigWatcher("/app/config/settings.json")
 
     # How many messages to fetch from a truly NEW channel (never seen before)
     # Read from settings.json -> then ENV -> fallback to 100

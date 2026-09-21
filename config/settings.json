@@ -84,6 +84,9 @@
       "max_per_cycle": 20,
       "max_per_feed": 5
     },
+    "telegram": {
+      "enabled": false
+    },
     "rss": {
       "enabled": false,
       "poll_minutes": 60,
