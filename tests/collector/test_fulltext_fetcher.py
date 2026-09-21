@@ -1,8 +1,9 @@
 """
-FullTextFetcher — ТЗ #4 И2/И2.1 acceptance: polite fetch (timeout/UA already
-covered by construction), per-domain pacing, per-cycle and per-feed caps,
-a domain-level circuit breaker after 401/403, and junk/empty extraction
-falling back to None (not an error) instead of failing.
+FullTextFetcher — ТЗ #4 И2/И2.1/И3.1 acceptance: polite fetch (timeout/UA
+already covered by construction), per-domain pacing, per-cycle and per-feed
+caps, a domain-level circuit breaker after 401/403 that's logged once per
+cycle (not once per skipped entry), and junk/empty extraction falling back
+to None (not an error) instead of failing.
 """
 
 import httpx
@@ -128,3 +129,30 @@ async def test_domain_block_is_cleared_by_new_cycle(mocker) -> None:
         route.mock(return_value=httpx.Response(200, text="<html>ok</html>"))
         fetcher.new_cycle()
         assert await fetcher.fetch("https://blocked.example.com/2", feed_key=FEED) == "x" * 300
+
+
+@pytest.mark.asyncio
+async def test_blocked_domain_is_logged_once_not_once_per_skipped_entry(mocker, caplog) -> None:
+    """ТЗ #4 И3.1: openai.com-style feeds skip dozens of entries per cycle
+    once blocked — the block should be logged where it happens, not again
+    for every entry that finds the domain already blocked."""
+    mocker.patch("collectors.fulltext_fetcher.trafilatura.extract", return_value="x" * 300)
+    with respx.mock() as router:
+        router.get(url__regex=r".*").mock(return_value=httpx.Response(403))
+        fetcher = FullTextFetcher(max_fetches_per_feed=10)
+        fetcher.new_cycle()
+        with caplog.at_level("DEBUG"):
+            assert await fetcher.fetch("https://blocked.example.com/1", feed_key=FEED) is None
+            assert await fetcher.fetch("https://blocked.example.com/2", feed_key=FEED) is None
+            assert await fetcher.fetch("https://blocked.example.com/3", feed_key=FEED) is None
+
+    # Match on the two messages' own wording, not on a substring that the
+    # fixture's domain name ("blocked.example.com") happens to contain too.
+    records = [r for r in caplog.records if r.name == "collectors.fulltext_fetcher"]
+    first_block = [r for r in records if "blocking it for this cycle" in r.getMessage()]
+    later_skips = [r for r in records if "still blocked for this cycle" in r.getMessage()]
+
+    assert len(first_block) == 1  # the 401/403 branch logs the block once...
+    assert first_block[0].levelname == "INFO"
+    assert len(later_skips) == 2  # ...and the 2 subsequent skips stay at debug
+    assert {r.levelname for r in later_skips} == {"DEBUG"}

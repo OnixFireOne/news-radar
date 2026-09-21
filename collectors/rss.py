@@ -7,22 +7,27 @@ seen yet, then sleeps — see BaseCollector / ТЗ #4 section 2. A feed that's
 unreachable, or a single entry missing a link/date, is skipped with a
 warning; it never aborts the whole poll cycle.
 
-ТЗ #4 И2.1: entries are checked, in order, against the in-memory seen set,
-the caller-supplied is_known_url (already stored in the DB from a previous
-run), and the max_age_hours window — all before the expensive full-text
-fetch. Entries are walked newest-first so the shared fetch budget goes to
-the freshest ones first.
+ТЗ #4 И2.1/И3.1: entries are checked, in order, against the in-memory seen
+set, the max_age_hours window, and the caller-supplied is_known_url
+(already stored in the DB from a previous run) — all before the expensive
+full-text fetch. The age check runs before is_known_url (a SQLite lookup)
+so an archive-heavy feed's stale entries are rejected without touching the
+DB. Entries are walked newest-first so the shared fetch budget goes to the
+freshest ones first.
 """
 
 from __future__ import annotations
 
 import asyncio
+import html
 import logging
+import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, AsyncIterator, Callable
 
 import feedparser
 import httpx
+import trafilatura
 
 from collectors.base import BaseCollector, RawMessage
 from collectors.fulltext_fetcher import FullTextFetcher
@@ -31,8 +36,14 @@ from collectors.url_utils import normalize_url
 logger = logging.getLogger(__name__)
 
 # Below this many characters, the feed-provided snippet is treated as "just a
-# teaser" and a full-text fetch is attempted.
+# teaser" and a full-text fetch is attempted. Measured against the CLEANED
+# text (see _clean_snippet_html), not the raw HTML — otherwise a snippet
+# that's mostly <p>/<img>/<a> markup around a short teaser never crosses the
+# threshold and a full fetch never happens (ТЗ #4 И3.1).
 _MIN_SNIPPET_CHARS_FOR_FULL_FETCH = 500
+
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RE = re.compile(r"\s+")
 
 
 class RssCollector(BaseCollector):
@@ -119,14 +130,20 @@ class RssCollector(BaseCollector):
 
             if normalized_link in self._seen_urls:
                 continue
-            if self._is_known_url(normalized_link):
-                self._seen_urls.add(normalized_link)
-                continue
+            # Age check before is_known_url: is_known_url hits SQLite per
+            # entry, and an archive-heavy feed can offer ~thousands of stale
+            # entries per cycle (ТЗ #4 И3.1) — the timestamp comparison is
+            # free and rejects those without touching the DB at all. Net
+            # effect is unchanged: an old entry is still dropped either way.
             if timestamp < cutoff:
                 old_count += 1
                 continue
+            if self._is_known_url(normalized_link):
+                self._seen_urls.add(normalized_link)
+                continue
 
-            snippet = (entry.get("summary") or "").strip()
+            raw_snippet = (entry.get("summary") or "").strip()
+            snippet = _clean_snippet_html(raw_snippet)
             text = snippet
             if len(snippet) < _MIN_SNIPPET_CHARS_FOR_FULL_FETCH:
                 full_text = await self._fetcher.fetch(normalized_link, feed_key=feed_url)
@@ -161,3 +178,38 @@ def _parse_entry_date(entry: Any) -> datetime | None:
         return None
     year, month, day, hour, minute, second = parsed_time[:6]
     return datetime(year, month, day, hour, minute, second, tzinfo=timezone.utc)
+
+
+def _clean_snippet_html(raw_html: str) -> str:
+    """Turn a feed-provided snippet's HTML into plain text.
+
+    Habr, dev.to and Simon Willison's feed put <p>/<img>/<a> markup straight
+    into <description>/<summary> — left as-is, that markup flows into
+    messages.text and then verbatim into the classifier prompt (ТЗ #4 И3.1).
+
+    trafilatura.extract() targets whole documents — boilerplate-removal
+    heuristics and a minimum-content-length check tuned for full pages — and
+    routinely returns None on a short RSS teaser, so it's tried first for the
+    rare snippet it does handle, and a deterministic tag-strip +
+    entity-decode + whitespace-collapse fallback guarantees plain text
+    either way, including on fragments trafilatura can't parse at all.
+    """
+    if not raw_html.strip():
+        return ""
+
+    try:
+        extracted: str | None = trafilatura.extract(raw_html)
+    except Exception:
+        # A short, sometimes-unclosed HTML fragment is a different beast
+        # from the full pages trafilatura is built for — never let a feed
+        # snippet's malformed markup take down the whole poll cycle.
+        extracted = None
+
+    text: str
+    if extracted:
+        text = extracted
+    else:
+        text = _HTML_TAG_RE.sub(" ", raw_html)
+
+    text = html.unescape(text)
+    return _WHITESPACE_RE.sub(" ", text).strip()

@@ -72,7 +72,12 @@ class FullTextFetcher:
         domain = urlparse(url).netloc
 
         if domain in self._blocked_domains:
-            logger.info(f"Domain {domain} blocked for this cycle (earlier 401/403) — skipping {url}")
+            # The block itself is already logged once, at INFO, where it
+            # happens (see the 401/403 branch below). Logging again on every
+            # subsequent skipped entry floods the log on a domain with many
+            # entries in one cycle (e.g. dozens of openai.com URLs) for no
+            # new information — debug is enough here.
+            logger.debug(f"Domain {domain} still blocked for this cycle — skipping {url}")
             return None
         if self._fetches_this_cycle >= self._max_per_cycle:
             logger.info(f"Full-text fetch cap reached ({self._max_per_cycle}/cycle) — skipping {url}")
