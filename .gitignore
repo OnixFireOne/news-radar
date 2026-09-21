@@ -10,3 +10,4 @@ web/node_modules/
 *.session
 *.session-journal
 .claude
+.kilo
