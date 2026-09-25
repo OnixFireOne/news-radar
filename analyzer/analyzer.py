@@ -1406,7 +1406,9 @@ async def main():
 
     init_db(db_path)
 
-    llm = LLMClient(timeout=300)  # 5 min — covers digest with full thinking
+    from analyzer.llm_client import build_llm_client
+
+    llm = build_llm_client(timeout=300)  # 5 min — covers digest with full thinking
 
     logger.info(f"Checking LLM at {llm.base_url}...")
     if await llm.health_check():
@@ -1420,8 +1422,9 @@ async def main():
     # behaviors). Default True preserves current prod behavior. Hot-reload follows
     # the same cfg.on_change pattern used elsewhere (e.g. collectors/telegram.py) —
     # note this only takes effect if something in this process also runs cfg.watch().
-    set_local_mode(cfg.get("llm_local_mode", True))
-    cfg.on_change("llm_local_mode", set_local_mode)
+    if llm.is_legacy:
+        set_local_mode(cfg.get("llm_local_mode", True))
+        cfg.on_change("llm_local_mode", set_local_mode)
 
     analyzer = NewsAnalyzer(
         db_path=db_path,

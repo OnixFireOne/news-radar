@@ -27,4 +27,42 @@ extra_payload=None)` берёт модель из `models[task]` либо `model
 `input_overhead` информационный и из токенов не вычитается.
 `gpu_lock`, `chat_template_kwargs` и `max_concurrency` — свойства профиля для хоста;
 роутер сам блокировки GPU и ограничения параллелизма не включает.
-Интеграция этого API в analyzer/API и рабочий `config/providers.json` — commit 3.
+
+## Подключение в приложении
+
+Analyzer и API создают клиент через `build_llm_client()`. Пустая или отсутствующая
+`LLM_PROVIDERS` сохраняет legacy-режим: `LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL`
+и переключатель `llm_local_mode`. Ключ `LLM_API_KEY` теперь читается корректно.
+
+В режиме каталога `LLM_PROVIDERS=aiprime.messages,local` задаёт порядок профилей.
+Вызовы идут только первому, автоматического failover пока нет. Ключ берётся из
+`LLM_KEY_<PROVIDER>`, где PROVIDER — часть имени до точки в верхнем регистре:
+`LLM_KEY_AIPRIME` для обоих профилей aiprime. Ключ получают в панели прокси.
+Каталог по умолчанию — `/app/config/providers.json`; `LLM_PROVIDERS_FILE` может
+задать другой путь. Нечитаемый или невалидный выбранный файл вызывает ошибку,
+возврата к встроенному каталогу нет. Провайдеры применяются при запуске процесса.
+Модель выбирается по задаче (`default`, `digest`), с возвратом к `default`, если
+маршрута нет. В settings.json моделей больше нет.
+
+В каталоге `gpu_lock` управляет блокировкой, а `chat_template_kwargs` — отправкой
+локальной опции отключения thinking. `llm_local_mode` в этом режиме игнорируется.
+Блокировки остаются в `analyzer/llm_client.py` ради совместимости импортов и
+monkeypatch; helper для thinking вынесен в `analyzer/llm_local.py`.
+
+Для нового облака:
+
+1. Запустить пробу в контейнере, подставив адрес, модель и имя переменной ключа:
+   `docker compose run --rm --no-deps analyzer python -m llm_core.probe --base-url https://your-proxy.example.com/v1 --model your-model --key-env LLM_KEY_NEW --profile-name new`.
+2. Перенести значения из draft отчёта в плоский профиль `config/providers.json`,
+   добавить `name`, проверить цены и заменить все `TODO(unverified)`.
+3. Добавить ключ `LLM_KEY_NEW` в окружение и имя профиля в `LLM_PROVIDERS`,
+   затем перезапустить процесс.
+
+У aiprime цены пока намеренно записаны как `price_table: "TODO(unverified)"`.
+Каталог загружается, local работает, но выбор любого профиля aiprime завершает
+запуск ошибкой с именем поля до подтверждения цен владельцем.
+Для messages задан `max_tokens=8192`: analyzer вызывает клиент без лимита,
+а 1024 из черновика пробы обрезало бы дайджесты. При пустом messages-ответе
+клиент учитывает токены и стоимость, пишет WARNING с причиной остановки и
+возвращает пустую строку для прежней обработки downstream. Каждый вызов пишет
+INFO с провайдером, моделью, токенами и ценой (`n/a`, если она неизвестна).

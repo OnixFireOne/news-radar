@@ -9,7 +9,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, fields, is_dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import NoReturn
+from typing import Literal, NoReturn
 
 from llm_core.client import CompletionUsage, LLMCoreError
 
@@ -36,7 +36,7 @@ class ProviderProfile:
     api_version: str | None = None
     max_tokens: int | None = None
     models_path: str | None = None
-    price_table: Mapping[str, ModelPrice] = field(default_factory=dict)
+    price_table: Mapping[str, ModelPrice] | Literal["TODO(unverified)"] = field(default_factory=dict)
     input_overhead: int = 0
     extra_headers: Mapping[str, str] = field(default_factory=dict)
     gpu_lock: bool = False
@@ -47,7 +47,9 @@ class ProviderProfile:
         if not self.api_key_env:
             prefix = re.sub(r"[^A-Z0-9]", "_", self.name.split(".", 1)[0].upper())
             object.__setattr__(self, "api_key_env", f"LLM_KEY_{prefix}")
-        for attr in ("models", "price_table", "extra_headers"):
+        if not isinstance(self.price_table, str):
+            object.__setattr__(self, "price_table", MappingProxyType(dict(self.price_table)))
+        for attr in ("models", "extra_headers"):
             object.__setattr__(self, attr, MappingProxyType(dict(getattr(self, attr))))
 
 
@@ -126,7 +128,9 @@ def _validate(name: str, raw: object) -> ProviderProfile:
             _fail(name, f"extra_headers.{key}", "must be a string")
         headers[key] = value
     prices: dict[str, ModelPrice] = {}
-    for model, value in _object(obj.get("price_table", {}), name, "price_table").items():
+    raw_prices = obj.get("price_table", {})
+    unverified_prices = raw_prices == "TODO(unverified)"
+    for model, value in _object({} if unverified_prices else raw_prices, name, "price_table").items():
         path = f"price_table.{model}"
         entry = _object(value, name, path)
         for key in entry:
@@ -145,7 +149,7 @@ def _validate(name: str, raw: object) -> ProviderProfile:
                 _fail(name, f"{path}.{key}", "must be a finite non-negative number")
             numbers[key] = converted
         prices[model] = ModelPrice(**numbers)
-    if strings["cost_source"] == "table":
+    if strings["cost_source"] == "table" and not unverified_prices:
         for model in models.values():
             if model not in prices:
                 _fail(name, "price_table", "must price every model in models")
@@ -155,7 +159,7 @@ def _validate(name: str, raw: object) -> ProviderProfile:
         api_key_env=key_env, api_version=optional_strings["api_version"],
         models_path=optional_strings["models_path"], max_tokens=ints["max_tokens"],
         max_concurrency=ints["max_concurrency"], input_overhead=ints["input_overhead"] or 0,
-        price_table=prices, extra_headers=headers, gpu_lock=bools["gpu_lock"],
+        price_table="TODO(unverified)" if unverified_prices else prices, extra_headers=headers, gpu_lock=bools["gpu_lock"],
         chat_template_kwargs=bools["chat_template_kwargs"],
     )
 
@@ -231,6 +235,8 @@ def compute_cost(profile: ProviderProfile, model: str, usage: CompletionUsage | 
             return float(cost) if math.isfinite(cost) else None
         except OverflowError:
             return None
+    if isinstance(profile.price_table, str):
+        _fail(profile.name, "price_table", "contains TODO(unverified)")
     price = profile.price_table.get(model)
     if price is None or usage is None:
         return None

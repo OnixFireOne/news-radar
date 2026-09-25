@@ -55,7 +55,7 @@ import httpx
 from database.schema import get_db, init_db
 from analyzer.chroma_client import ChromaClient
 from analyzer.embedder import get_embedder
-from analyzer.llm_client import LLMClient
+from analyzer.llm_client import build_llm_client
 from analyzer.analyzer import NewsAnalyzer
 
 logger = logging.getLogger(__name__)
@@ -253,7 +253,7 @@ async def get_topics(
 async def get_raw_digest(hours: Optional[int] = Query(None, ge=1, le=48), force: bool = Query(False)):
     """Generate and return raw digest messages text without pushing via webhook."""
     from config.config_watcher import ConfigWatcher
-    llm = LLMClient(timeout=300)
+    llm = build_llm_client(timeout=300)
     analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm, cfg=ConfigWatcher())
     
     result = await analyzer.generate_digest(hours=hours, force=force, return_raw=True)
@@ -268,7 +268,7 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
     Use ?force=true to bypass the in_digest filter (re-generate even if all msgs were used).
     """
     from config.config_watcher import ConfigWatcher
-    llm = LLMClient(timeout=300)
+    llm = build_llm_client(timeout=300)
     analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm, cfg=ConfigWatcher())
 
     result = await analyzer.generate_digest(hours=hours, force=force)
