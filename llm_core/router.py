@@ -6,7 +6,7 @@ from collections.abc import Sequence
 
 from llm_core.catalog import ActiveProvider, CatalogError
 from llm_core.client import ChatMessage
-from llm_core.transport import LLMRequest, LLMResponse, Transport, create_transport
+from llm_core.transport import JsonSchemaTool, LLMRequest, LLMResponse, Transport, create_transport
 
 
 class ProviderRouter:
@@ -29,13 +29,14 @@ class ProviderRouter:
 
     async def complete(self, task: str, messages: list[ChatMessage], temperature: float = 0.3,
                        max_tokens: int | None = None,
-                       extra_payload: dict[str, object] | None = None) -> LLMResponse:
+                       extra_payload: dict[str, object] | None = None,
+                       model: str | None = None, tool: JsonSchemaTool | None = None) -> LLMResponse:
         provider = self.primary()
         name = provider.profile.name
         if name not in self._transports:
             self._transports[name] = create_transport(provider.profile, provider.api_key, self._timeout)
         # failover: next iteration
         return await self._transports[name].complete(LLMRequest(
-            model=self.model_for(task), messages=messages, temperature=temperature,
-            max_tokens=max_tokens, extra_payload=extra_payload,
+            model=model if model is not None else self.model_for(task), messages=messages,
+            temperature=temperature, max_tokens=max_tokens, extra_payload=extra_payload, tool=tool,
         ))

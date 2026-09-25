@@ -11,12 +11,20 @@ from llm_core.config import LLMCoreConfig
 
 
 @dataclass(frozen=True)
+class JsonSchemaTool:
+    name: str
+    description: str
+    schema: dict[str, object]
+
+
+@dataclass(frozen=True)
 class LLMRequest:
     model: str
     messages: list[ChatMessage]
     temperature: float = 0.3
     max_tokens: int | None = None
     extra_payload: dict[str, object] | None = None
+    tool: JsonSchemaTool | None = None
 
 
 @dataclass(frozen=True)
@@ -29,6 +37,8 @@ class LLMResponse:
     cost_usd: float | None
     cost_source: str
     provider: str
+    structured: dict[str, object] | None = None
+    tool_calls_seen: tuple[str, ...] = ()
 
 
 class Transport(Protocol):
@@ -47,6 +57,7 @@ class ChatCompletionsTransport:
         result = await self._client.chat_completion(
             messages=req.messages, model=req.model, temperature=req.temperature,
             max_tokens=req.max_tokens, extra_payload=req.extra_payload,
+            tool=req.tool,
         )
         usage = result.usage
         raw = result.raw_usage
@@ -58,6 +69,7 @@ class ChatCompletionsTransport:
             stop_reason=result.finish_reason, raw_usage=raw,
             cost_usd=compute_cost(self._profile, result.model, usage, raw),
             cost_source=self._profile.cost_source, provider=self._profile.name,
+            structured=result.structured, tool_calls_seen=result.tool_calls_seen,
         )
 
 

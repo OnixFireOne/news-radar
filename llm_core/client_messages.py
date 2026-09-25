@@ -22,6 +22,8 @@ logger = logging.getLogger(__name__)
 class _Block(TypedDict, total=False):
     type: str
     text: str
+    name: str
+    input: object
 
 
 class _MessagesResponse(TypedDict, total=False):
@@ -87,6 +89,10 @@ class MessagesTransport:
             payload["system"] = "\n\n".join(systems)
         if req.extra_payload:
             payload.update(req.extra_payload)
+        if req.tool is not None:
+            payload["tools"] = [{"name": req.tool.name, "description": req.tool.description,
+                                 "input_schema": req.tool.schema}]
+            payload["tool_choice"] = {"type": "tool", "name": req.tool.name}
         if "chat_template_kwargs" in payload:
             del payload["chat_template_kwargs"]
             logger.debug("llm_core: dropping chat_template_kwargs for messages")
@@ -106,12 +112,23 @@ class MessagesTransport:
                 usage = CompletionUsage(tokens_in, tokens_out, tokens_in + tokens_out)
         content = "".join(block.get("text", "") for block in data.get("content", [])
                           if block.get("type") == "text")
+        structured: dict[str, object] | None = None
+        names: list[str] = []
+        for block in data.get("content", []):
+            if block.get("type") == "tool_use":
+                name = block.get("name", "")
+                names.append(name)
+                raw_input = block.get("input")
+                if req.tool is not None and name == req.tool.name and isinstance(raw_input, dict):
+                    if all(isinstance(key, str) for key in raw_input):
+                        structured = raw_input
         model = data.get("model", req.model)
         response = LLMResponse(
             content=content, model=model, usage=usage, stop_reason=data.get("stop_reason"),
             raw_usage=raw, cost_usd=compute_cost(profile, model, usage, raw),
             cost_source=profile.cost_source, provider=profile.name,
+            structured=structured, tool_calls_seen=tuple(names),
         )
-        if not content.strip():
+        if not content.strip() and structured is None:
             raise LLMEmptyResponseError(response)
         return response

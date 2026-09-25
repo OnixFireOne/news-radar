@@ -22,7 +22,7 @@ from llm_core.catalog import (
 from llm_core.client_messages import LLMEmptyResponseError, MessagesTransport
 from llm_core.router import ProviderRouter
 from llm_core.transport import (
-    ChatCompletionsTransport, LLMRequest, LLMResponse, Transport, create_transport,
+    ChatCompletionsTransport, JsonSchemaTool, LLMRequest, LLMResponse, Transport, create_transport,
 )
 from llm_core.config import LLMCoreConfig
 from llm_core.mask import mask_secret
@@ -35,7 +35,7 @@ __all__ = [
     "ActiveProvider", "CatalogError", "ModelPrice", "ProviderProfile",
     "compute_cost", "find_todo_field", "load_catalog", "resolve_active",
     "LLMEmptyResponseError", "MessagesTransport", "ProviderRouter",
-    "ChatCompletionsTransport", "LLMRequest", "LLMResponse", "Transport", "create_transport",
+    "ChatCompletionsTransport", "JsonSchemaTool", "LLMRequest", "LLMResponse", "Transport", "create_transport",
     "ChatMessage",
     "CompletionResult",
     "CompletionUsage",
