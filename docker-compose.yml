@@ -119,6 +119,7 @@ services:
       - ./api:/app/api
       - ./analyzer:/app/analyzer
       - ./database:/app/database
+      - ./llm_core:/app/llm_core
     restart: unless-stopped
     networks:
       - news-radar-network

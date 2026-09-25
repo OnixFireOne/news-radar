@@ -13,6 +13,7 @@ COPY database/ /app/database/
 COPY config/ /app/config/
 # Phase 1: API imports ChromaClient and Embedder from analyzer module
 COPY analyzer/ /app/analyzer/
+COPY llm_core/ /app/llm_core/
 
 RUN mkdir -p /app/data /app/data/models
 
