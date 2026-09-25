@@ -67,3 +67,52 @@ monkeypatch; helper для thinking вынесен в `analyzer/llm_local.py`.
 клиент учитывает токены и стоимость, пишет WARNING с причиной остановки и
 возвращает пустую строку для прежней обработки downstream. Каждый вызов пишет
 INFO с провайдером, моделью, токенами и ценой (`n/a`, если она неизвестна).
+
+## Структурированный ответ (tool use)
+
+`LLMRequest.tool` (`JsonSchemaTool`: имя, описание, JSON Schema) необязателен.
+С ним `messages` шлёт `tools` + `tool_choice: {"type": "tool"}`, а `chat_completions` —
+функцию и принудительный `tool_choice`. Без него запрос байт-в-байт прежний.
+В `LLMResponse.structured` попадает только вызов **нашего** инструмента; имена всех
+вызванных инструментов — в `tool_calls_seen`. Если модель вызвала чужой инструмент
+или ответила текстом, вызывающий код сам решает, разбирать ли JSON из текста.
+Ответ только с вызовом инструмента (без текста) пустым не считается.
+
+Проверено 25.09: на OpenRouter принудительный инструмент работает у haiku 4.5 и
+sonnet 5; **opus 5.5 отвечает 400** (`tool_choice` типа `tool`/`any` не поддерживается) —
+для него только текстовый режим. На aiprime tool use ненадёжен (грабля 23).
+
+## Профили OpenRouter
+
+`openrouter.messages` (основной) и `openrouter.chat_completions`, ключ
+`LLM_KEY_OPENROUTER` (https://openrouter.ai/keys). Проба 25.09: скрытой добавки
+входных токенов нет («reply with ok» = 14 токенов против 1317 у aiprime);
+`chat_completions` отдаёт `usage.cost` (`cost_source: provider`), `messages` — нет,
+поэтому там таблица цен из листинга `/models`. id моделей — с префиксом вендора
+(`anthropic/claude-haiku-4.5`). Модели по задачам: `default` sonnet 5, `digest`
+opus 5, `classify` haiku 4.5 (выбрана замером, см. ниже).
+
+## Классификатор ценности и замер моделей
+
+`analyzer/value_classifier.py`: порт `ValueClassifier` (`classify(items)` → исход на
+каждый элемент, по порядку) и реализация `LLMValueClassifier` на задаче `classify`.
+Статьи уходят батчами (по умолчанию 5: у aiprime каждый вызов стоит ~1300 лишних
+входных токенов), каждая — в рамке `<<<ARTICLE id="…">>> … <<<END ARTICLE>>>`,
+маркеры внутри текста экранируются. Ответ проверяется строго (перечисления,
+целые 1–10, bool); битый ответ модели — ошибка у элементов, а не исключение.
+Промпт — `AI_VALUE_MESSAGE_PROMPT`, версия в `AI_VALUE_PROMPT_VERSION`.
+В пайплайн классификатор подключается в шаге 5 (воронка).
+
+Замер на golden set:
+
+```bash
+docker compose run --rm --no-deps analyzer python tests/eval_value_scoring.py \
+  --provider openrouter.messages --model anthropic/claude-haiku-4.5 --batch-size 5
+```
+
+Параметры: `--structured tool|text`, `--threshold` (порог «ценно», по умолчанию 5),
+`--limit`. Печатает точность, нарушения «хайп ≥ 8», состязательные примеры,
+токены, цену (`null`, если цена хоть одного вызова неизвестна), задержку
+(медиана/p95), сломанные ответы. Каждый прогон — JSON в `tests/golden/runs/` и
+строка в `tests/golden/RESULTS.md`. Правило выбора модели — р.6.1.2 спеки: самая
+дешёвая из прошедших критерии р.9.
