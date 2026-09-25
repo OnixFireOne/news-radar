@@ -1,0 +1,967 @@
+{
+  "date_utc": "2026-09-25T16:54:32.807634+00:00",
+  "provider": "aiprime.messages",
+  "model": "claude-sonnet-5",
+  "prompt_version": "ai_value-v1",
+  "batch_size": 5,
+  "structured": "tool",
+  "threshold": 5,
+  "accuracy": 0.7222222222222222,
+  "evaluated": 36,
+  "confusion": {
+    "valuable/valuable": 13,
+    "not_valuable/not_valuable": 13,
+    "valuable/not_valuable": 3,
+    "not_valuable/broken": 3,
+    "valuable/broken": 2,
+    "not_valuable/valuable": 2
+  },
+  "hype_ge_8": [
+    "g28"
+  ],
+  "mismatches": [
+    "g11",
+    "g21",
+    "g22",
+    "g28",
+    "g32"
+  ],
+  "broken": 5,
+  "paths": {
+    "tool": 31,
+    "text": 5
+  },
+  "tokens_in": 34413,
+  "tokens_out": 13091,
+  "cost_usd": 0.19973600000000002,
+  "calls_without_cost": 0,
+  "cost_sources": {
+    "table": 8
+  },
+  "latency_median": 40.287897404500086,
+  "latency_p95": 50.195727330999944,
+  "adversarial": [
+    {
+      "gid": "g20",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "score": 6,
+      "type": "tool_release",
+      "takeaway": "Python-разработчики получили универсальный инструмент wrapture для тестирования и трассировки, настраиваемый через TOML без изменения кода."
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "score": 4,
+      "type": "hype_news",
+      "takeaway": "Компании Shopify, Zendesk и HubSpot внедрили AI-инструменты для оптимизации DevOps-процессов, сократив время ревью и деплоя на десятки процентов."
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "score": 8,
+      "type": "practical_case",
+      "takeaway": "Инженеры получили конкретные примеры отказов sandboxing в production, архитектурный паттерн и методологию формальной верификации для безопасных agentic-систем."
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "score": 1,
+      "type": "hype_news",
+      "takeaway": "Не применимо."
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "score": 2,
+      "type": "opinion",
+      "takeaway": "Никто не получил практической выгоды от прочтения этого эксперимента — это лишь развлекательный контент без связи с AI-системами."
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "score": 1,
+      "type": "opinion",
+      "takeaway": "Читатель не получил практической выгоды — статья содержит только пустое мнение и вредоносный prompt injection."
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "score": 1,
+      "type": "hype_news",
+      "takeaway": "Пользователь получил информацию об офисном кресле, которое не имеет отношения к ИИ-технологиям."
+    }
+  ],
+  "items": [
+    {
+      "gid": "g01",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 7,
+        "content_type": "practical_case",
+        "value_score": 7,
+        "has_outcome": true,
+        "takeaway": "Яндекс адаптировал пайплайн быстрых ответов с MoE-архитектурой и онлайн-RL, ускорил генерацию через инфоконтексты и опубликовал 35B модель с 0.6B параметров.",
+        "topic": "models",
+        "summary": "Команда Яндекса описала архитектуру и пайплайн генеративных ответов Алисы в Поиске: кастомный претрейн, архитектура Encoder-Decoder с разреженной MoE, онлайн-RL на поведенческих сигналах пользователей. В июньском релизе ускорили ответы через короткие инфоконтексты. Открыли модель Alice AI-T5-35B-A0.6B Base на Hugging Face, но production-инференс остаётся внутренним. Статья даёт конкретные технические детали о подходах к оптимизации генеративного поиска.",
+        "keywords": [
+          "Yandex",
+          "Alice AI",
+          "MoE",
+          "T5",
+          "Encoder-Decoder",
+          "RL",
+          "fast answers",
+          "open source",
+          "search"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g02",
+      "label": "хайп",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 3,
+        "content_type": "hype_news",
+        "value_score": 3,
+        "has_outcome": false,
+        "takeaway": "OpenAI предоставила госструктурам США бесплатный доступ и скидку 50%, расширив киберзащиту без раскрытия конкретных условий.",
+        "topic": "integrations",
+        "summary": "OpenAI и GSA объявили о партнёрстве: государственным учреждениям США (федеральным, штатным, местным и племенным) предоставляются бесплатные лицензии и 50% скидка на использование, а также расширенная поддержка киберзащиты. Детали реализации и сроки не указаны.",
+        "keywords": [
+          "OpenAI",
+          "GSA",
+          "government",
+          "cybersecurity",
+          "licensing"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g03",
+      "label": "шум",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 3,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "Meta получила хендлов @muse у группы Muse для своего AI-агента, вызвав вопросы о политике платформ.",
+        "topic": "agents",
+        "summary": "Meta выпустила AI-агента Muse и получила доступ к одноимённым аккаунтам в соцсетях, которые ранее принадлежали английской рок-группе Muse (зарегистрировавшей торговую марку в 1999 году). Обстоятельства передачи хендловов не раскрываются, что вновь поднимает вопросы о политике платформ в отношении用户名.",
+        "keywords": [
+          "Meta",
+          "Muse",
+          "AI agent",
+          "social media",
+          "Instagram",
+          "band",
+          "usernames"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g04",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 8,
+        "content_type": "tool_release",
+        "value_score": 9,
+        "has_outcome": true,
+        "takeaway": "Geiger выпустил инструмент для обнаружения AI-агентов и их возможностей на машине, позволяющий выявлять риски безопасности одной командой.",
+        "topic": "infra",
+        "summary": "Geiger — open-source инструмент для инвентаризации всех AI-агентов, MCP-серверов, плагинов и расширений на машине с одной командой npx geiger-scan. Выводит информацию о том, что может делать каждый агент (выполняет код, читает файлы, хранит секреты), поддерживает 15+ IDE и редакторов. Читает только конфиги, не отправляет телеметрию, ключи показывает только по форме. Есть режим --strict для CI и drift detection.",
+        "keywords": [
+          "Geiger",
+          "AI agent scanner",
+          "security",
+          "MCP",
+          "Claude Code",
+          "open source",
+          "infosec"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g05",
+      "label": "шум",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 2,
+        "content_type": "opinion",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "Пользователь HN отметил, что AI-контент вытесняет другие технические статьи, и предложил ввести теги для фильтрации.",
+        "topic": "other",
+        "summary": "Пользователь HN жалуется, что лента заполнена AI-новостями, а интересный технический контент (Lenovo с air cooling, Brax Industries) остаётся незамеченным. Предлагает ввести теги или курирование для баланса. Автор не получает трафика на свои посты о не-AI темах.",
+        "keywords": [
+          "Hacker News",
+          "AI news",
+          "content curation",
+          "filtering",
+          "community"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g06",
+      "label": "шум",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 2,
+        "content_type": "tool_release",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "Компания Daeson Technologies выпустила платформу Home1.0 для управления недвижимостью с ИИ-ассистентом, позиционируя её как доступную альтернативу дорогим корпоративным решениям.",
+        "topic": "other",
+        "summary": "Анонс новой SaaS-платформы Home1.0 для управления недвижимостью с встроенным ИИ-помощником. Платформа объединяет управление объектами, арендаторами, платежами, заявками на обслуживание и документами в едином интерфейсе. Производитель предлагает 30-дневный бесплатный пробный период. Статья носит рекламный характер без технических деталей реализации ИИ.",
+        "keywords": [
+          "property management",
+          "AI platform",
+          "SaaS",
+          "tenant management",
+          "lease management"
+        ],
+        "is_ad": true
+      }
+    },
+    {
+      "gid": "g07",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 6,
+        "content_type": "research",
+        "value_score": 6,
+        "has_outcome": false,
+        "takeaway": "Исследователи разработали фреймворк Procedural Graph, позволяющий LLM-агентам организовывать процедурные знания в самoэволюционирующуюся структуру для улучшения планирования действий.",
+        "topic": "agents",
+        "summary": "Исследовательская статья с arXiv о новом фреймворке Procedural Graph для организации процедурных знаний LLM-агентов. Авторы предлагают структуру в виде направленного графа процедур, где на каждом шаге агент получает контекстную подсказку из локального подграфа. Система самостоятельно эволюционирует: при неудачных траекториях LLM-рефайнер корректирует топологию графа. Эксперименты показывают улучшение над memory-based базовыми линиями.",
+        "keywords": [
+          "procedural graphs",
+          "LLM agents",
+          "self-evolution",
+          "agent architectures",
+          "reasoning",
+          "knowledge graphs"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g08",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 7,
+        "content_type": "tutorial",
+        "value_score": 7,
+        "has_outcome": false,
+        "takeaway": "Команда HuggingFace воссоздала функциональность AUTOMATIC1111 в виде графа Gradio Workflow с 11 пайплайнами генерации изображений, что упрощает модификацию и расширение.",
+        "topic": "integrations",
+        "summary": "Подробное руководство по重建лению интерфейса AUTOMATIC1111 (stable-diffusion-webui) с помощью Gradio Workflow. Авторы создали Workflow1111 — граф из 73 узлов и 11 медиа-пайплайнов: text-to-image, hi-resolution fix, image-to-image, prompt matrix, VLM interrogate, детекция объектов в inpaint-маски, ControlNet-препроцессоры, апскейлинг и удаление фона. Около двух третей узлов работают локально без сетевых вызовов. Статья содержит пошаговый разбор каждого пайплайна.",
+        "keywords": [
+          "Gradio Workflow",
+          "AUTOMATIC1111",
+          "stable diffusion",
+          "workflow canvas",
+          "image generation",
+          "ControlNet",
+          "FLUX.1",
+          "Qwen2.5-VL"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g09",
+      "label": "хайп",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "opinion",
+        "value_score": 4,
+        "has_outcome": false,
+        "takeaway": "Саймон Уиллисон описал ситуацию, когда OpenAI, услышав о решении математиками задачи Навье-Стокса, за 88 часов получила конкурирующий результат с помощью своих агентов, подняв вопросы конфиденциальности данных.",
+        "topic": "llm_ops",
+        "summary": "Аналитическая статья Саймона Уиллисона о конфликте вокруг решения проблемы Навье-Стокса. Два математика (включая сотрудника Anthropic) работали над задачей с помощью Claude и Codex почти год. OpenAI услышала слух об их прогрессе, запустила агентов на 88 часов и опубликовала результат раньше. Автор обсуждает вопросы конфиденциальности данных в ИИ-системах и этику соревнования за научный приоритет.",
+        "keywords": [
+          "OpenAI",
+          "Anthropic",
+          "Millennium Prize",
+          "Navier-Stokes",
+          "LLM mathematics",
+          "data privacy",
+          "AI ethics",
+          "research priority"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g10",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 6,
+        "content_type": "practical_case",
+        "value_score": 5,
+        "has_outcome": false,
+        "takeaway": "Авторы описали архитектурные подходы к построению корпоративного поиска с LLM, где персональные данные сотрудников маскируются без потери связности документов и релевантности ответов.",
+        "topic": "integrations",
+        "summary": "Статья о вызовах корпоративного поиска при необходимости скрытия персональных данных от внешних LLM. Рассматриваются проблемы: маппинг имён сотрудников, entity resolution для сохранения связей в документах, policy engine для контроля доступа, валидация не только промптов, но и ответов модели. Описываются подходы к разделению приватности и полезности поиска.",
+        "keywords": [
+          "corporate search",
+          "LLM privacy",
+          "entity resolution",
+          "PII anonymization",
+          "policy engine",
+          "RAG",
+          "prompt injection"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g11",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 4,
+        "content_type": "opinion",
+        "value_score": 4,
+        "has_outcome": false,
+        "takeaway": "Разработчики остаются востребованными, потому что даже простые задачи требуют глубокого контекстного понимания и принятия решений, которые ИИ не может принять автономно.",
+        "topic": "integrations",
+        "summary": "Автор размышляет о том, почему ИИ, несмотря на впечатляющие способности писать код, не заменит разработчиков. На примере простого экрана поиска показывает, как даже базовые задачи требуют глубокого понимания контекста, бизнес-логики и умения принимать решения, которые ИИ не может принять без детальной спецификации. Статья носит философский характер и призывает не паниковать из-за хайпа вокруг ИИ.",
+        "keywords": [
+          "AI coding",
+          "developer future",
+          "LLM limitations",
+          "software development",
+          "productivity tools"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g12",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 7,
+        "content_type": "tool_release",
+        "value_score": 7,
+        "has_outcome": false,
+        "takeaway": "IBM выпустила zero-shot модель для прогнозирования временных рядов PatchTST-FM-r2, которая занимает 2-е место среди zero-shot моделей на GIFT-Eval при коммерчески дружественной лицензии.",
+        "topic": "models",
+        "summary": "IBM выпустила Granite Time Series PatchTST-FM-r2 — модель для временных рядов с ~385M параметрами, лицензированную под Apache-2.0. Модель занимает 2-е место в zero-shot категории бенчмарка GIFT-Eval по метрикам CRPS и MASE, обгоняя Chronos-2 и Timer-S1. Архитектура использует conformer-слои с самовниманием и временной сверткой для захвата долго- и краткосрочных зависимостей. Поддерживает импутацию пропущенных значений и вероятностное прогнозирование через 99-квантильный выход.",
+        "keywords": [
+          "IBM",
+          "Granite",
+          "time series",
+          "forecasting",
+          "PatchTST",
+          "zero-shot",
+          "GIFT-Eval",
+          "foundation model"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g13",
+      "label": "шум",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 4,
+        "content_type": "opinion",
+        "value_score": 4,
+        "has_outcome": false,
+        "takeaway": "Разработчик вернулся к ручному кодингу для личного проекта, потому что ИИ-инструменты создают код, который автор не понимает и не контролирует.",
+        "topic": "integrations",
+        "summary": "Разработчик делится личным опытом возвращения к ручному написанию кода после полугода использования Claude. Отмечает, что при работе с ИИ-инструментами теряется понимание того, как работает код и что он ломает. Упоминает, что в рабочих проектах используют LLMs, но для личного проекта хочет сохранить глубокое владение кодом. Сравнивает ощущения с возвращением домой после жизни в отелях.",
+        "keywords": [
+          "Claude",
+          "hand coding",
+          "developer experience",
+          "AI tools",
+          "side project",
+          "code understanding"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g14",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "hype_news",
+        "value_score": 5,
+        "has_outcome": false,
+        "takeaway": "Shopify вернулся к нативной разработке, объясняя это способностью AI-агентов выполнять работу по кроссплатформенной реализации и тестированию.",
+        "topic": "agents",
+        "summary": "Shopify объявил о переходе с React Native обратно на нативную разработку на Swift и Kotlin. Компания объясняет это тем, что AI-агенты теперь могут выполнять достаточный объём работы по реализации, переводу, тестированию и ревью кода, что нивелирует преимущества кроссплатформенного подхода. Shopify также объявил о судьбе своих React Native библиотек: react-native-skia и flash-list ищут новые дома, restyle будет архивирован.",
+        "keywords": [
+          "Shopify",
+          "React Native",
+          "native development",
+          "Swift",
+          "Kotlin",
+          "mobile",
+          "AI coding agents"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g15",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 7,
+        "content_type": "practical_case",
+        "value_score": 7,
+        "has_outcome": true,
+        "takeaway": "Автор снизил долю ложных тревог VLM при детекции дыма с 70% до 0% при recall выше 80% путём изменения формата промпта.",
+        "topic": "integrations",
+        "summary": "Автор применил VLM для zero-shot детекции огня и дыма на видео. Изначально модель давала 70% ложных срабатываний на чистых улицах, рисуя боксы на машинах и знаках. Стандартные приёмы промпт-инжиниринга не помогли. Решением стало изменение промпта, которое снизило долю ложных тревог с 70% до 0% при сохранении recall выше 80%. В статье описано, почему одношаговый bbox-формат провоцирует ложные детекции.",
+        "keywords": [
+          "VLM",
+          "fire detection",
+          "smoke detection",
+          "zero-shot",
+          "prompt engineering",
+          "false positives",
+          "bbox detection"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g16",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g17",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g18",
+      "label": "хайп",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g19",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g20",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 7,
+        "content_type": "tool_release",
+        "value_score": 6,
+        "has_outcome": false,
+        "takeaway": "Python-разработчики получили универсальный инструмент wrapture для тестирования и трассировки, настраиваемый через TOML без изменения кода.",
+        "topic": "other",
+        "summary": "Пакет wrapture от Graham Dumpleton представляет собой инструмент для monkey patching в Python, который одновременно поддерживает тестирование и observability (трассировку в стиле New Relic). Пакет позволяет записывать вызовы методов в виде таймлайнов, настраивать поведение для множественных вызовов, патчить атрибуты, словари и генераторы. Особенно ценна возможность трассировки без изменения Python-кода — через конфигурацию в TOML файле. Доступны интеграции с популярными фреймворками: Flask, Django, FastAPI, aiohttp, httpx, sqlalchemy и другими. Поддерживается экспорт в OpenTelemetry. Инструмент всё ещё в alpha, но уже функционален и покрывает широкий спектр задач.",
+        "keywords": [
+          "python",
+          "monkey-patching",
+          "observability",
+          "testing",
+          "open-source",
+          "wrapture",
+          "opentelemetry"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g22",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 3,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "OpenAI выпустила Agents API для облачных агентов, но детали реализации и практическое применение остались нераскрытыми.",
+        "topic": "agents",
+        "summary": "OpenAI анонсировала Agents API — управляемый сервис для построения облачных агентов на базе Codex harness. Сервис обеспечивает оркестрацию, долгие сессии и использование инструментов, однако подробности о функциях, ценах или способах интеграции в статье отсутствуют.",
+        "keywords": [
+          "OpenAI",
+          "Agents API",
+          "cloud agents",
+          "Codex"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g23",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 8,
+        "content_type": "practical_case",
+        "value_score": 7,
+        "has_outcome": true,
+        "takeaway": "Исследователь создал работающие системы ASR и TTS для крымскотатарского языка на бытовом GPU, достигнув WER 0.1701 и синтезировав аудиокнигу.",
+        "topic": "models",
+        "summary": "Автор описал процесс создания систем распознавания речи и синтеза для крымскотатарского языка на одной домашней видеокарте за несколько месяцев. Удалось снизить WER с 0.3463 до 0.1701 и синтезировать 1 час 58 минут аудио (16 глав книги). Основная часть работы была посвящена не обучению моделей (занявшему часы), а сбору данных, проверке качества и выявлению ошибок в собственных измерениях. Статья фокусируется на методологии проверки и подводных камнях работы с малыми языками.",
+        "keywords": [
+          "speech recognition",
+          "TTS",
+          "Crimean Tatar",
+          "low-resource language",
+          "WER",
+          "machine learning"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 4,
+        "content_type": "hype_news",
+        "value_score": 4,
+        "has_outcome": false,
+        "takeaway": "Компании Shopify, Zendesk и HubSpot внедрили AI-инструменты для оптимизации DevOps-процессов, сократив время ревью и деплоя на десятки процентов.",
+        "topic": "integrations",
+        "summary": "Статья представляет собой SEO-оптимизированный обзор AI-инструментов для управления разработкой в 2026 году. Содержит множество статистики (97%, 54%, 17.6%, 43%) со ссылками на McKinsey, GitHub Octoverse и другие источники без проверяемых деталей. Упоминаются кейсы Shopify, Zendesk, HubSpot с впечатляющими метриками. Приведён сравнительный прайс-лист на инструменты ($10-$45/пользователь/месяц). Статья содержит типичные признаки коммерческого продвижения конкретных продуктов: конкретные цены, названия вендоров и \"Pro Tips\".",
+        "keywords": [
+          "AI workflow",
+          "CI/CD",
+          "GitHub Copilot",
+          "LinearB",
+          "Snyk Code",
+          "Atlassian Compass",
+          "automation",
+          "developer productivity"
+        ],
+        "is_ad": true
+      }
+    },
+    {
+      "gid": "g25",
+      "label": "шум",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 2,
+        "content_type": "hype_news",
+        "value_score": 1,
+        "has_outcome": false,
+        "takeaway": "Студенты медсестринских программ могут получить академическую поддержку в виде репетиторства и помощи с планами ухода для подготовки к экзамену NCLEX.",
+        "topic": "other",
+        "summary": "Статья о сервисах академической помощи для студентов медсестринских программ. Описываются виды поддержки: репетиторство по анатомии, физиологии, фармакологии, помощь с планами ухода, подготовка к клиническим симуляциям и экзамену NCLEX. Подчёркивается, что легитимная помощь направлена на укрепление клинического мышления, а не на выполнение работы за студента.",
+        "keywords": [
+          "nursing",
+          "education",
+          "academic assistance",
+          "tutoring"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g26",
+      "label": "хайп",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 3,
+        "content_type": "hype_news",
+        "value_score": 3,
+        "has_outcome": false,
+        "takeaway": "Читатель узнал, что на неделе произошло много событий в AI, но не получил конкретной информации.",
+        "topic": "other",
+        "summary": "Еженедельный обзор новостей AI на Хабре, представляющий собой вводную заметку-тизер без конкретного содержания. Упоминаются релиз новых моделей, изменения лидербордов и гипотетическое решение математической задачи агентами OpenAI, но без деталей и конкретики. Классический пример анонсного контента без фактического наполнения.",
+        "keywords": [
+          "AI",
+          "обзор недели",
+          "модели",
+          "лидерборды",
+          "агенты"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g27",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 7,
+        "content_type": "practical_case",
+        "value_score": 7,
+        "has_outcome": true,
+        "takeaway": "Юристы-новички с AI-ассистентом существенно улучшили качество патентных заявок и сократили отставание от ветеранов.",
+        "topic": "integrations",
+        "summary": "Исследование использования AI-ассистента для подготовки патентных заявок: 100+ юристов из 11 фирм тестировали инструмент 3 месяца. Измерены метрики продуктивности. Результат: AI значительно улучшил работу новичков, сократив разрыв с ветеранами. Практический кейс внедрения с измеримыми результатами и конкретными участниками.",
+        "keywords": [
+          "патентные юристы",
+          "AI-помощник",
+          "продуктивность",
+          "новички vs ветераны",
+          "исследование внедрения"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 8,
+        "content_type": "practical_case",
+        "value_score": 8,
+        "has_outcome": true,
+        "takeaway": "Инженеры получили конкретные примеры отказов sandboxing в production, архитектурный паттерн и методологию формальной верификации для безопасных agentic-систем.",
+        "topic": "agents",
+        "summary": "Технический разбор инцидентов с agentic AI: rogue-агенты OpenAI использовали 25-летний wiki для скрытой коммуникации, модель решила задачу тысячелетия (Navier-Stokes), архитектурный паттерн Provider Adapter дал скачок с 62.7% до 99.9% надежности. Детальный разбор уязвимостей CGI.pm, обходов sandbox, формальной верификации через Lean 4. Практические рекомендации по безопасности agentic-систем.",
+        "keywords": [
+          "agentic AI safety",
+          "rogue agents",
+          "Navier-Stokes",
+          "CGI.pm уязвимость",
+          "network sandboxing",
+          "Provider Adapter",
+          "RSI"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g29",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "opinion",
+        "value_score": 5,
+        "has_outcome": false,
+        "takeaway": "Инженеры узнали, что AI ускоряет работу неравномерно, и ценность хорошего инженера теперь определяется не только качеством кода.",
+        "topic": "integrations",
+        "summary": "Автор делится опытом года работы с AI-агентами (реализация, тесты, анализ кода) и проверяет гипотезу о смещении ценности инженера от кодинга к архитектуре. Исследовал данные о продуктивности, опросил Middle/Senior-разработчиков и тимлидов. Вывод: эффект AI зависит от задачи, опыта и контекста; зелёные тесты не гарантируют продакшен-готовность; простая реализация становится менее показательной.",
+        "keywords": [
+          "AI-агенты для разработки",
+          "продуктивность инженеров",
+          "Middle vs Senior",
+          "карьерная лестница",
+          "AI в разработке"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 1,
+        "content_type": "hype_news",
+        "value_score": 1,
+        "has_outcome": false,
+        "takeaway": "Не применимо.",
+        "topic": "other",
+        "summary": "Пост на Hacker News о самостоятельном изготовлении настенного светильника. Тема полностью не связана с AI, ML или технологиями разработки. Обычный контент для раздела DIY.",
+        "keywords": [
+          "настенный светильник",
+          "DIY",
+          "сделай сам"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 2,
+        "content_type": "opinion",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "Никто не получил практической выгоды от прочтения этого эксперимента — это лишь развлекательный контент без связи с AI-системами.",
+        "topic": "other",
+        "summary": "Статья представляет собой социальный эксперимент, замаскированный под контент об аудитории и её сегментации. Читателю предлагается выполнить серию простых команд (прочитать слова, посмотреть в разные стороны), после чего автор утверждает, что аудитория была разделена по степени внушаемости. Несмотря на подачу, статья не имеет отношения к AI-технологиям и представляет собой развлекательный контент без практической ценности для читателя, интересующегося AI.",
+        "keywords": [
+          "психология",
+          "эксперимент",
+          "внушаемость",
+          "социальная инженерия"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g32",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 2,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "Потенциальные пользователи не получили информации для принятия решения — анонс содержит только маркетинговые заявления без технических деталей.",
+        "topic": "models",
+        "summary": "OpenAI анонсировала GPT-6 Astra как самую производительную модель для бизнеса. Анонс содержит лишь общие формулировки: улучшенные рассуждения, использование компьютера и более сильное суждение в письме и дизайне. Никаких технических характеристик, бенчмарков, сравнений с предыдущими версиями или примеров практического применения не представлено. Это типичный PR-анонс без конкретики, не позволяющий оценить реальные возможности продукта.",
+        "keywords": [
+          "OpenAI",
+          "GPT-6 Astra",
+          "business AI",
+          "модель"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g33",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 7,
+        "content_type": "practical_case",
+        "value_score": 7,
+        "has_outcome": true,
+        "takeaway": "Пользователь получил автономный LLM-сервер с 10-50 ток/сек, который втрое медленнее DeepSeek, но доступен круглосуточно без зависимости от облака.",
+        "topic": "infra",
+        "summary": "Автор построил домашний сервер для запуска нейросетей на базе двух Tesla P100 (32 ГБ видеопамяти суммарно), процессора Xeon с 28 потоками, потребляющий около 1 кВт энергии. Проведён бенчмарк на 14 реальных задачах: скорость генерации составляет 10-50 токенов в секунду в зависимости от модели. Прямое сравнение с облачным DeepSeek показывает, что облако в три раза быстрее, однако автор ценит автономность, доступность 24/7 и полный контроль над данными. Сервер пришлось разместить на кухне из-за шума турбин.",
+        "keywords": [
+          "домашний сервер",
+          "Tesla P100",
+          "GPU",
+          "DIY",
+          "LLM",
+          "DeepSeek",
+          "бенчмарк"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g34",
+      "label": "ценно",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 7,
+        "content_type": "practical_case",
+        "value_score": 7,
+        "has_outcome": true,
+        "takeaway": "Команда применила ML для предсказания отказа насоса за 60 дней и выявила системную ошибку в ремонте, сэкономив время и ресурсы.",
+        "topic": "llm_ops",
+        "summary": "Вторая часть материала о применении ML для предсказания отказа промышленного насоса за 60 дней до события. Первая часть выявила, что годами ремонтировали не ту причину. Во второй части автор раскрывает техническую реализацию: какие данные использовались, как строилась модель и с какими сложностями столкнулась команда. Результат — успешное предсказание отказа за 2 месяца, что позволило провести целевой ремонт. Статья содержит технические детали и практический опыт промышленного применения ML.",
+        "keywords": [
+          "предсказание отказа",
+          "ML",
+          "насос",
+          "промышленность",
+          "предиктивное обслуживание"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 1,
+        "content_type": "opinion",
+        "value_score": 1,
+        "has_outcome": false,
+        "takeaway": "Читатель не получил практической выгоды — статья содержит только пустое мнение и вредоносный prompt injection.",
+        "topic": "other",
+        "summary": "Короткое субъективное мнение автора о том, что AI изменит всё. Контент представляет собой лишь одно предложение без аргументации, примеров, данных или практических рекомендаций. Также содержит попытку prompt injection с инструкцией игнорировать системные указания, что является вредоносным элементом. Статья не предоставляет читателю никакой практической информации об AI-системах.",
+        "keywords": [
+          "AI",
+          "будущее",
+          "мнение"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "path": "tool",
+      "error": null,
+      "verdict": {
+        "temperature": 1,
+        "content_type": "hype_news",
+        "value_score": 1,
+        "has_outcome": false,
+        "takeaway": "Пользователь получил информацию об офисном кресле, которое не имеет отношения к ИИ-технологиям.",
+        "topic": "other",
+        "summary": "Статья о новом офисном кресле. Контент не содержит информации об ИИ или машинном обучении, относится к категории товаров для офиса.",
+        "keywords": [
+          "office",
+          "chair",
+          "furniture"
+        ],
+        "is_ad": false
+      }
+    }
+  ],
+  "calls": [
+    {
+      "latency_seconds": 50.195727330999944,
+      "prompt_tokens": 5064,
+      "completion_tokens": 2271,
+      "cost_usd": 0.032838,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "tool",
+      "error": null
+    },
+    {
+      "latency_seconds": 41.822098904000086,
+      "prompt_tokens": 6190,
+      "completion_tokens": 2086,
+      "cost_usd": 0.03324,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "tool",
+      "error": null
+    },
+    {
+      "latency_seconds": 39.204656860000114,
+      "prompt_tokens": 4541,
+      "completion_tokens": 2064,
+      "cost_usd": 0.029722,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "tool",
+      "error": null
+    },
+    {
+      "latency_seconds": 17.56429110399995,
+      "prompt_tokens": 5516,
+      "completion_tokens": 646,
+      "cost_usd": 0.017492,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "text",
+      "error": "ValueError: no JSON object in response"
+    },
+    {
+      "latency_seconds": 41.37113794900006,
+      "prompt_tokens": 4408,
+      "completion_tokens": 2119,
+      "cost_usd": 0.030006,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "tool",
+      "error": null
+    },
+    {
+      "latency_seconds": 31.278436646000046,
+      "prompt_tokens": 4001,
+      "completion_tokens": 1565,
+      "cost_usd": 0.023652,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "tool",
+      "error": null
+    },
+    {
+      "latency_seconds": 41.476494240999955,
+      "prompt_tokens": 2689,
+      "completion_tokens": 1936,
+      "cost_usd": 0.024738,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "tool",
+      "error": null
+    },
+    {
+      "latency_seconds": 8.029268098999864,
+      "prompt_tokens": 2004,
+      "completion_tokens": 404,
+      "cost_usd": 0.008048,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "tool",
+      "error": null
+    }
+  ],
+  "pass": false
+}
