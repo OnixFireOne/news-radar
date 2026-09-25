@@ -44,5 +44,36 @@
     "gpu_lock": true,
     "chat_template_kwargs": true,
     "max_concurrency": 1
+  },
+  "openrouter.messages": {
+    "name": "openrouter.messages",
+    "base_url": "https://openrouter.ai/api/v1",
+    "protocol": "messages",
+    "auth_style": "x-api-key",
+    "api_version": "2023-06-01",
+    "_comment_max_tokens": "Same limit as aiprime.messages so both profiles are compared under equal conditions.",
+    "max_tokens": 8192,
+    "models": {"default": "anthropic/claude-sonnet-5", "digest": "anthropic/claude-opus-5"},
+    "models_path": "/models",
+    "cost_source": "table",
+    "price_table": {
+      "anthropic/claude-haiku-4.5": {"in_per_million": 1, "out_per_million": 5},
+      "anthropic/claude-sonnet-5": {"in_per_million": 2, "out_per_million": 10},
+      "anthropic/claude-opus-5": {"in_per_million": 5, "out_per_million": 25}
+    },
+    "_comment_price_table": "From the OpenRouter /models listing on 2026-09-25; the chat_completions probe reported usage.cost matching it (14 in + 4 out = $0.000068). The messages endpoint returns no cost field.",
+    "_comment_input_overhead": "Probe 2026-09-25: 'reply with ok' = 14 input tokens, no hidden overhead.",
+    "input_overhead": 0
+  },
+  "openrouter.chat_completions": {
+    "name": "openrouter.chat_completions",
+    "base_url": "https://openrouter.ai/api/v1",
+    "protocol": "chat_completions",
+    "auth_style": "bearer",
+    "models": {"default": "anthropic/claude-sonnet-5", "digest": "anthropic/claude-opus-5"},
+    "models_path": "/models",
+    "cost_source": "provider",
+    "_comment_cost_source": "Probe 2026-09-25: usage.cost is returned on chat/completions.",
+    "input_overhead": 0
   }
 }
