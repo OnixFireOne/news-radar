@@ -53,13 +53,15 @@
     "api_version": "2023-06-01",
     "_comment_max_tokens": "Same limit as aiprime.messages so both profiles are compared under equal conditions.",
     "max_tokens": 8192,
-    "models": {"default": "anthropic/claude-sonnet-5", "digest": "anthropic/claude-opus-5"},
+    "_comment_models": "classify = cheapest model passing spec 9 on tests/golden (prompt ai_value-v2, 2026-09-25: 91.7%, $0.10/run; see tests/golden/RESULTS.md).",
+    "models": {"default": "anthropic/claude-sonnet-5", "digest": "anthropic/claude-opus-5", "classify": "anthropic/claude-haiku-4.5"},
     "models_path": "/models",
     "cost_source": "table",
     "price_table": {
       "anthropic/claude-haiku-4.5": {"in_per_million": 1, "out_per_million": 5},
       "anthropic/claude-sonnet-5": {"in_per_million": 2, "out_per_million": 10},
-      "anthropic/claude-opus-5": {"in_per_million": 5, "out_per_million": 25}
+      "anthropic/claude-opus-5": {"in_per_million": 5, "out_per_million": 25},
+      "anthropic/claude-opus-5.5": {"in_per_million": 4, "out_per_million": 20}
     },
     "_comment_price_table": "From the OpenRouter /models listing on 2026-09-25; the chat_completions probe reported usage.cost matching it (14 in + 4 out = $0.000068). The messages endpoint returns no cost field.",
     "_comment_input_overhead": "Probe 2026-09-25: 'reply with ok' = 14 input tokens, no hidden overhead.",
