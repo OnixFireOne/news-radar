@@ -42,6 +42,9 @@ class ProviderProfile:
     gpu_lock: bool = False
     chat_template_kwargs: bool = False
     max_concurrency: int | None = None
+    # Per-model request quirks merged into the payload; a None value removes the key
+    # (e.g. {"gpt-6-luna": {"temperature": None, "reasoning_effort": "none"}}).
+    model_params: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.api_key_env:
@@ -51,6 +54,12 @@ class ProviderProfile:
             object.__setattr__(self, "price_table", MappingProxyType(dict(self.price_table)))
         for attr in ("models", "extra_headers"):
             object.__setattr__(self, attr, MappingProxyType(dict(getattr(self, attr))))
+        object.__setattr__(self, "model_params", MappingProxyType(
+            {model: MappingProxyType(dict(params)) for model, params in self.model_params.items()}))
+
+    def request_params(self, model: str) -> dict[str, object]:
+        """Payload overrides for one model; None values mean 'drop this key'."""
+        return dict(self.model_params.get(model, {}))
 
 
 @dataclass(frozen=True)
@@ -127,6 +136,13 @@ def _validate(name: str, raw: object) -> ProviderProfile:
         if not isinstance(value, str):
             _fail(name, f"extra_headers.{key}", "must be a string")
         headers[key] = value
+    model_params: dict[str, dict[str, object]] = {}
+    for model, value in _object(obj.get("model_params", {}), name, "model_params").items():
+        params = _object(value, name, f"model_params.{model}")
+        for key, param in params.items():
+            if param is not None and not isinstance(param, (str, int, float, bool)):
+                _fail(name, f"model_params.{model}.{key}", "must be a scalar or null")
+        model_params[model] = params
     prices: dict[str, ModelPrice] = {}
     raw_prices = obj.get("price_table", {})
     unverified_prices = raw_prices == "TODO(unverified)"
@@ -160,7 +176,7 @@ def _validate(name: str, raw: object) -> ProviderProfile:
         models_path=optional_strings["models_path"], max_tokens=ints["max_tokens"],
         max_concurrency=ints["max_concurrency"], input_overhead=ints["input_overhead"] or 0,
         price_table="TODO(unverified)" if unverified_prices else prices, extra_headers=headers, gpu_lock=bools["gpu_lock"],
-        chat_template_kwargs=bools["chat_template_kwargs"],
+        chat_template_kwargs=bools["chat_template_kwargs"], model_params=model_params,
     )
 
 

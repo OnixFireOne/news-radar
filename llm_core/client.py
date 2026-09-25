@@ -187,6 +187,8 @@ class LLMCoreClient:
             payload["max_tokens"] = max_tokens
         if extra_payload:
             payload.update(extra_payload)
+            for key in [key for key, value in extra_payload.items() if value is None]:
+                del payload[key]
         if tool is not None:
             payload["tools"] = [{"type": "function", "function": {
                 "name": tool.name, "description": tool.description, "parameters": tool.schema,

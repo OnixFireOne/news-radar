@@ -89,6 +89,11 @@ class MessagesTransport:
             payload["system"] = "\n\n".join(systems)
         if req.extra_payload:
             payload.update(req.extra_payload)
+        for key, value in profile.request_params(req.model).items():
+            if value is None:
+                payload.pop(key, None)
+            else:
+                payload[key] = value
         if req.tool is not None:
             payload["tools"] = [{"name": req.tool.name, "description": req.tool.description,
                                  "input_schema": req.tool.schema}]

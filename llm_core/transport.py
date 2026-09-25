@@ -54,9 +54,11 @@ class ChatCompletionsTransport:
         ))
 
     async def complete(self, req: LLMRequest) -> LLMResponse:
+        params = self._profile.request_params(req.model)
+        extra = {**(req.extra_payload or {}), **params} if params else req.extra_payload
         result = await self._client.chat_completion(
             messages=req.messages, model=req.model, temperature=req.temperature,
-            max_tokens=req.max_tokens, extra_payload=req.extra_payload,
+            max_tokens=req.max_tokens, extra_payload=extra,
             tool=req.tool,
         )
         usage = result.usage
