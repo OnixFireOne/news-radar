@@ -102,7 +102,7 @@ def _verdict(data: dict[str, object]) -> ValueVerdict:
     content_type = data.get("content_type")
     topic = data.get("topic")
     if content_type not in CONTENT_TYPES or topic not in TOPICS:
-        raise ValueError("invalid content_type or topic")
+        raise ValueError(f"invalid content_type={content_type!r} or topic={topic!r}")
     if type(data.get("has_outcome")) is not bool or type(data.get("is_ad")) is not bool:
         raise ValueError("invalid boolean field")
     for key in ("takeaway", "summary"):

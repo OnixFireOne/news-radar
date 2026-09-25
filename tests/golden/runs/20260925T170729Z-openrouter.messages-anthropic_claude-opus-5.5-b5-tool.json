@@ -1,0 +1,433 @@
+{
+  "date_utc": "2026-09-25T17:07:29.836905+00:00",
+  "provider": "openrouter.messages",
+  "model": "anthropic/claude-opus-5.5",
+  "prompt_version": "ai_value-v2",
+  "batch_size": 5,
+  "structured": "tool",
+  "threshold": 5,
+  "accuracy": 0.0,
+  "evaluated": 36,
+  "confusion": {
+    "valuable/broken": 18,
+    "not_valuable/broken": 18
+  },
+  "hype_ge_8": [],
+  "mismatches": [],
+  "broken": 36,
+  "paths": {
+    "none": 36
+  },
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "cost_usd": null,
+  "calls_without_cost": 8,
+  "cost_sources": {
+    "none": 8
+  },
+  "latency_median": 3.019393310499936,
+  "latency_p95": 5.1427390099997865,
+  "adversarial": [
+    {
+      "gid": "g20",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    }
+  ],
+  "items": [
+    {
+      "gid": "g01",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g02",
+      "label": "хайп",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g03",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g04",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g05",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g06",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g07",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g08",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g09",
+      "label": "хайп",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g10",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g11",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g12",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g13",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g14",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g15",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g16",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g17",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g18",
+      "label": "хайп",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g19",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g20",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g22",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g23",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g25",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g26",
+      "label": "хайп",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g27",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g29",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g32",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g33",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g34",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    }
+  ],
+  "calls": [
+    {
+      "latency_seconds": 5.1427390099997865,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.messages",
+      "model": "anthropic/claude-opus-5.5",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 3.149146312999619,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.messages",
+      "model": "anthropic/claude-opus-5.5",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 2.889640308000253,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.messages",
+      "model": "anthropic/claude-opus-5.5",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 4.286347046000174,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.messages",
+      "model": "anthropic/claude-opus-5.5",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 2.6167848869999943,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.messages",
+      "model": "anthropic/claude-opus-5.5",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 4.338223358999585,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.messages",
+      "model": "anthropic/claude-opus-5.5",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 2.5132182669999565,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.messages",
+      "model": "anthropic/claude-opus-5.5",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 2.6066975779999666,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.messages",
+      "model": "anthropic/claude-opus-5.5",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/messages'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    }
+  ],
+  "pass": false
+}
