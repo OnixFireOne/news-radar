@@ -10,7 +10,11 @@
     "models": {"default": "claude-sonnet-5", "digest": "claude-opus-5"},
     "models_path": "/models",
     "cost_source": "table",
-    "price_table": "TODO(unverified)",
+    "price_table": {
+      "claude-sonnet-5": {"in_per_million": 2, "out_per_million": 10},
+      "claude-opus-5": {"in_per_million": 5, "out_per_million": 25}
+    },
+    "_comment_price_table": "Verified against the proxy usage export for 2026-09-25 (Billed Cost matches to the cent; the ~1300-token input overhead is billed).",
     "_comment_input_overhead": "Observed input count in the minimal probe on 2026-09-25; informational, never subtracted.",
     "input_overhead": 1317
   },
@@ -22,7 +26,11 @@
     "models": {"default": "claude-sonnet-5", "digest": "claude-opus-5"},
     "models_path": "/models",
     "cost_source": "table",
-    "price_table": "TODO(unverified)",
+    "price_table": {
+      "claude-sonnet-5": {"in_per_million": 2, "out_per_million": 10},
+      "claude-opus-5": {"in_per_million": 5, "out_per_million": 25}
+    },
+    "_comment_price_table": "Verified against the proxy usage export for 2026-09-25 (Billed Cost matches to the cent; the ~1300-token input overhead is billed).",
     "_comment_input_overhead": "Observed input count in the minimal probe on 2026-09-25; informational, never subtracted.",
     "input_overhead": 1964
   },

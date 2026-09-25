@@ -169,12 +169,13 @@ async def test_empty_response_is_accounted(catalog_env, caplog):
     assert catalog_env["LLM_KEY_CLOUD"] not in caplog.text
 
 
-def test_real_catalog_todo_and_local():
+def test_real_catalog_resolves_without_todo():
+    # The shipped catalog must be startable: no TODO(unverified) left, every task model priced.
     catalog = load_catalog(Path(__file__).resolve().parents[1] / "config/providers.json")
     for name in ("aiprime.messages", "aiprime.chat_completions"):
-        assert find_todo_field(catalog[name]) == "price_table"
-        with pytest.raises(CatalogError, match=r"price_table.*TODO\(unverified\)"):
-            resolve_active(catalog, [name], {"LLM_KEY_AIPRIME": "test-key"})
+        assert find_todo_field(catalog[name]) is None
+        active, = resolve_active(catalog, [name], {"LLM_KEY_AIPRIME": "test-key"})
+        assert active.profile.api_key_env == "LLM_KEY_AIPRIME"
     assert resolve_active(catalog, ["local"], {})[0].profile.gpu_lock
 
 
