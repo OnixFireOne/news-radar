@@ -116,3 +116,13 @@ docker compose run --rm --no-deps analyzer python tests/eval_value_scoring.py \
 (медиана/p95), сломанные ответы. Каждый прогон — JSON в `tests/golden/runs/` и
 строка в `tests/golden/RESULTS.md`. Правило выбора модели — р.6.1.2 спеки: самая
 дешёвая из прошедших критерии р.9.
+
+## Повадки модели: `model_params`
+
+Поле профиля `model_params` — словарь «id модели → параметры запроса», которые
+вливаются в тело запроса этой модели; `null` удаляет ключ. Пример (`openai.chat_completions`):
+`"gpt-6-luna": {"temperature": null, "reasoning_effort": "none"}` — GPT-6 не принимает
+температуру, отличную от 1, а function tools в `/chat/completions` разрешает только без
+рассуждений. Работает в обоих протоколах. Профиль `openai.chat_completions`, ключ
+`LLM_KEY_OPENAI` (https://platform.openai.com/api-keys), заведён для сравнения моделей;
+в маршруте `classify` осталась haiku 4.5 (решение владельца 25.09).
