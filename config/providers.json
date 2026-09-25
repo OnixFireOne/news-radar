@@ -77,5 +77,27 @@
     "cost_source": "provider",
     "_comment_cost_source": "Probe 2026-09-25: usage.cost is returned on chat/completions.",
     "input_overhead": 0
+  },
+  "openai.chat_completions": {
+    "name": "openai.chat_completions",
+    "base_url": "https://api.openai.com/v1",
+    "protocol": "chat_completions",
+    "auth_style": "bearer",
+    "models": {"default": "gpt-6-luna"},
+    "models_path": "/models",
+    "cost_source": "table",
+    "price_table": {
+      "gpt-6-luna": {"in_per_million": 0.1, "out_per_million": 0.5},
+      "gpt-6-sol": {"in_per_million": 2, "out_per_million": 10},
+      "gpt-6-astra": {"in_per_million": 10, "out_per_million": 50}
+    },
+    "_comment_price_table": "From the OpenRouter /models listing for openai/gpt-6-* on 2026-09-25; verify against the OpenAI billing export before relying on it.",
+    "_comment_model_params": "Probe 2026-09-25: GPT-6 accepts only the default temperature; function tools on /chat/completions need reasoning_effort=none, which astra does not support (low/medium/high/xhigh only), so astra runs in text mode.",
+    "model_params": {
+      "gpt-6-luna": {"temperature": null, "reasoning_effort": "none"},
+      "gpt-6-sol": {"temperature": null, "reasoning_effort": "none"},
+      "gpt-6-astra": {"temperature": null, "reasoning_effort": "low"}
+    },
+    "input_overhead": 0
   }
 }

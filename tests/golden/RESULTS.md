@@ -10,3 +10,6 @@
 | 20260925T170912Z | openrouter.messages | anthropic/claude-haiku-4.5 | ai_value-v2 | 5 | tool | 0.9166666666666666 | 0 | 1 | 0.09847399999999999 | 17.473130722499945 / 27.165511239999887 | missing cost: 0 calls |
 | 20260925T171032Z | openrouter.messages | anthropic/claude-sonnet-5 | ai_value-v2 | 5 | tool | 0.7777777777777778 | 0 | 2 | 0.22823400000000002 | 29.616296527500026 / 33.534105379000266 | missing cost: 0 calls |
 | 20260925T171346Z | openrouter.messages | anthropic/claude-opus-5.5 | ai_value-v2 | 5 | text | 0.8055555555555556 | 0 | 0 | 0.43085199999999996 | 19.27180300550026 / 29.37904646900006 | missing cost: 0 calls |
+| 20260925T174608Z | openai.chat_completions | gpt-6-luna | ai_value-v2 | 5 | tool | 0.8611111111111112 | 0 | 1 | 0.006052299999999999 | 9.680391294000017 / 13.49824021500001 | missing cost: 0 calls |
+| 20260925T174656Z | openai.chat_completions | gpt-6-sol | ai_value-v2 | 5 | tool | 0.8055555555555556 | 0 | 0 | 0.11080600000000002 | 15.80006120249999 / 18.80410688400002 | missing cost: 0 calls |
+| 20260925T174745Z | openai.chat_completions | gpt-6-astra | ai_value-v2 | 5 | text | 0.8055555555555556 | 0 | 0 | 0.58333 | 22.30978493500001 / 28.241508531999983 | missing cost: 0 calls |
