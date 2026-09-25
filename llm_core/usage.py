@@ -16,6 +16,9 @@ class UsageRecord:
     total_tokens: int
     call_kind: str  # free-form label the caller assigns, e.g. "complete", "complete_json"
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    provider: str | None = None
+    cost_usd: float | None = None
+    cost_source: str | None = None
 
 
 class UsageTracker:

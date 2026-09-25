@@ -22,7 +22,7 @@ from tenacity import (
     wait_exponential,
 )
 
-from llm_core.config import LLMCoreConfig
+from llm_core.config import LLMCoreConfig, auth_headers
 from llm_core.mask import mask_secret
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,7 @@ class _ChoiceMessage(TypedDict, total=False):
 
 class _Choice(TypedDict, total=False):
     message: _ChoiceMessage
+    finish_reason: str | None
 
 
 class _ChatCompletionResponse(TypedDict, total=False):
@@ -68,6 +69,8 @@ class CompletionResult:
     content: str
     model: str
     usage: CompletionUsage | None
+    finish_reason: str | None = None
+    raw_usage: dict[str, object] | None = None
 
 
 class LLMCoreError(Exception):
@@ -129,7 +132,7 @@ class LLMCoreClient:
                 resp = await client.post(
                     f"{self._cfg.base_url}/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {self._cfg.api_key}",
+                        **auth_headers(self._cfg.auth_style, self._cfg.api_key),
                         "Content-Type": "application/json",
                         **self._cfg.default_headers,
                     },
@@ -208,4 +211,6 @@ class LLMCoreClient:
             content=content.strip(),
             model=data.get("model", model),
             usage=usage,
+            finish_reason=choices[0].get("finish_reason") if choices else None,
+            raw_usage=dict(usage_raw) if usage_raw is not None else None,
         )
