@@ -23,6 +23,9 @@ from llm_core.catalog import load_catalog, resolve_active
 from llm_core.router import ProviderRouter
 
 ROOT = Path(__file__).resolve().parent / "golden"
+# Owner labeled these from the full page, but the pipeline only sees the RSS teaser:
+# openai.com answers bots with a Cloudflare challenge (403). Reported separately.
+UNFETCHABLE = frozenset({"g22", "g32"})
 
 
 class Args(Protocol):
@@ -129,6 +132,11 @@ async def evaluate(args: Args) -> dict[str, object]:
     evaluated = sum(confusion.values())
     accuracy = sum(count for key, count in confusion.items() if key in
                    ("valuable/valuable", "not_valuable/not_valuable")) / evaluated if evaluated else None
+    reachable = [record for record in details if record["gid"] not in UNFETCHABLE]
+    reachable_correct = sum(1 for record in reachable if record["verdict"] is not None and
+                            (cast(dict[str, int], record["verdict"])["value_score"] >= args.threshold)
+                            == (record["label"] == "ценно"))
+    accuracy_reachable = reachable_correct / len(reachable) if reachable else None
     costs_missing = sum(call.cost_usd is None for call in calls)
     costs = [call.cost_usd for call in calls if call.cost_usd is not None]
     cost_total = sum(costs) if calls and costs_missing == 0 else None
@@ -137,7 +145,9 @@ async def evaluate(args: Args) -> dict[str, object]:
         "date_utc": datetime.now(timezone.utc).isoformat(), "provider": args.provider,
         "model": args.model, "prompt_version": AI_VALUE_PROMPT_VERSION,
         "batch_size": args.batch_size, "structured": args.structured,
-        "threshold": args.threshold, "accuracy": accuracy, "evaluated": evaluated,
+        "threshold": args.threshold, "accuracy": accuracy,
+        "accuracy_without_unfetchable": accuracy_reachable, "unfetchable": sorted(UNFETCHABLE),
+        "evaluated": evaluated,
         "confusion": dict(confusion), "hype_ge_8": hype_violations,
         "mismatches": mismatches, "broken": broken, "paths": dict(paths),
         "tokens_in": sum(call.prompt_tokens or 0 for call in calls),
@@ -183,7 +193,7 @@ def main() -> None:
            f"{result['calls_without_cost']} calls |\n")
     with results_file.open("a", encoding="utf-8") as output:
         output.write(row)
-    for key in ("accuracy", "confusion", "hype_ge_8", "broken", "paths", "tokens_in", "tokens_out",
+    for key in ("accuracy", "accuracy_without_unfetchable", "unfetchable", "confusion", "hype_ge_8", "broken", "paths", "tokens_in", "tokens_out",
                 "cost_usd", "calls_without_cost", "cost_sources", "latency_median", "latency_p95", "mismatches"):
         print(f"{key}: {result[key]}")
     print("Adversarial: gid | label | score | type | takeaway")
