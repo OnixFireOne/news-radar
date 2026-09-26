@@ -313,3 +313,59 @@ docker compose run --rm --no-deps analyzer python tests/eval_value_scoring.py --
 ```
 
 **Результат 26.09:** 126 passed · mypy `Success: no issues found in 30 source files` · strict — 19 файлов чисто · eval haiku v2 — PASS.
+
+---
+
+# Часть 4 — шаг 5: воронка с квотами (27.09)
+
+**Статус:** шаг 5 закрыт 27.09, ждёт приёмки владельца. Код писал Codex по брифу `~/.codex-bridge/briefs/news-radar/tz4-i3-step5-funnel.md`; оркестратор проверил диф, добил 19 ошибок mypy, поправил мелочи, прогнал приёмку, закоммитил.
+
+**Решения владельца 27.09:** (1) у `opinion` нет квоты, он берёт свободные слоты; (2) `content_type` вне перечисления → `opinion` (`topic` → `other`); (3) квоты — верхние границы диапазонов спеки: 5 / 2 / 1 / 0.
+
+## Что сделано
+
+- **`analyzer/value_funnel.py`** (новый, `--strict`) — `verdict_to_row`, `select_with_quotas`: порог `min_value_score`, квоты по группам, крипта только при temp ≥ 8 или горячем тренде, свободные слоты → practical / tools_research / opinion, хайп ≤ квоты всегда.
+- **`analyzer/analyzer.py`** — ключ `analysis_profile` (hot, дефолт `crypto` = старый путь). `ai_value`: общий `_preflight` (реклама + дедуп), классификация всех статей цикла одним вызовом, запись value-полей, ошибка → `analyzed=0`, дубль копирует value-поля оригинала, строка лога с токенами/ценой. Без каталога провайдеров — WARNING и старый путь. `generate_digest`: при `digest_template: ai_value` отбор через `select_with_quotas`. **Снят из mypy-baseline.**
+- **`analyzer/value_classifier.py`** — `concurrency` (дефолт 1, eval не меняется), решение (2).
+- **`analyzer/llm_client.py`** — свойство `router`.
+- **Конфиг** — `analysis_profile: "crypto"`, `digest_templates.ai_value` (квоты, `crypto_min_temperature: 8`, `min_value_score: 5`, `max_items: 8`) в `DEFAULT_CONFIG` и `settings.json`. `digest_template` не переключён (`spoiler`).
+- **Тесты (+27, существующие не тронуты):** `test_value_funnel.py`, `test_value_classifier_step5.py`, `test_analyzer_ai_value.py`.
+- **docs:** `03_analyzer_pipeline.md`, `06_digest.md`, `09_config_hot_reload.md`, `11_problems_learned.md` (грабли 29–30).
+
+## Коммиты
+
+- `b562e40` feat(tz4-i3): value funnel with quotas behind analysis_profile
+
+## Новые зависимости
+
+Нет.
+
+## Расхождения со спекой
+
+- Р.3.2 п.1 «вес источника» — весов источников в коде нет. Предложение: калибровка весов в И5.
+- Р.3.2 квоты «4–5» / «1–2» → одно число, верхняя граница (решение 27.09).
+- Р.3.2 — у `opinion` нет строки в таблице квот → только свободные слоты (решение 27.09).
+- До И4 шаблон `ai_value` отбирает по квотам, но промпт и рендер — ветка `classic`.
+
+## Что НЕ сделано / отложено
+
+- Живой прогон на реальной базе с `analysis_profile: ai_value` — на маке владельца нет прод-базы; критерий «квоты соблюдены» закрыт юнит-тестами на `select_with_quotas`.
+- OpenRouter `:batch` за полцены — не проверялся.
+- Пропускная способность: цикл берёт `batch_size` = 10 статей (как раньше), просыпается раньше при `analyze_max_pending`. При потоке ~90 статей за цикл коллекторов может копиться очередь — посмотреть на живом прогоне.
+
+## Побочные находки
+
+- **Полный текст статей (вопрос владельца 27.09).** В golden set лежит ровно тот текст, что в базе, а владелец размечал по полной статье. Хабр: 13 примеров, 287–1523 символа — это тизеры. Анонс ≥ 500 символов не догружается вовсе (порог в `collectors/rss.py`), а 5 записей < 500 тоже остались короткими — догрузка упала или упёрлась в `max_per_feed: 5`. OpenAI — 403. Предложен отдельный шаг коллекторов: «всегда полный текст» на фид + сравнительный замер golden set «анонс vs полный текст».
+- `_dedup_by_similarity` теперь явно возвращает кандидатов, если коллекция Chroma не подключена (раньше тот же результат шёл через исключение с WARNING «ChromaDB unavailable»; теперь — молча).
+
+## Команды приёмки
+
+```bash
+docker compose build analyzer news-radar-api
+docker compose run --rm --no-deps analyzer python -m pytest -q --ignore=tests/collector
+docker compose run --rm --no-deps analyzer python -m mypy
+docker compose run --rm --no-deps analyzer python -m mypy --strict llm_core analyzer/llm_local.py analyzer/value_classifier.py analyzer/value_funnel.py tests/eval_value_scoring.py
+docker compose run --rm --no-deps news-radar-api python -c "import api.main; print('ok')"
+```
+
+**Результат 27.09:** 153 passed · mypy `Success: no issues found in 31 source files` · strict — 19 файлов чисто · импорт API — ok.
