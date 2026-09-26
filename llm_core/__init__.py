@@ -20,6 +20,10 @@ from llm_core.catalog import (
     find_todo_field, load_catalog, resolve_active,
 )
 from llm_core.client_messages import LLMEmptyResponseError, MessagesTransport
+from llm_core.decisions import (
+    ChoiceAnswer, ChoiceQuestion, DecisionsClient, DecisionsRequest, DecisionsResponse,
+    DecisionsResponseError, NoulAnswer, NoulQuestion, ScoreAnswer, ScoreQuestion,
+)
 from llm_core.router import ProviderRouter
 from llm_core.transport import (
     ChatCompletionsTransport, JsonSchemaTool, LLMRequest, LLMResponse, Transport, create_transport,
@@ -35,6 +39,8 @@ __all__ = [
     "ActiveProvider", "CatalogError", "ModelPrice", "ProviderProfile",
     "compute_cost", "find_todo_field", "load_catalog", "resolve_active",
     "LLMEmptyResponseError", "MessagesTransport", "ProviderRouter",
+    "ChoiceAnswer", "ChoiceQuestion", "DecisionsClient", "DecisionsRequest", "DecisionsResponse",
+    "DecisionsResponseError", "NoulAnswer", "NoulQuestion", "ScoreAnswer", "ScoreQuestion",
     "ChatCompletionsTransport", "JsonSchemaTool", "LLMRequest", "LLMResponse", "Transport", "create_transport",
     "ChatMessage",
     "CompletionResult",

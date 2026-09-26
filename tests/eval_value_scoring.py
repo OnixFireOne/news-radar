@@ -18,8 +18,10 @@ from typing import Literal, Protocol, cast
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analyzer.prompts import AI_VALUE_PROMPT_VERSION
+from analyzer.jev_classifier import JevValueClassifier
 from analyzer.value_classifier import LLMValueClassifier, ValueClassifier, ValueItem
 from llm_core.catalog import load_catalog, resolve_active
+from llm_core.decisions import DecisionsClient
 from llm_core.router import ProviderRouter
 
 ROOT = Path(__file__).resolve().parent / "golden"
@@ -29,6 +31,7 @@ UNFETCHABLE = frozenset({"g22", "g32"})
 
 
 class Args(Protocol):
+    impl: str
     provider: str
     model: str
     batch_size: int
@@ -37,6 +40,9 @@ class Args(Protocol):
     limit: int | None
     catalog: Path
     out_dir: Path
+    decisions_base_url: str
+    decisions_path: str
+    key_env: str
 
 
 def parse_labels(text: str) -> dict[str, str]:
@@ -75,7 +81,13 @@ def load_items(limit: int | None = None) -> tuple[list[ValueItem], dict[str, str
     return items, selected
 
 
-def build_classifier(args: Args) -> ValueClassifier:
+def build_classifier(args: Args) -> LLMValueClassifier | JevValueClassifier:
+    if args.impl == "jev":
+        key = os.environ.get(args.key_env)
+        if not key:
+            raise ValueError(f"missing Decisions API key in {args.key_env}")
+        return JevValueClassifier(DecisionsClient(args.decisions_base_url, args.decisions_path,
+                                                   key, timeout=300), model=args.model)
     catalog = load_catalog(args.catalog)
     active = resolve_active(catalog, [args.provider], os.environ)
     router = ProviderRouter(active, timeout=300)
@@ -96,7 +108,8 @@ async def evaluate(args: Args) -> dict[str, object]:
     items, labels = load_items(args.limit)
     classifier = build_classifier(args)
     outcomes = await classifier.classify(items)
-    calls = classifier.calls if isinstance(classifier, LLMValueClassifier) else []
+    calls = classifier.calls
+    confidences = classifier.confidences if isinstance(classifier, JevValueClassifier) else {}
     confusion: Counter[str] = Counter()
     paths: Counter[str] = Counter()
     hype_violations: list[str] = []
@@ -124,6 +137,8 @@ async def evaluate(args: Args) -> dict[str, object]:
         record: dict[str, object] = {"gid": outcome.item_id, "label": label,
                                      "path": outcome.path, "error": outcome.error,
                                      "verdict": asdict(verdict) if verdict else None}
+        if outcome.item_id in confidences:
+            record["confidences"] = confidences[outcome.item_id]
         details.append(record)
         if outcome.item_id in {"g20", "g21", "g24", "g28", "g30", "g31", "s01", "s02"}:
             adversarial.append({"gid": outcome.item_id, "label": label, "score": score,
@@ -137,14 +152,28 @@ async def evaluate(args: Args) -> dict[str, object]:
                             (cast(dict[str, int], record["verdict"])["value_score"] >= args.threshold)
                             == (record["label"] == "ценно"))
     accuracy_reachable = reachable_correct / len(reachable) if reachable else None
+    confidence_accuracy: dict[str, dict[str, float | int | None]] = {}
+    if confidences:
+        for bucket, high in (("ge_0_8", True), ("lt_0_8", False)):
+            selected = [record for record in details if record["verdict"] is not None
+                        and isinstance(record.get("confidences"), dict)
+                        and isinstance(cast(dict[str, object], record["confidences"]).get("value_score"), (int, float))
+                        and (cast(float, cast(dict[str, object], record["confidences"])["value_score"]) >= 0.8) == high]
+            correct = sum(1 for record in selected if
+                          (cast(dict[str, int], record["verdict"])["value_score"] >= args.threshold)
+                          == (record["label"] == "ценно"))
+            confidence_accuracy[bucket] = {"count": len(selected),
+                                           "accuracy": correct / len(selected) if selected else None}
     costs_missing = sum(call.cost_usd is None for call in calls)
     costs = [call.cost_usd for call in calls if call.cost_usd is not None]
     cost_total = sum(costs) if calls and costs_missing == 0 else None
     latency = [call.latency_seconds for call in calls]
     result: dict[str, object] = {
         "date_utc": datetime.now(timezone.utc).isoformat(), "provider": args.provider,
+        "impl": args.impl,
         "model": args.model, "prompt_version": AI_VALUE_PROMPT_VERSION,
-        "batch_size": args.batch_size, "structured": args.structured,
+        "batch_size": args.batch_size if args.impl == "llm" else 1,
+        "structured": args.structured if args.impl == "llm" else "jev",
         "threshold": args.threshold, "accuracy": accuracy,
         "accuracy_without_unfetchable": accuracy_reachable, "unfetchable": sorted(UNFETCHABLE),
         "evaluated": evaluated,
@@ -157,6 +186,7 @@ async def evaluate(args: Args) -> dict[str, object]:
         "latency_median": statistics.median(latency) if latency else None,
         "latency_p95": percentile(latency, 0.95), "adversarial": adversarial,
         "items": details, "calls": [asdict(call) for call in calls],
+        "confidence_accuracy": confidence_accuracy,
         "pass": accuracy is not None and accuracy >= 0.8 and not hype_violations,
     }
     return result
@@ -164,8 +194,12 @@ async def evaluate(args: Args) -> dict[str, object]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--provider", required=True)
-    parser.add_argument("--model", required=True)
+    parser.add_argument("--impl", choices=("llm", "jev"), default="llm")
+    parser.add_argument("--provider")
+    parser.add_argument("--model")
+    parser.add_argument("--decisions-base-url", default="https://openrouter.ai/api")
+    parser.add_argument("--decisions-path", default="/alpha/decisions")
+    parser.add_argument("--key-env", default="LLM_KEY_OPENROUTER")
     parser.add_argument("--batch-size", type=int, default=5)
     parser.add_argument("--structured", choices=("tool", "text"), default="tool")
     parser.add_argument("--threshold", type=int, default=5)
@@ -173,12 +207,18 @@ def main() -> None:
     parser.add_argument("--catalog", type=Path, default=Path("/app/config/providers.json"))
     parser.add_argument("--out-dir", type=Path, default=ROOT / "runs")
     args = parser.parse_args()
+    if args.impl == "llm" and (not args.provider or not args.model):
+        parser.error("llm requires --provider and --model")
+    if args.impl == "jev":
+        args.provider = args.provider or "openrouter.decisions"
+        args.model = args.model or "~typesafe/jev-latest"
     result = asyncio.run(evaluate(args))
     args.out_dir.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     # Model ids may contain "/" (e.g. OpenRouter vendor prefixes).
     model_slug = args.model.replace("/", "_")
-    name = f"{stamp}-{args.provider}-{model_slug}-b{args.batch_size}-{args.structured}.json"
+    name = (f"{stamp}-{args.provider}-{model_slug}-jev.json" if args.impl == "jev" else
+            f"{stamp}-{args.provider}-{model_slug}-b{args.batch_size}-{args.structured}.json")
     (args.out_dir / name).write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     results_file = ROOT / "RESULTS.md"
     if not results_file.exists():
@@ -187,14 +227,14 @@ def main() -> None:
     accuracy = result["accuracy"]
     latency_median, latency_p95 = result["latency_median"], result["latency_p95"]
     hype_violations = cast(list[str], result["hype_ge_8"])
-    row = (f"| {stamp} | {args.provider} | {args.model} | {AI_VALUE_PROMPT_VERSION} | {args.batch_size} | "
-           f"{args.structured} | {accuracy} | {len(hype_violations)} | {result['broken']} | "
+    row = (f"| {stamp} | {args.provider} | {args.model} | {AI_VALUE_PROMPT_VERSION} | {args.batch_size if args.impl == 'llm' else 1} | "
+           f"{args.structured if args.impl == 'llm' else 'jev'} | {accuracy} | {len(hype_violations)} | {result['broken']} | "
            f"{result['cost_usd']} | {latency_median} / {latency_p95} | missing cost: "
            f"{result['calls_without_cost']} calls |\n")
     with results_file.open("a", encoding="utf-8") as output:
         output.write(row)
     for key in ("accuracy", "accuracy_without_unfetchable", "unfetchable", "confusion", "hype_ge_8", "broken", "paths", "tokens_in", "tokens_out",
-                "cost_usd", "calls_without_cost", "cost_sources", "latency_median", "latency_p95", "mismatches"):
+                "cost_usd", "calls_without_cost", "cost_sources", "latency_median", "latency_p95", "mismatches", "confidence_accuracy"):
         print(f"{key}: {result[key]}")
     print("Adversarial: gid | label | score | type | takeaway")
     for item in cast(list[dict[str, object]], result["adversarial"]):

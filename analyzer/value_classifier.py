@@ -16,7 +16,7 @@ from llm_core.transport import JsonSchemaTool, LLMResponse
 
 ContentType = Literal["practical_case", "tutorial", "tool_release", "research", "opinion", "hype_news", "crypto"]
 Topic = Literal["agents", "llm_ops", "integrations", "models", "infra", "crypto", "other"]
-Path = Literal["tool", "text", "none"]
+Path = Literal["tool", "text", "decisions", "none"]
 CONTENT_TYPES = ("practical_case", "tutorial", "tool_release", "research", "opinion", "hype_news", "crypto")
 TOPICS = ("agents", "llm_ops", "integrations", "models", "infra", "crypto", "other")
 
