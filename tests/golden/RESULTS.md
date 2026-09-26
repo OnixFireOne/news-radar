@@ -13,3 +13,8 @@
 | 20260925T174608Z | openai.chat_completions | gpt-6-luna | ai_value-v2 | 5 | tool | 0.8611111111111112 | 0 | 1 | 0.006052299999999999 | 9.680391294000017 / 13.49824021500001 | missing cost: 0 calls |
 | 20260925T174656Z | openai.chat_completions | gpt-6-sol | ai_value-v2 | 5 | tool | 0.8055555555555556 | 0 | 0 | 0.11080600000000002 | 15.80006120249999 / 18.80410688400002 | missing cost: 0 calls |
 | 20260925T174745Z | openai.chat_completions | gpt-6-astra | ai_value-v2 | 5 | text | 0.8055555555555556 | 0 | 0 | 0.58333 | 22.30978493500001 / 28.241508531999983 | missing cost: 0 calls |
+| 20260926T070724Z | openrouter.chat_completions | deepseek/deepseek-v4-pro-0813 | ai_value-v2 | 5 | tool | 0.8055555555555556 | 0 | 1 | 0.04367122600000001 | 11.2143239285 / 24.428956298000003 | missing cost: 0 calls |
+| 20260926T070841Z | openrouter.chat_completions | qwen/qwen3.8-flash | ai_value-v2 | 5 | tool | 0.0 | 0 | 36 | None | 28.061600643500007 / 29.61227984300001 | missing cost: 8 calls |
+| 20260926T070923Z | openrouter.chat_completions | deepseek/deepseek-v4.1-flash | ai_value-v2 | 5 | tool | 0.8611111111111112 | 0 | 0 | 0.017662180599999997 | 28.472302755499996 / 49.505520574 | missing cost: 0 calls |
+| 20260926T071557Z | openrouter.chat_completions | qwen/qwen3.8-max-0902 | ai_value-v2 | 5 | tool | 0.8055555555555556 | 1 | 0 | 0.20731 | 75.05408898500002 / 122.86332168799998 | missing cost: 0 calls |
+| 20260926T071648Z | openrouter.chat_completions | qwen/qwen3.7-flash | ai_value-v2 | 5 | tool | 0.8333333333333334 | 1 | 0 | 0.007201110000000001 | 89.04805577499998 / 111.57887086300002 | missing cost: 0 calls |
