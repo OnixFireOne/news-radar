@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import time
 from collections.abc import Sequence
 from dataclasses import dataclass
@@ -13,6 +15,8 @@ from llm_core.client import ChatMessage
 from llm_core.client_messages import LLMEmptyResponseError
 from llm_core.router import ProviderRouter
 from llm_core.transport import JsonSchemaTool, LLMResponse
+
+logger = logging.getLogger(__name__)
 
 ContentType = Literal["practical_case", "tutorial", "tool_release", "research", "opinion", "hype_news", "crypto"]
 Topic = Literal["agents", "llm_ops", "integrations", "models", "infra", "crypto", "other"]
@@ -101,8 +105,12 @@ def _score(value: object) -> int:
 def _verdict(data: dict[str, object]) -> ValueVerdict:
     content_type = data.get("content_type")
     topic = data.get("topic")
-    if content_type not in CONTENT_TYPES or topic not in TOPICS:
-        raise ValueError(f"invalid content_type={content_type!r} or topic={topic!r}")
+    if content_type not in CONTENT_TYPES:
+        logger.warning("Unknown content_type=%r; using opinion", content_type)
+        content_type = "opinion"
+    if topic not in TOPICS:
+        logger.warning("Unknown topic=%r; using other", topic)
+        topic = "other"
     if type(data.get("has_outcome")) is not bool or type(data.get("is_ad")) is not bool:
         raise ValueError("invalid boolean field")
     for key in ("takeaway", "summary"):
@@ -145,75 +153,85 @@ def _safe_id(value: str) -> str:
 class LLMValueClassifier:
     def __init__(self, router: ProviderRouter, *, model: str | None = None, batch_size: int = 5,
                  structured: Literal["tool", "text"] = "tool", task: str = "classify",
-                 max_chars: int = 6000) -> None:
-        if batch_size < 1 or max_chars < 1:
-            raise ValueError("batch_size and max_chars must be positive")
+                 max_chars: int = 6000, concurrency: int = 1) -> None:
+        if batch_size < 1 or max_chars < 1 or concurrency < 1:
+            raise ValueError("batch_size, max_chars and concurrency must be positive")
         self.router = router
         self.model = model
         self.batch_size = batch_size
         self.structured = structured
         self.task = task
         self.max_chars = max_chars
+        self.concurrency = concurrency
         self.calls: list[CallStats] = []
 
     async def classify(self, items: Sequence[ValueItem]) -> list[ClassifyOutcome]:
+        sem = asyncio.Semaphore(self.concurrency)
+
+        async def run_batch(batch: Sequence[ValueItem]) -> list[ClassifyOutcome]:
+            async with sem:
+                return await self._classify_batch(batch)
+
+        batches = await asyncio.gather(*(run_batch(items[index:index + self.batch_size])
+                                        for index in range(0, len(items), self.batch_size)))
+        return [outcome for batch in batches for outcome in batch]
+
+    async def _classify_batch(self, batch: Sequence[ValueItem]) -> list[ClassifyOutcome]:
         outcomes: list[ClassifyOutcome] = []
-        for index in range(0, len(items), self.batch_size):
-            batch = items[index:index + self.batch_size]
-            frames = [f'<<<ARTICLE id="{_safe_id(item.id)}">>>\nSource: {_escape(item.source)}\n'
-                      f'{_escape(item.text[:self.max_chars])}\n<<<END ARTICLE>>>' for item in batch]
-            messages: list[ChatMessage] = [
-                {"role": "system", "content": AI_VALUE_MESSAGE_PROMPT},
-                {"role": "user", "content": "\n\n".join(frames)},
-            ]
-            started = time.monotonic()
-            response: LLMResponse | None = None
-            error: str | None = None
-            path: Path = "none"
-            try:
-                response = await self.router.complete(self.task, messages, model=self.model,
-                                                      tool=_tool() if self.structured == "tool" else None)
-                if self.structured == "tool" and response.structured is not None:
-                    path = "tool"
-                    parsed = response.structured
+        frames = [f'<<<ARTICLE id="{_safe_id(item.id)}">>>\nSource: {_escape(item.source)}\n'
+                  f'{_escape(item.text[:self.max_chars])}\n<<<END ARTICLE>>>' for item in batch]
+        messages: list[ChatMessage] = [
+            {"role": "system", "content": AI_VALUE_MESSAGE_PROMPT},
+            {"role": "user", "content": "\n\n".join(frames)},
+        ]
+        started = time.monotonic()
+        response: LLMResponse | None = None
+        error: str | None = None
+        path: Path = "none"
+        try:
+            response = await self.router.complete(self.task, messages, model=self.model,
+                                                  tool=_tool() if self.structured == "tool" else None)
+            if self.structured == "tool" and response.structured is not None:
+                path = "tool"
+                parsed = response.structured
+            else:
+                path = "text"
+                parsed = _text_json(response.content)
+            raw_items = parsed.get("items")
+            if not isinstance(raw_items, list):
+                raise ValueError("items must be an array")
+            by_id: dict[str, ValueVerdict | str] = {}
+            expected = {item.id for item in batch}
+            for raw in raw_items:
+                if not isinstance(raw, dict) or not isinstance(raw.get("id"), str):
+                    continue
+                gid = raw["id"]
+                if gid not in expected or gid in by_id:
+                    continue
+                try:
+                    by_id[gid] = _verdict(raw)
+                except (ValueError, KeyError, TypeError) as exc:
+                    by_id[gid] = str(exc)
+            for item in batch:
+                result = by_id.get(item.id)
+                if isinstance(result, ValueVerdict):
+                    outcomes.append(ClassifyOutcome(item.id, result, None, path))
                 else:
-                    path = "text"
-                    parsed = _text_json(response.content)
-                raw_items = parsed.get("items")
-                if not isinstance(raw_items, list):
-                    raise ValueError("items must be an array")
-                by_id: dict[str, ValueVerdict | str] = {}
-                expected = {item.id for item in batch}
-                for raw in raw_items:
-                    if not isinstance(raw, dict) or not isinstance(raw.get("id"), str):
-                        continue
-                    gid = raw["id"]
-                    if gid not in expected or gid in by_id:
-                        continue
-                    try:
-                        by_id[gid] = _verdict(raw)
-                    except (ValueError, KeyError, TypeError) as exc:
-                        by_id[gid] = str(exc)
-                for item in batch:
-                    result = by_id.get(item.id)
-                    if isinstance(result, ValueVerdict):
-                        outcomes.append(ClassifyOutcome(item.id, result, None, path))
-                    else:
-                        outcomes.append(ClassifyOutcome(item.id, None, result or "missing in batch", path))
-            except LLMEmptyResponseError as exc:
-                response = exc.response
-                error = str(exc)
-            except Exception as exc:
-                error = f"{type(exc).__name__}: {exc}"
-            if error is not None:
-                outcomes.extend(ClassifyOutcome(item.id, None, error, path) for item in batch)
-            usage = response.usage if response is not None else None
-            self.calls.append(CallStats(time.monotonic() - started,
-                                        usage.prompt_tokens if usage else None,
-                                        usage.completion_tokens if usage else None,
-                                        response.cost_usd if response else None,
-                                        response.cost_source if response else "none",
-                                        response.provider if response else self.router.primary().profile.name,
-                                        response.model if response else (self.model or self.router.model_for(self.task)),
-                                        path, error))
+                    outcomes.append(ClassifyOutcome(item.id, None, result or "missing in batch", path))
+        except LLMEmptyResponseError as exc:
+            response = exc.response
+            error = str(exc)
+        except Exception as exc:
+            error = f"{type(exc).__name__}: {exc}"
+        if error is not None:
+            outcomes.extend(ClassifyOutcome(item.id, None, error, path) for item in batch)
+        usage = response.usage if response is not None else None
+        self.calls.append(CallStats(time.monotonic() - started,
+                                    usage.prompt_tokens if usage else None,
+                                    usage.completion_tokens if usage else None,
+                                    response.cost_usd if response else None,
+                                    response.cost_source if response else "none",
+                                    response.provider if response else self.router.primary().profile.name,
+                                    response.model if response else (self.model or self.router.model_for(self.task)),
+                                    path, error))
         return outcomes

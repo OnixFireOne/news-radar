@@ -16,9 +16,11 @@ import json
 import logging
 import os
 import sys
+import sqlite3
 import httpx
 from datetime import datetime, timedelta
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Optional, Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -29,6 +31,8 @@ from analyzer.prompts import (
     DIGEST_SPOILER_MERGE_ON, DIGEST_SPOILER_MERGE_OFF,
     SYSTEM_PROMPT,
 )
+from analyzer.value_classifier import LLMValueClassifier, ValueItem
+from analyzer.value_funnel import select_with_quotas, verdict_to_row
 from analyzer.renderer import render_digest
 from analyzer.embedder import get_embedder
 from analyzer.chroma_client import ChromaClient
@@ -69,7 +73,7 @@ class NewsAnalyzer:
         self.embedder = get_embedder()  # BGE-m3, loaded on first encode() call
 
         # Phase 3: topic normalization table (reloaded hot from topics.json)
-        self._topics: dict = cfg.load_topics() if cfg else {}
+        self._topics: dict[str, Any] = cfg.load_topics() if cfg else {}
         if self._topics:
             logger.info(f"Loaded {len(self._topics)} topic aliases from topics.json")
 
@@ -94,6 +98,12 @@ class NewsAnalyzer:
             subs_list = []
 
         try:
+            profile = self.cfg.get("analysis_profile", "crypto") if self.cfg else "crypto"
+            router = self.llm.router if profile == "ai_value" else None
+            ai_value = profile == "ai_value" and router is not None
+            if profile == "ai_value" and router is None:
+                logger.warning("ai_value requires a catalog router; using crypto for this cycle")
+
             min_len = int(self.cfg.get("min_message_length", 30)) if self.cfg else 30
             # PRIORITY QUEUE: sort by views and length instead of just time
             rows = conn.execute("""
@@ -119,38 +129,13 @@ class NewsAnalyzer:
             concurrency = int(self.cfg.get("llm_concurrency", 3)) if self.cfg else 3
             sem = asyncio.Semaphore(concurrency)
 
-            async def process_row(row: dict):
+            async def process_row(row: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
                 async with sem:
-                    # 0. Heuristic ad pre-filter (no LLM call needed)
-                    if self._is_heuristic_ad(row["text"]):
-                        logger.info(f"Message {row['id']} flagged as ad by heuristic filter — skipping LLM")
-                        return row, {"__heuristic_ad": True}
-
-                    # 1. Pre-flight Semantic Deduplication
-                    embedding = None
-                    try:
-                        # Encode using thread pool (BGE-m3 is CPU bound)
-                        loop = asyncio.get_running_loop()
-                        embedding = await loop.run_in_executor(None, self.embedder.encode, row["text"])
-                        
-                        if self.chroma.health_check():
-                            # Chroma search
-                            matches = self.chroma.search(query_embedding=embedding, limit=1)
-                            if matches:
-                                best = matches[0]
-                                if best.get("similarity", 0) > 0.90:
-                                    logger.info(f"Message {row['id']} is duplicate of {best['message_id']} (sim={best['similarity']}). Cloning AI response.")
-                                    cloned_result = {
-                                        "topic": best.get("topic", "general"),
-                                        "temperature": best.get("temperature", 5.0),
-                                        "summary": best.get("document", row["text"][:200])[:500],
-                                        "keywords": ["duplicate"],
-                                        "sentiment": "neutral",
-                                        "embedding": embedding
-                                    }
-                                    return row, cloned_result
-                    except Exception as e:
-                        logger.warning(f"Pre-flight deduplication failed for msg {row['id']}: {e}")
+                    prepared, embedding = await self._preflight(row, conn, ai_value)
+                    if prepared is not None:
+                        return row, prepared
+                    if ai_value:
+                        return row, {"__needs_value": True, "embedding": embedding}
 
                     # 2. Actual LLM Analysis (if not duplicate)
                     try:
@@ -170,6 +155,39 @@ class NewsAnalyzer:
             tasks = [process_row(r) for r in pending_batch]
             results = await asyncio.gather(*tasks)
 
+            if ai_value and router is not None:
+                classifier = LLMValueClassifier(router, task="classify", concurrency=concurrency)
+                items = [ValueItem(id=str(row["id"]), text=row["text"], source=row["source_name"])
+                         for row, result in results if result and result.get("__needs_value")]
+                outcomes = await classifier.classify(items)
+                by_id = {outcome.item_id: outcome for outcome in outcomes}
+                for index, (row, result) in enumerate(results):
+                    if result is None or not result.get("__needs_value"):
+                        continue
+                    outcome = by_id.get(str(row["id"]))
+                    if outcome is None or outcome.verdict is None:
+                        logger.warning("Value classification failed for msg %s: %s", row["id"],
+                                       outcome.error if outcome else "missing outcome")
+                        results[index] = (row, None)
+                        continue
+                    value_result: dict[str, Any] = verdict_to_row(outcome.verdict)
+                    value_result["is_ad"] = outcome.verdict.is_ad
+                    value_result["embedding"] = result.get("embedding")
+                    results[index] = (row, value_result)
+                calls = classifier.calls
+                prompt_tokens = [call.prompt_tokens for call in calls]
+                completion_tokens = [call.completion_tokens for call in calls]
+                costs = [call.cost_usd for call in calls]
+                logger.info(
+                    "Value classification: calls=%d prompt_tokens=%s completion_tokens=%s "
+                    "cost_usd=%s latency_seconds=%.3f",
+                    len(calls),
+                    sum(t for t in prompt_tokens if t is not None) if None not in prompt_tokens else None,
+                    sum(t for t in completion_tokens if t is not None) if None not in completion_tokens else None,
+                    sum(c for c in costs if c is not None) if None not in costs else None,
+                    sum(call.latency_seconds for call in calls),
+                )
+
             # 3. Transactional Database Write Layer (Sequential)
             for row, result in results:
                 try:
@@ -180,7 +198,7 @@ class NewsAnalyzer:
                         count += 1
                         continue
 
-                    if result and result.get("summary"):
+                    if result and (result.get("summary") or (ai_value and result.get("content_type"))):
                         # Normalize 
                         raw_topic = result.get("topic", "general")
                         normalized_topic = self._normalize_topic(raw_topic)
@@ -190,18 +208,21 @@ class NewsAnalyzer:
                         if is_ad_llm:
                             logger.info(f"Message {row['id']} flagged as ad by LLM")
 
-                        conn.execute("""
-                            INSERT INTO analysis
-                                (message_id, temperature, topic, summary, keywords, sentiment)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (
-                            row["id"],
-                            result.get("temperature", 5.0),
-                            normalized_topic,
+                        columns = ["message_id", "temperature", "topic", "summary", "keywords", "sentiment"]
+                        values: list[Any] = [
+                            row["id"], result.get("temperature", 5.0), normalized_topic,
                             result.get("summary", ""),
-                            json.dumps(result.get("keywords", []), ensure_ascii=False),
+                            result.get("keywords", "[]") if ai_value else json.dumps(result.get("keywords", []), ensure_ascii=False),
                             result.get("sentiment", "neutral"),
-                        ))
+                        ]
+                        if ai_value:
+                            value_columns = ["content_type", "value_score", "has_outcome", "takeaway"]
+                            columns.extend(value_columns)
+                            values.extend(result.get(key) for key in value_columns)
+                        conn.execute(
+                            f"INSERT INTO analysis ({', '.join(columns)}) "
+                            f"VALUES ({', '.join('?' for _ in columns)})", values,
+                        )
 
                         # Use pre-computed embedding if available, otherwise compute sync
                         emb = result.get("embedding")
@@ -267,7 +288,55 @@ class NewsAnalyzer:
         logger.info(f"Analyzed {count} messages")
         return count
 
-    async def _send_instant_alert(self, msg_id: int, source: str, temp: float, topic: str, summary: str, text: str):
+    async def _preflight(
+        self, row: dict[str, Any], conn: sqlite3.Connection, ai_value: bool,
+    ) -> tuple[dict[str, Any] | None, list[float] | None]:
+        # 0. Heuristic ad pre-filter (no LLM call needed)
+        if self._is_heuristic_ad(row["text"]):
+            logger.info(f"Message {row['id']} flagged as ad by heuristic filter — skipping LLM")
+            return {"__heuristic_ad": True}, None
+
+        # 1. Pre-flight Semantic Deduplication
+        embedding: list[float] | None = None
+        try:
+            # Encode using thread pool (BGE-m3 is CPU bound)
+            loop = asyncio.get_running_loop()
+            embedding = await loop.run_in_executor(None, self.embedder.encode, row["text"])
+
+            if self.chroma.health_check():
+                # Chroma search
+                matches = self.chroma.search(query_embedding=embedding, limit=1)
+                if matches:
+                    best = matches[0]
+                    if best.get("similarity", 0) > 0.90:
+                        logger.info(f"Message {row['id']} is duplicate of {best['message_id']} (sim={best['similarity']}). Cloning AI response.")
+                        if ai_value:
+                            original = conn.execute(
+                                "SELECT a.*, m.is_ad FROM analysis a "
+                                "JOIN messages m ON m.id=a.message_id WHERE a.message_id=?",
+                                (best["message_id"],),
+                            ).fetchone()
+                            if original is not None and all(original[key] is not None for key in
+                                    ("content_type", "value_score", "has_outcome", "takeaway")):
+                                cloned_value: dict[str, Any] = dict(original)
+                                cloned_value["embedding"] = embedding
+                                return cloned_value, embedding
+                            return None, embedding
+                        cloned_result: dict[str, Any] = {
+                            "topic": best.get("topic", "general"),
+                            "temperature": best.get("temperature", 5.0),
+                            "summary": best.get("document", row["text"][:200])[:500],
+                            "keywords": ["duplicate"],
+                            "sentiment": "neutral",
+                            "embedding": embedding
+                        }
+                        return cloned_result, embedding
+        except Exception as e:
+            logger.warning(f"Pre-flight deduplication failed for msg {row['id']}: {e}")
+
+        return None, embedding
+
+    async def _send_instant_alert(self, msg_id: int, source: str, temp: float, topic: str, summary: str, text: str) -> None:
         """Dispatch a breaking news alert — via OpenClaw if configured, else direct Telegram."""
         # Try to build a direct post link from the DB
         source_url = f"https://t.me/{source}"
@@ -295,7 +364,7 @@ class NewsAnalyzer:
             "summary": summary,
         })
 
-    async def _route_event(self, event_type: str, data: dict):
+    async def _route_event(self, event_type: str, data: dict[str, Any]) -> None:
         """
         Route an event to OpenClaw via OpenAI-compatible completion endpoint.
 
@@ -391,7 +460,7 @@ class NewsAnalyzer:
         except Exception as e:
             logger.warning(f"dispatch_log write failed: {e}")
 
-    async def _enrich_alert_for_telegram(self, event_type: str, data: dict) -> dict:
+    async def _enrich_alert_for_telegram(self, event_type: str, data: dict[str, Any]) -> dict[str, Any]:
         """
         LLM enrichment step before rendering the alert template.
 
@@ -457,7 +526,7 @@ class NewsAnalyzer:
 
         return data  # graceful fallback: raw data, no headline
 
-    async def _fallback_telegram(self, event_type: str, data: dict):
+    async def _fallback_telegram(self, event_type: str, data: dict[str, Any]) -> None:
         """Send event directly to Telegram using structured HTML templates.
 
         For breaking_alert and hot_trend: calls _enrich_alert_for_telegram first
@@ -595,7 +664,7 @@ class NewsAnalyzer:
 
     async def _store_embedding(
         self,
-        conn,              # already-open SQLite connection from the caller
+        conn: sqlite3.Connection,  # already-open SQLite connection from the caller
         message_id: int,
         text: str,
         source_name: str,
@@ -645,7 +714,7 @@ class NewsAnalyzer:
         message_id: int,
         text: str,
         source_name: str,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """Send a single message to the LLM for analysis.
 
         Thinking mode is read hot from settings.json (llm_thinking_mode):
@@ -735,7 +804,7 @@ class NewsAnalyzer:
         if not ad_cfg.get("use_heuristic", True):
             return False
 
-        keywords: list = ad_cfg.get("heuristic_keywords", [])
+        keywords: list[str] = ad_cfg.get("heuristic_keywords", [])
         if not keywords:
             return False
 
@@ -763,8 +832,8 @@ class NewsAnalyzer:
         """
         # ── Load template config (hot-reload) ──
         template_name = "classic"
-        template_cfg  = {}
-        rules         = {}
+        template_cfg: dict[str, Any] = {}
+        rules: dict[str, Any] = {}
         if self.cfg:
             rules         = self.cfg.get("digest_rules", {})
             template_name = self.cfg.get("digest_template", "classic")
@@ -774,7 +843,7 @@ class NewsAnalyzer:
         # Per-template settings (fall back to global keys)
         digest_max = template_cfg.get(
             "max_items",
-            self.cfg.get("digest_max_items", 7) if self.cfg else 7
+            8 if template_name == "ai_value" else (self.cfg.get("digest_max_items", 7) if self.cfg else 7)
         )
         min_temp = template_cfg.get(
             "min_temperature",
@@ -823,6 +892,8 @@ class NewsAnalyzer:
                     a.temperature,
                     a.topic,
                     a.summary,
+                    a.content_type,
+                    a.value_score,
                     -- is this message part of a hot trend?
                     EXISTS (
                         SELECT 1 FROM trend_messages tm
@@ -855,57 +926,63 @@ class NewsAnalyzer:
         if dedup_threshold < 1.0:
             rows_dicts = self._dedup_by_similarity(rows_dicts, threshold=dedup_threshold)
 
-        # ── Build priority tiers ──
-        alerts, trends_tier, high_tier, fill_tier = [], [], [], []
-        for row in rows_dicts:
-            topic = row["topic"] or "general"
-            temp  = float(row["temperature"] or 5.0)
-            is_alert = self._is_alert_topic(topic) or temp >= 9.0 or bool(row.get("was_alerted"))
+        alerts: list[dict[str, Any]] = []
+        trends_tier: list[dict[str, Any]] = []
+        high_tier: list[dict[str, Any]] = []
+        fill_tier: list[dict[str, Any]] = []
+        selected: list[dict[str, Any]] = []
+        if template_name == "ai_value":
+            selected = select_with_quotas(rows_dicts, template_cfg)
+        else:
+            # ── Build priority tiers ──
+            for row in rows_dicts:
+                topic = row["topic"] or "general"
+                temp  = float(row["temperature"] or 5.0)
+                is_alert = self._is_alert_topic(topic) or temp >= 9.0 or bool(row.get("was_alerted"))
 
-            if is_alert and include_alerts:
-                alerts.append(row)
-            elif row["in_hot_trend"]:
-                trends_tier.append(row)
-            elif temp >= min_temp + 2:
-                high_tier.append(row)
-            elif temp >= min_temp:
-                fill_tier.append(row)
+                if is_alert and include_alerts:
+                    alerts.append(row)
+                elif row["in_hot_trend"]:
+                    trends_tier.append(row)
+                elif temp >= min_temp + 2:
+                    high_tier.append(row)
+                elif temp >= min_temp:
+                    fill_tier.append(row)
 
-        # ── Apply per-topic cap + collect candidates in priority order ──
-        topic_counts: dict[str, int] = {}
-        selected: list[dict] = []
+            # ── Apply per-topic cap + collect candidates in priority order ──
+            topic_counts: dict[str, int] = {}
 
-        def try_add(item: dict, force: bool = False) -> bool:
-            topic = item["topic"] or "general"
-            count = topic_counts.get(topic, 0)
-            if force or count < max_per_topic:
-                selected.append(item)
-                topic_counts[topic] = count + 1
-                return True
-            return False
+            def try_add(item: dict[str, Any], force: bool = False) -> bool:
+                topic = item["topic"] or "general"
+                count = topic_counts.get(topic, 0)
+                if force or count < max_per_topic:
+                    selected.append(item)
+                    topic_counts[topic] = count + 1
+                    return True
+                return False
 
-        oversample_multiplier = 1
+            oversample_multiplier = 1
 
-        # Alerts bypass cap
-        for item in alerts:
-            if len(selected) >= digest_max * oversample_multiplier:
-                break
-            try_add(item, force=True)
+            # Alerts bypass cap
+            for item in alerts:
+                if len(selected) >= digest_max * oversample_multiplier:
+                    break
+                try_add(item, force=True)
 
-        for item in trends_tier + high_tier:
-            if len(selected) >= digest_max * oversample_multiplier:
-                break
-            try_add(item)
-
-        # Diversity fill: one best per remaining topic
-        seen_topics = set(topic_counts.keys())
-        for item in fill_tier:
-            if len(selected) >= digest_max * oversample_multiplier:
-                break
-            topic = item["topic"] or "general"
-            if topic not in seen_topics:
+            for item in trends_tier + high_tier:
+                if len(selected) >= digest_max * oversample_multiplier:
+                    break
                 try_add(item)
-                seen_topics.add(topic)
+
+            # Diversity fill: one best per remaining topic
+            seen_topics = set(topic_counts.keys())
+            for item in fill_tier:
+                if len(selected) >= digest_max * oversample_multiplier:
+                    break
+                topic = item["topic"] or "general"
+                if topic not in seen_topics:
+                    try_add(item)
+                    seen_topics.add(topic)
 
         if not selected:
             logger.warning("Digest priority queue produced 0 candidates")
@@ -938,7 +1015,7 @@ class NewsAnalyzer:
         # push negative items past position 2 so digest opens with neutral/positive news ──
         negative_keywords = [kw.lower() for kw in (self.cfg.get("keywords_alert", []) if self.cfg else [])]
         if negative_keywords:
-            def _is_negative(item: dict) -> bool:
+            def _is_negative(item: dict[str, Any]) -> bool:
                 text = ((item.get("topic") or "") + " " + (item.get("text") or "")).lower()
                 return any(kw in text for kw in negative_keywords)
 
@@ -970,7 +1047,7 @@ class NewsAnalyzer:
 
         # ── Build LLM prompt ──
         # Build post URLs for source linking in the digest
-        def post_url(row: dict) -> str:
+        def post_url(row: dict[str, Any]) -> str:
             ext_id = str(row.get("external_id", "") or "")
             src = str(row.get("source_name", "") or "")
             if not src:
@@ -1179,7 +1256,7 @@ class NewsAnalyzer:
             logger.error(f"Failed to finalise digest DB state: {e}")
             return None
 
-    def _dedup_by_similarity(self, candidates: list[dict], threshold: float) -> list[dict]:
+    def _dedup_by_similarity(self, candidates: list[dict[str, Any]], threshold: float) -> list[dict[str, Any]]:
         """
         Remove semantically near-duplicate messages using ChromaDB cosine similarity.
 
@@ -1189,7 +1266,7 @@ class NewsAnalyzer:
         """
         try:
             self.chroma._connect()
-            unique: list[dict] = []
+            unique: list[dict[str, Any]] = []
             kept_ids: set[str] = set()
 
             for msg in candidates:
@@ -1199,7 +1276,10 @@ class NewsAnalyzer:
 
                 # Find documents in ChromaDB that are similar to this one
                 vector = self.embedder.encode(msg["text"][:512])
-                result = self.chroma._collection.query(
+                collection = self.chroma._collection
+                if collection is None:
+                    return candidates
+                result = collection.query(
                     query_embeddings=[vector],
                     n_results=min(10, max(1, len(candidates))),
                     include=["distances"],
@@ -1230,8 +1310,8 @@ class NewsAnalyzer:
 
 
     def _dedup_against_previous_digests(
-        self, candidates: list[dict], lookback: int = 2, threshold: float = 0.75
-    ) -> tuple[list[dict], list[dict]]:
+        self, candidates: list[dict[str, Any]], lookback: int = 2, threshold: float = 0.75
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """
         Semantic dedup against previous digests.
 
@@ -1280,10 +1360,10 @@ class NewsAnalyzer:
             # ── 3. Filter candidates by semantic similarity ──
             import numpy as np
 
-            def cosine(a, b) -> float:
-                a, b = np.array(a), np.array(b)
-                denom = np.linalg.norm(a) * np.linalg.norm(b)
-                return float(np.dot(a, b) / denom) if denom > 0 else 0.0
+            def cosine(a: Sequence[float], b: Sequence[float]) -> float:
+                va, vb = np.array(a), np.array(b)
+                denom = np.linalg.norm(va) * np.linalg.norm(vb)
+                return float(np.dot(va, vb) / denom) if denom > 0 else 0.0
 
             filtered = []
             ongoing = []  # stories that match previous digest = ongoing trends
@@ -1394,7 +1474,7 @@ class NewsAnalyzer:
                         logger.debug(f"Error checking pending count: {e}")
 
 
-async def main():
+async def main() -> None:
     """Docker entry point."""
     logging.basicConfig(
         level=logging.INFO,

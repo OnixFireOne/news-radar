@@ -141,3 +141,15 @@ if temp >= breaking_alert_min_temp and self.cfg.get("instant_alerts_temperature"
 ```
 
 `create_task` (не `await`) — alert уходит в фоне, не блокирует анализ.
+## Профиль анализа `ai_value` (ТЗ #4, И3 шаг 5)
+
+Ключ `analysis_profile` в `settings.json` (`"crypto"` по умолчанию) читается на каждом цикле `analyze_pending`.
+
+- `crypto` — старый путь: `SINGLE_MESSAGE_PROMPT`, одна статья = один вызов.
+- `ai_value` — нужен каталог провайдеров (`LLM_PROVIDERS` не пуст). Без него — WARNING и старый путь на этот цикл.
+  1. Эвристика рекламы и дедуп через Chroma — как в старом пути (`_preflight`).
+  2. Остальные статьи цикла одним вызовом `LLMValueClassifier(router, task="classify", concurrency=llm_concurrency)`: батчи по 5, параллельно.
+  3. Вердикт → `analysis` вместе с `content_type`, `value_score`, `has_outcome`, `takeaway` (`value_funnel.verdict_to_row`). Ошибка элемента → `analyzed=0`, статья повторится в следующем цикле.
+  4. Дубль (sim > 0.90) копирует value-поля из строки `analysis` оригинала; если у оригинала их нет (анализирован профилем `crypto`) — классифицируется заново.
+  5. Одна строка лога на цикл: число вызовов, токены, цена, суммарная задержка.
+- `content_type` вне перечисления → `opinion`, `topic` вне перечисления → `other` (WARNING), иначе статья повторялась бы вечно.

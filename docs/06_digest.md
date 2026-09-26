@@ -145,3 +145,14 @@ def _log_dispatch(self, event_type, sent_to, status, payload_preview="", http_st
 ```
 
 Позволяет отследить: какой event куда ушёл, когда, с каким результатом.
+## Отбор с квотами `ai_value` (ТЗ #4, И3 шаг 5)
+
+При `digest_template: "ai_value"` четыре уровня (alerts / trends / high / fill) заменяет `analyzer/value_funnel.select_with_quotas` — скрипт без LLM, конфиг `digest_templates.ai_value`:
+
+- отсекается всё с `value_score < min_value_score` (5);
+- группы и квоты: `practical` = practical_case + tutorial (5), `tools_research` = tool_release + research (2), `hype` = hype_news (1), `crypto` (0 — крипта на паузе);
+- крипта проходит только при `temperature ≥ crypto_min_temperature` (8) или в горячем тренде — и всё равно в пределах квоты;
+- свободные слоты до `max_items` (8) добирают practical / tools_research / `opinion` (у opinion своей квоты нет); хайп и крипта сверх квоты — никогда;
+- сортировка внутри групп и итоговая — `value_score`, затем `temperature`.
+
+До И4 промпт и рендер у `ai_value` идут по ветке `classic` (неизвестный шаблон → classic). В `settings.json` шаблон не переключён.

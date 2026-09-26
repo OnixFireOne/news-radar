@@ -24,8 +24,19 @@ DEFAULT_CONFIG = {
     "keywords_alert": [],
     "digest_max_items": 7,
     "digest_min_temperature": 5.0,
+    "analysis_profile": "crypto",  # "crypto" | "ai_value"
     "digest_template": "classic",
     "digest_templates": {
+        "ai_value": {
+            "quotas": {"practical": 5, "tools_research": 2, "hype": 1, "crypto": 0},
+            "crypto_min_temperature": 8,
+            "min_value_score": 5,
+            "max_items": 8,
+            "cross_dedup": False,
+            "ongoing_trends": False,
+            "lookback_digests": 0,
+            "llm_merge": True,
+        },
         "classic": {
             "max_items": 7,
             "min_temperature": 5.0,

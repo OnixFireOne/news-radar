@@ -161,6 +161,11 @@ class LLMClient:
             LLMCoreConfig(base_url=self.base_url, api_key=self.api_key, timeout=float(self.timeout))
         )
 
+    @property
+    def router(self) -> ProviderRouter | None:
+        """Expose the catalog router without allowing replacement."""
+        return self._router
+
     async def complete(
         self,
         user_prompt: str,

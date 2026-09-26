@@ -35,8 +35,20 @@
     "crash"
   ],
   "_comment_template": "Active digest template. Options: classic | spoiler",
+  "_comment_analysis_profile": "crypto | ai_value",
+  "analysis_profile": "crypto",
   "digest_template": "spoiler",
   "digest_templates": {
+    "ai_value": {
+      "quotas": {"practical": 5, "tools_research": 2, "hype": 1, "crypto": 0},
+      "crypto_min_temperature": 8,
+      "min_value_score": 5,
+      "max_items": 8,
+      "cross_dedup": false,
+      "ongoing_trends": false,
+      "lookback_digests": 0,
+      "llm_merge": true
+    },
     "classic": {
       "max_items": 7,
       "min_temperature": 5.0,
