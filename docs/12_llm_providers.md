@@ -126,3 +126,14 @@ docker compose run --rm --no-deps analyzer python tests/eval_value_scoring.py \
 рассуждений. Работает в обоих протоколах. Профиль `openai.chat_completions`, ключ
 `LLM_KEY_OPENAI` (https://platform.openai.com/api-keys), заведён для сравнения моделей;
 в маршруте `classify` осталась haiku 4.5 (решение владельца 25.09).
+
+## Decisions-модели (Jev)
+
+`llm_core/decisions.py` — клиент для моделей, которые отвечают не текстом, а типизированными
+решениями: вопросы `score` (упорядоченные уровни, 2–10), `choice` (варианты с описаниями),
+`noul` (да/нет с вероятностью); в ответе — вероятности и `confidence`. Путь задаётся снаружи:
+OpenRouter — `https://openrouter.ai/api` + `/alpha/decisions`, модель `~typesafe/jev-latest`,
+ключ `LLM_KEY_OPENROUTER`; TypeSafe напрямую — `/v1/systemone`. Эндпоинт OpenRouter помечен
+alpha. `analyzer/jev_classifier.py` — вторая реализация порта `ValueClassifier`; замер —
+`tests/eval_value_scoring.py --impl jev`. На 26.09 порог не прошёл (72.2%), в маршрут не
+подключён.
