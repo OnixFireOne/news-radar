@@ -369,3 +369,65 @@ docker compose run --rm --no-deps news-radar-api python -c "import api.main; pri
 ```
 
 **Результат 27.09:** 153 passed · mypy `Success: no issues found in 31 source files` · strict — 19 файлов чисто · импорт API — ok.
+
+---
+
+# Часть 5 — полный текст статей (27.09)
+
+**Статус:** закрыто 27.09, ждёт приёмки. По вопросу владельца: в golden set и в базе Хабр лежал анонсами, а разметка — по полной статье. Код писал Codex (бриф `~/.codex-bridge/briefs/news-radar/tz4-i3-fulltext.md`), оркестратор проверил, прогнал, замерил, закоммитил.
+
+## Что сделано
+
+- **`collectors/fulltext_fetcher.py`** — `last_capped`: отличает «упёрлись в лимит» от «не удалось».
+- **`collectors/rss.py`** — `fulltext_mode`: `short_only` (как было) / `always` (качать всегда, брать более длинный текст). В обоих режимах запись, не догруженная из-за лимита, откладывается на следующий цикл, а не сохраняется тизером.
+- **`collectors/hackernews.py`** — то же откладывание.
+- **`collectors/poll_runner.py`** + конфиг — `sources.fulltext.mode` (дефолт в коде `short_only`, в `settings.json` — `always`, решение владельца 27.09), лимиты в `settings.json` 20/5 → 60/15.
+- **`tests/golden/refetch_fulltext.py`** (новый, strict) → **`tests/golden/value_candidates_fulltext.jsonl`** (новый файл; исходный набор и разметка не тронуты). Хабр 13/13 скачан (8–23 тыс. символов вместо 300–1500), HF 2/2, Simon 4/4 (+~150 символов), HN 6/8, dev.to 1/4 (и так полные), OpenAI 0/3 (403).
+- **`tests/eval_value_scoring.py`** — `--candidates`, имя набора пишется в run JSON и `RESULTS.md`.
+- **Тесты (+10):** `tests/collector/test_fulltext_always.py`, `tests/test_eval_fulltext.py`.
+- **docs:** `02_collector.md`, `11_problems_learned.md` (грабли 31–32).
+
+## Замер (haiku 4.5, `openrouter.messages`, батч 5, промпт v2) — по одному прогону
+
+| Набор | Точность | Без g22/g32 | Хайп ≥ 8 | Итог | Вход, токенов | Цена | Задержка батча (мед.) |
+|---|---|---|---|---|---|---|---|
+| анонсы (`value_candidates.jsonl`) | 86.1% | 91.2% | g28 | **FAIL** | 33.9k | $0.100 | 17.4 с |
+| полный текст (`value_candidates_fulltext.jsonl`) | **88.9%** | **94.1%** | — | **PASS** | 64.1k | $0.139 | 20.5 с |
+
+- Ошибки на анонсах: g17 (Хабр, «ценно» → 4), g21, g22, g28, g32. На полном тексте: g13, g21, g22, g32. **Хабр на полном тексте — без ошибок** (g17 исправился).
+- g13 (HN, «шум»): анонс 1.7k → страница 19k, на полном тексте получил 6 — новая ошибка.
+- g30 (состязательный «один заголовок») на полном тексте перестал быть заголовком — стал страницей 17k; оценка верная («шум») в обоих вариантах.
+- **Оговорка:** 25.09 тот же прогон на анонсах дал 91.7% и PASS, сегодня — 86.1% и FAIL (g28 → 8; g28 одинаков в обоих наборах, так что это разброс модели, а не текст). По одной паре прогонов «полный текст лучше» — вероятно, но не доказано. Предложение: по 3 прогона на вариант (~$0.70).
+- Полный текст дороже на ~40% (классификатор режет статью до 6000 символов, поэтому не в 3 раза).
+
+## Коммиты
+
+- `6aaf3b5` feat(tz4-i3): always fetch full articles and defer capped entries
+
+## Новые зависимости
+
+Нет.
+
+## Расхождения со спекой
+
+- Р.8.1 (пример `sources.fulltext`) — нет ключа `mode`, лимиты 20/5; в `settings.json` теперь `always`, 60/15.
+- Р.2 «если в фиде только сниппет — догружать» — теперь для RSS в режиме `always` догружается всегда; порог 500 остался только для `short_only`.
+
+## Что НЕ сделано / отложено
+
+- Повторные прогоны (разброс) — ждут решения владельца.
+- Источник текста для openai.com — по-прежнему 403.
+- Удаление неважных статей — отложено владельцем до проверки фильтра на живых дайджестах.
+
+## Команды приёмки
+
+```bash
+docker compose --profile feeds build collector-feeds
+docker compose --profile feeds run --rm --no-deps collector-feeds python -m pytest -q tests/collector
+docker compose run --rm --no-deps analyzer python -m pytest -q --ignore=tests/collector
+docker compose run --rm --no-deps analyzer python -m mypy
+docker compose --profile feeds run --rm --no-deps collector-feeds python tests/golden/refetch_fulltext.py
+docker compose run --rm --no-deps analyzer python tests/eval_value_scoring.py --provider openrouter.messages --model anthropic/claude-haiku-4.5 --batch-size 5 --candidates tests/golden/value_candidates_fulltext.jsonl
+```
+
+**Результат 27.09:** коллекторы 64 passed · анализатор 154 passed · mypy `Success: no issues found in 34 source files`.
