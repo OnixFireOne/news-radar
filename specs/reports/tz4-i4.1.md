@@ -1,6 +1,6 @@
 # ТЗ #4 — И4.1: категории и дайджесты (р.3.3) + площадки базы знаний (р.5)
 
-**Статус:** в работе с 27.09. Шаги 1 и 2a сделаны; 2b — следующий, код пишет Codex.
+**Статус:** в работе с 27.09. Шаги 1, 2a и 2b сделаны; ждёт приёмки владельца и живого прогона дайджеста `articles`.
 
 ## Решения владельца 27.09
 
@@ -69,7 +69,8 @@
 
 - `1752095` feat(tz4-i4.1): knowledge targets with local test mode
 - `6df89cc` test(tz4-i4.1): pin current analysis and digest behaviour before refactor
-- шаг 2a — `refactor(tz4-i4.1): split analysis and digest into registered bricks`
+- `abaab16` refactor(tz4-i4.1): split analysis and digest into registered bricks
+- шаг 2b — `feat(tz4-i4.1): categories and named digests with time-of-day schedules`
 
 ## Новые зависимости
 
@@ -83,7 +84,8 @@
 
 ## Что НЕ сделано / отложено
 
-- Шаг 2b.
+- Живой прогон шага 2b (нужен `LLM_PROVIDERS=openai.chat_completions`) и пересборка образа бота (`docker compose build bot`) — за владельцем.
+- Кросс-дедуп и эмоциональный баланс не вынесены в `extras`: остаются в дирижёре под флагами шаблона.
 - Два анализатора на одну запись (общий флаг `analyzed`, общая таблица `analysis`) — не нужно, пока у записи одна категория; при третьем анализаторе со своими полями — статус «запись × анализатор» и `analysis.extra` (JSON).
 - Смесь категорий в одном сообщении (по спеке — в планах).
 
@@ -101,3 +103,78 @@ docker compose run --rm --no-deps news-radar-api python -c "import api.main; pri
 
 **Результат шага 1 (27.09):** 199 passed · mypy `Success: no issues found in 38 source files` · импорт API ok.
 **Результат шага 2a (27.09):** 214 passed · mypy `Success: no issues found in 49 source files` · импорт API ok.
+
+## Шаг 2b — категории, имена и расписания (27.09, Codex)
+
+### Что сделано
+
+- `analyzer/pipeline/categories.py`: `CategorySpec.sources`, загрузка/валидация категорий,
+  владение источниками, `DigestSpec`, `DigestPart`, разрешение имён, чистая функция слотов,
+  предупреждения по источникам. `pipeline/context.py`, `hooks.py`: поле sources и маркер trends.
+- `analyzer/analyzer.py`: собственный SQL-фильтр и батч категории, её хуки; недоступные без router
+  ai_value-категории пропускаются. Счётчик pending учитывает доступные источники. `run_category` /
+  `run_digest`, общий снимок начала окна до генерации частей, запись имени/категории и ID части,
+  кросс-дедуп по имени, ограничение отметок соседей по тренду источниками категории.
+  Старый `generate_digest` сохранён как совместимый вход. Запущен `cfg.watch()` в основном процессе.
+- `analyzer/trend_tracker.py`: необязательный фильтр типов источников; дирижёр обновляет его перед
+  циклом, отсутствие категорий с trends пропускает цикл.
+- `database/schema.py`: nullable name/category в CREATE и идемпотентных ALTER, старые строки остаются NULL.
+- `config/config_watcher.py`, `config/settings.json`: пустые дефолты, категории articles/crypto,
+  расписания 09:10 / 12:00+20:00 Europe/Moscow, включены только articles. Удалён analysis_profile.
+  В `value_funnel.py` менять код не потребовалось: `_DEFAULT_QUOTAS["crypto"]` уже 0; добавлена регрессия.
+- `api/main.py`, `api/models.py`: name, части generate/raw, фильтры истории, 404 неизвестного имени,
+  полный `/settings` без затеняющего дубликата. `bot/telegram_bot.py`, `bot/digest_schedule.py`:
+  команды с именем, все части отдельными сообщениями, задания по слотам и обновление раз в 60 секунд.
+  В образе бота analyzer отсутствует, поэтому парсер расписания лёгкий, без дополнительных зависимостей.
+- Новые тесты: `test_categories.py`, `test_digests_named.py`, `test_api_named.py`, `test_bot_named.py`.
+  Покрывают маршрутизацию, batch starvation, хуки, пропуск трендов, миграцию, окно по имени,
+  несколько частей, старые смешанные тренды, параметры категории, HTTP-контракт, задания и отправку бота.
+  В `test_analyzer_ai_value.py` изменены только согласованные fixture/два теста выбора профиля;
+  без каталога новое ожидаемое поведение — пропуск вместо crypto fallback. Остальные assertions сохранены.
+- `mypy.ini`: новые модули/тесты включены в files и strict. `docker-compose.yml`: read-only том bot
+  у analyzer для чистых тестов расписания и mypy. Документы: 03/06/07/09 и грабли 34–35.
+
+### Проверки и ограничения
+
+- `git diff --check` выполнен без ошибок; это не замена тестам.
+- Новых зависимостей нет. `renderer.py`, `prompts.py`, спеку и остальные существующие тесты не менял.
+- Непустой список полностью выключенных дайджестов означает отсутствие генерации/заданий;
+  пустой список означает legacy. `params` объединяется поверхностно (вложенное значение заменяется целиком).
+- Сохранён предписанный глобальный сброс raw-отметок `in_digest=2 → 0` в каждой категории.
+  Существующие смешанные тренды не мигрируются и не удаляются.
+- Расхождения со спекой: новых сверх уже согласованных полей и `at`/`tz` нет.
+
+### Команды приёмки шага 2b
+
+```bash
+docker compose run --rm --no-deps analyzer python -m pytest -q --ignore=tests/collector
+docker compose run --rm --no-deps analyzer python -m mypy
+docker compose run --rm --no-deps analyzer python -m mypy --strict analyzer/pipeline/categories.py bot/digest_schedule.py tests/test_categories.py tests/test_digests_named.py tests/test_api_named.py tests/test_bot_named.py
+docker compose run --rm --no-deps news-radar-api python -c "import api.main; print('ok')"
+docker compose run --rm --no-deps -v "$PWD/tests:/app/tests:ro" news-radar-api python -m unittest discover -s /app/tests -p test_api_named.py -v
+docker compose run --rm --no-deps -v "$PWD/bot:/app/bot:ro" -v "$PWD/tests:/app/tests:ro" bot python -m unittest discover -s /app/tests -p test_bot_named.py -v
+```
+
+Тесты бота и API используют stdlib unittest в своих образах без установки pytest; в analyzer
+они пропускаются при отсутствии Telegram/API. В командах тестов смонтирована папка tests через `-v`.
+После приёмки кода: `docker compose build bot` (код бота копируется в образ).
+
+### Проверка оркестратора (27.09)
+
+- Диф просмотрен. Правки оркестратора:
+  - mypy-ошибка в `tests/test_categories.py` (патч `asyncio.sleep` через реэкспорт модуля);
+  - у Codex эмоциональный баланс для именованных дайджестов был привязан к флагу `ongoing_trends` —
+    вынесен в собственный флаг шаблона `emotional_balance` (в `ai_value` = `false`, в `DEFAULT_CONFIG` и
+    `settings.json`); legacy-путь без изменений; тест `test_emotional_balance_is_a_template_flag`
+    (с проверкой, что без баланса первым стоит «негативный» пункт — тест не пустой);
+  - из `DEFAULT_CONFIG.digest_templates.ai_value` тоже убраны `quotas.crypto` и `crypto_min_temperature`
+    (значения совпадали с дефолтами `value_funnel.py`, поведение не меняется).
+- **Изменения поведения, которые стоит знать владельцу:**
+  - `GET /settings` отдаёт теперь **весь** `settings.json` (раньше первый из двух одноимённых обработчиков
+    отдавал 3 поля и перекрывал второй). Секретов в `settings.json` нет по правилам проекта.
+  - Анализатор впервые реально перечитывает `settings.json` на лету (`cfg.watch()`); раньше hot-reload в
+    процессе анализатора не работал вовсе — `ConfigWatcher.get()` файл не перечитывает (грабля 34).
+  - `GET /digest/latest` и `GET /digest` не отдают `name`/`category`, если они NULL (`exclude_none`).
+  - Бот при недоступном API на старте ставит legacy-слоты 12:00/20:00 и через ≤ 60 с переходит на `digests`.
+- Результат: **pytest 228 passed, 5 skipped** · mypy `Success: no issues found in 55 source files` ·
+  импорт API ok · `test_api_named` (образ API) 1 OK · `test_bot_named` (образ бота) 4 OK.

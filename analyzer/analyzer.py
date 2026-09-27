@@ -30,7 +30,9 @@ from analyzer.prompts import SINGLE_MESSAGE_PROMPT, DIGEST_PROMPT, SYSTEM_PROMPT
 from analyzer.value_classifier import LLMValueClassifier as LLMValueClassifier  # re-export: bricks resolve it here so test patches apply
 
 from analyzer.knowledge_publisher import publish_selected as publish_selected  # re-export: see above
-from analyzer.pipeline.context import AnalyzeContext, DigestContext
+from analyzer.pipeline.context import AnalyzeContext, DigestContext, CategorySpec
+from analyzer.pipeline.categories import (DigestPart, load_categories, resolve_digest,
+                                          warn_uncategorized_sources)
 from analyzer.pipeline.registry import ANALYZERS, EXTRAS, SELECTORS, WRITERS
 from analyzer.pipeline.legacy import resolve_legacy
 from analyzer.pipeline.store import store_results
@@ -87,7 +89,6 @@ class NewsAnalyzer:
         Process all unanalyzed messages.
         Returns the number of messages successfully analyzed.
         """
-        conn = get_db(self.db_path)
         count = 0
 
         # Don't start analyzing if the LLM is busy (e.g. generating a digest)
@@ -95,6 +96,7 @@ class NewsAnalyzer:
             logger.info("analyze_pending: LLM is locked (digest generation in progress). Pausing...")
             return 0
 
+        conn = get_db(self.db_path)
         try:
             # Load active subscriptions for real-time alerting
             active_subs = conn.execute("SELECT user_id, query FROM subscriptions WHERE active=1").fetchall()
@@ -103,42 +105,26 @@ class NewsAnalyzer:
             subs_list = []
 
         try:
-            profile = self.cfg.get("analysis_profile", "crypto") if self.cfg else "crypto"
-            template_name = self.cfg.get("digest_template", "classic") if self.cfg else "classic"
-            spec = resolve_legacy(
-                {"analysis_profile": profile, "digest_template": template_name},
-                self.llm.router is not None,
-            )
-            ai_value = spec.analyzer == "ai_value"
-
+            cfg = self._pipeline_config()
+            specs = (load_categories(cfg, self.llm.router is not None) if cfg["categories"]
+                     else [resolve_legacy(cfg, self.llm.router is not None)])
             min_len = int(self.cfg.get("min_message_length", 30)) if self.cfg else 30
-            # PRIORITY QUEUE: sort by views and length instead of just time
-            rows = conn.execute("""
-                SELECT m.id, m.text, s.name as source_name, m.collected_at, m.views, m.forwards
-                FROM messages m
-                JOIN sources s ON m.source_id = s.id
-                WHERE m.analyzed = 0
-                  AND length(m.text) >= ?
-                ORDER BY COALESCE(m.views, 0) DESC, length(m.text) DESC, m.collected_at DESC
-                LIMIT ?
-            """, (min_len, self.batch_size,)).fetchall()
-
-            if not rows:
-                logger.debug("No pending messages to analyze")
-                return 0
-
-            # Convert to list of dicts for safe async access
-            pending_batch = [dict(r) for r in rows]
-
-            logger.info(f"Analyzing {len(pending_batch)} pending messages (Priority Queue)...")
-
             concurrency = int(self.cfg.get("llm_concurrency", 3)) if self.cfg else 3
-            ctx = AnalyzeContext(
-                self, conn, {"analysis_profile": profile, "digest_template": template_name,
-                             "llm_concurrency": concurrency}, subs_list, concurrency,
-            )
-            results = await ANALYZERS.get(spec.analyzer)(pending_batch, ctx)
-            count = store_results(results, ctx, spec.hooks, ai_value)
+            for spec in specs:
+                source_filter, source_params = self._source_filter(spec.sources)
+                rows = conn.execute(f"""
+                    SELECT m.id, m.text, s.name as source_name, m.collected_at, m.views, m.forwards
+                    FROM messages m JOIN sources s ON m.source_id = s.id
+                    WHERE m.analyzed = 0 AND length(m.text) >= ? {source_filter}
+                    ORDER BY COALESCE(m.views, 0) DESC, length(m.text) DESC, m.collected_at DESC
+                    LIMIT ?
+                """, (min_len, *source_params, self.batch_size)).fetchall()
+                if not rows:
+                    continue
+                pending_batch = [dict(r) for r in rows]
+                ctx = AnalyzeContext(self, conn, cfg, subs_list, concurrency, spec.params)
+                results = await ANALYZERS.get(spec.analyzer)(pending_batch, ctx)
+                count += store_results(results, ctx, spec.hooks, spec.analyzer == "ai_value")
 
         finally:
             conn.close()
@@ -670,33 +656,81 @@ class NewsAnalyzer:
         return any(kw.lower() in text_lower for kw in keywords)
 
 
+    def _pipeline_config(self) -> dict[str, Any]:
+        defaults: dict[str, Any] = {
+            "categories": {}, "digests": [], "analysis_profile": "crypto",
+            "digest_template": "classic", "llm_concurrency": 3,
+        }
+        return {key: self.cfg.get(key, value) if self.cfg else value
+                for key, value in defaults.items()}
+
+    @staticmethod
+    def _source_filter(sources: Sequence[str]) -> tuple[str, tuple[str, ...]]:
+        if not sources:
+            return "", ()
+        return "AND s.type IN (" + ",".join("?" for _ in sources) + ")", tuple(sources)
+
+    def _digest_since(self, hours: int | None, name: str | None) -> datetime:
+        if hours is not None:
+            return datetime.utcnow() - timedelta(hours=hours)
+        conn = get_db(self.db_path)
+        try:
+            where = " WHERE name = ?" if name is not None else ""
+            row = conn.execute(
+                "SELECT period_end FROM digests" + where + (" ORDER BY created_at DESC, id DESC LIMIT 1" if name is not None
+                 else " ORDER BY created_at DESC LIMIT 1"),
+                (name,) if name is not None else (),
+            ).fetchone()
+            return datetime.fromisoformat(row["period_end"]) if row else datetime.utcnow() - timedelta(hours=12)
+        except (sqlite3.Error, ValueError, TypeError):
+            return datetime.utcnow() - timedelta(hours=12)
+        finally:
+            conn.close()
+
     async def generate_digest(self, hours: int | None = None, force: bool = False, return_raw: bool = False) -> str | None:
-        """
-        Generate a digest using a 4-tier priority queue.
+        cfg = self._pipeline_config()
+        if cfg["digests"]:
+            parts = await self.run_digest(None, hours, force, return_raw)
+            return parts[0].result if parts else None
+        return await self.run_category(
+            resolve_legacy(cfg, self.llm.router is not None, warn_on_fallback=False),
+            None, hours, force, return_raw,
+        )
 
-        Priority tiers:
-          1. ALERTS  — hack/scam or temperature >= 9  (always first)
-          2. TRENDS  — messages belonging to hot trends (unique_sources >= threshold)
-          3. HIGH    — temperature >= digest_min_temperature + 2, diverse sources
-          4. FILL    — best remaining message per topic for diversity
+    async def run_digest(self, name: str | None, hours: int | None = None,
+                         force: bool = False, return_raw: bool = False) -> list[DigestPart]:
+        cfg = self._pipeline_config()
+        digest = resolve_digest(cfg, name)
+        if not cfg["digests"]:
+            result = await self.generate_digest(hours, force, return_raw)
+            return [DigestPart("crypto", result, self._last_digest_id)] if result else []
+        if digest is None or not digest.enabled:
+            return []
+        categories = {cat.name: cat for cat in load_categories(cfg, self.llm.router is not None)}
+        # Freeze the window before the first category writes its snapshot.
+        since = self._digest_since(hours, digest.name)
+        parts: list[DigestPart] = []
+        for category_name in dict.fromkeys(digest.categories):
+            cat = categories.get(category_name)
+            if cat is None:
+                logger.warning("Digest %s: category %s disabled, missing or unavailable", digest.name, category_name)
+                continue
+            result = await self.run_category(cat, digest.name, hours, force, return_raw, _since=since)
+            if result:
+                parts.append(DigestPart(cat.name, result, self._last_digest_id))
+        return parts
 
-        Rules (from settings.json digest_rules, hot-reloaded):
-          max_per_topic       — cap per unique topic
-          always_include_alerts — inserts alerts regardless of cap
-          dedup_threshold     — cosine similarity threshold for semantic dedup
-          digest_max_items    — total cap
-
-        force=True: bypass in_digest filter (for manual /digest new command).
-        """
-        # ── Load template config (hot-reload) ──
-        template_name = "classic"
-        template_cfg: dict[str, Any] = {}
-        rules: dict[str, Any] = {}
-        if self.cfg:
-            rules         = self.cfg.get("digest_rules", {})
-            template_name = self.cfg.get("digest_template", "classic")
-            templates_all = self.cfg.get("digest_templates", {})
-            template_cfg  = templates_all.get(template_name, {})
+    async def run_category(self, cat: CategorySpec, digest_name: str | None,
+                           hours: int | None = None, force: bool = False,
+                           return_raw: bool = False, *, _since: datetime | None = None) -> str | None:
+        """Select and render one category, preserving the legacy pipeline order."""
+        self._last_digest_id: int | None = None
+        spec = cat
+        template_name = cat.template
+        rules = self.cfg.get("digest_rules", {}) if self.cfg else {}
+        templates_all = self.cfg.get("digest_templates", {}) if self.cfg else {}
+        template_cfg: dict[str, Any] = {**templates_all.get(template_name, {}), **cat.params}
+        source_filter, source_params = self._source_filter(cat.sources)
 
         # Per-template settings (fall back to global keys)
         digest_max = template_cfg.get(
@@ -720,17 +754,7 @@ class NewsAnalyzer:
         except Exception as e:
             logger.error(f"Failed to reset pending digests: {e}")
 
-        if hours is not None:
-            since = datetime.utcnow() - timedelta(hours=hours)
-        else:
-            try:
-                last_row = conn.execute("SELECT period_end FROM digests ORDER BY created_at DESC LIMIT 1").fetchone()
-                if last_row:
-                    since = datetime.fromisoformat(last_row["period_end"])
-                else:
-                    since = datetime.utcnow() - timedelta(hours=12)
-            except Exception:
-                since = datetime.utcnow() - timedelta(hours=12)
+        since = _since if _since is not None else self._digest_since(hours, digest_name)
 
         # Safety cap: never look back more than 24h to avoid LLM context overflow
         max_lookback = datetime.utcnow() - timedelta(hours=24)
@@ -773,10 +797,11 @@ class NewsAnalyzer:
                   AND m.analyzed = 1
                   AND (m.is_ad = 0 OR m.is_ad IS NULL)
                   {in_digest_filter}
+                  {source_filter}
                   AND a.temperature IS NOT NULL
                 ORDER BY a.temperature DESC
                 LIMIT 100
-            """, (trend_src_min, since.isoformat())).fetchall()
+            """, (trend_src_min, since.isoformat(), *source_params)).fetchall()
         finally:
             conn.close()
 
@@ -789,18 +814,13 @@ class NewsAnalyzer:
         if dedup_threshold < 1.0:
             rows_dicts = self._dedup_by_similarity(rows_dicts, threshold=dedup_threshold)
 
-        spec = resolve_legacy(
-            {"analysis_profile": self.cfg.get("analysis_profile", "crypto") if self.cfg else "crypto",
-             "digest_template": template_name},
-            self.llm.router is not None, warn_on_fallback=False,
-        )
         digest_ctx = DigestContext(
             analyzer=self, cfg={"digest_template": template_name,
                                 "knowledge": self.cfg.get("knowledge", {}) if self.cfg else {},
                                 "llm_concurrency": self.cfg.get("llm_concurrency", 3) if self.cfg else 3},
             rules=rules, template_name=template_name,
             template_cfg=template_cfg, digest_max=digest_max, min_temp=min_temp,
-            since=since, force=force, return_raw=return_raw,
+            since=since, force=force, return_raw=return_raw, params=cat.params,
         )
         selected = SELECTORS.get(spec.select)(rows_dicts, digest_ctx)
         alerts_count, trends_count, high_count = digest_ctx.artifacts["tier_counts"]
@@ -818,13 +838,15 @@ class NewsAnalyzer:
         if use_cross_dedup and use_ongoing_trends and lookback_digests > 0:
             cross_dedup_threshold = rules.get("cross_dedup_threshold", 0.75)
             selected, ongoing_trends = self._dedup_against_previous_digests(
-                selected, lookback=lookback_digests, threshold=cross_dedup_threshold
+                selected, lookback=lookback_digests, threshold=cross_dedup_threshold,
+                digest_name=digest_name,
             )
         elif use_cross_dedup and lookback_digests > 0:
             # Dedup but don't pass ongoing trends to the LLM
             cross_dedup_threshold = rules.get("cross_dedup_threshold", 0.75)
             selected, _ = self._dedup_against_previous_digests(
-                selected, lookback=lookback_digests, threshold=cross_dedup_threshold
+                selected, lookback=lookback_digests, threshold=cross_dedup_threshold,
+                digest_name=digest_name,
             )
 
         logger.info(
@@ -835,7 +857,8 @@ class NewsAnalyzer:
         # ── Emotional balance: if previous digest started with negative alerts,
         # push negative items past position 2 so digest opens with neutral/positive news ──
         negative_keywords = [kw.lower() for kw in (self.cfg.get("keywords_alert", []) if self.cfg else [])]
-        if negative_keywords:
+        # Named digests opt out per template (articles have no alert keywords worth balancing).
+        if negative_keywords and (digest_name is None or template_cfg.get("emotional_balance", True)):
             def _is_negative(item: dict[str, Any]) -> bool:
                 text = ((item.get("topic") or "") + " " + (item.get("text") or "")).lower()
                 return any(kw in text for kw in negative_keywords)
@@ -844,12 +867,13 @@ class NewsAnalyzer:
             prev_was_negative = False
             try:
                 conn2 = get_db(self.db_path)
-                prev_top = conn2.execute("""
+                prev_top = conn2.execute(f"""
                     SELECT a.topic, m.text FROM messages m
+                    JOIN sources s ON s.id = m.source_id
                     LEFT JOIN analysis a ON a.message_id = m.id
-                    WHERE m.in_digest = 1
+                    WHERE m.in_digest = 1 {source_filter}
                     ORDER BY m.id DESC LIMIT 2
-                """).fetchall()
+                """, source_params).fetchall()
                 conn2.close()
                 prev_was_negative = any(_is_negative(dict(r)) for r in prev_top)
             except Exception:
@@ -938,13 +962,14 @@ class NewsAnalyzer:
                     placeholders = ",".join("?" * len(selected_ids))
                     conn.execute(f"""
                         UPDATE messages SET in_digest=2
-                        WHERE id IN (
+                        WHERE id IN (SELECT m.id FROM messages m JOIN sources s ON s.id=m.source_id
+                                     WHERE 1=1 {source_filter}) AND id IN (
                             SELECT tm2.message_id
                             FROM trend_messages tm1
                             JOIN trend_messages tm2 ON tm1.trend_id = tm2.trend_id
                             WHERE tm1.message_id IN ({placeholders})
                         )
-                    """, selected_ids)
+                    """, [*source_params, *selected_ids])
                 conn.commit()
                 conn.close()
             except Exception as e:
@@ -1019,10 +1044,13 @@ class NewsAnalyzer:
             conn = get_db(self.db_path)
             try:
                 if digest_content:
-                    conn.execute(
-                        "INSERT INTO digests (content_md, parse_mode, period_start, period_end) VALUES (?, ?, ?, ?)",
-                        (digest_content, parse_mode, since.isoformat(), datetime.utcnow().isoformat()),
+                    cursor = conn.execute(
+                        "INSERT INTO digests (content_md, parse_mode, period_start, period_end, name, category) "
+                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        (digest_content, parse_mode, since.isoformat(), datetime.utcnow().isoformat(),
+                         digest_name, cat.name if digest_name is not None else None),
                     )
+                    self._last_digest_id = cursor.lastrowid
 
                 selected_ids = [row["id"] for row in selected]
                 conn.executemany(
@@ -1034,13 +1062,14 @@ class NewsAnalyzer:
                     placeholders = ",".join("?" * len(selected_ids))
                     conn.execute(f"""
                         UPDATE messages SET in_digest=1
-                        WHERE id IN (
+                        WHERE id IN (SELECT m.id FROM messages m JOIN sources s ON s.id=m.source_id
+                                     WHERE 1=1 {source_filter}) AND id IN (
                             SELECT tm2.message_id
                             FROM trend_messages tm1
                             JOIN trend_messages tm2 ON tm1.trend_id = tm2.trend_id
                             WHERE tm1.message_id IN ({placeholders})
                         )
-                    """, selected_ids)
+                    """, [*source_params, *selected_ids])
 
                 conn.commit()
             finally:
@@ -1110,7 +1139,8 @@ class NewsAnalyzer:
 
 
     def _dedup_against_previous_digests(
-        self, candidates: list[dict[str, Any]], lookback: int = 2, threshold: float = 0.75
+        self, candidates: list[dict[str, Any]], lookback: int = 2, threshold: float = 0.75,
+        digest_name: str | None = None
     ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """
         Semantic dedup against previous digests.
@@ -1128,7 +1158,9 @@ class NewsAnalyzer:
             # ── 1. Load summaries from last N digests ──
             conn = get_db(self.db_path)
             rows = conn.execute(
-                "SELECT content_md FROM digests ORDER BY id DESC LIMIT ?", (lookback,)
+                "SELECT content_md FROM digests" + (" WHERE name = ?" if digest_name is not None else "")
+                + " ORDER BY id DESC LIMIT ?",
+                (digest_name, lookback) if digest_name is not None else (lookback,)
             ).fetchall()
             conn.close()
 
@@ -1198,6 +1230,31 @@ class NewsAnalyzer:
             return candidates, []
 
 
+    def _pending_count(self) -> int:
+        cfg = self._pipeline_config()
+        sources = tuple(source for cat in load_categories(cfg, self.llm.router is not None)
+                        for source in cat.sources) if cfg["categories"] else ()
+        if cfg["categories"] and not sources:
+            return 0
+        source_filter, source_params = self._source_filter(sources)
+        min_len = int(self.cfg.get("min_message_length", 30)) if self.cfg else 30
+        conn = get_db(self.db_path)
+        try:
+            return int(conn.execute(
+                "SELECT COUNT(*) FROM messages m JOIN sources s ON s.id=m.source_id "
+                "WHERE m.analyzed = 0 AND length(m.text) >= ? " + source_filter,
+                (min_len, *source_params),
+            ).fetchone()[0])
+        finally:
+            conn.close()
+
+    def _trend_sources(self) -> tuple[str, ...] | None:
+        cfg = self._pipeline_config()
+        if not cfg["categories"]:
+            return None
+        return tuple(dict.fromkeys(source for cat in load_categories(cfg, self.llm.router is not None)
+                                   if "trends" in cat.hooks for source in cat.sources))
+
     async def run_loop(self) -> None:
         """
         Main loop — runs things on different schedules:
@@ -1218,6 +1275,14 @@ class NewsAnalyzer:
             chroma_client=self.chroma,
             analyzer=self,
         )
+
+        cfg = self._pipeline_config()
+        if cfg["categories"]:
+            conn = get_db(self.db_path)
+            try:
+                warn_uncategorized_sources(conn, load_categories(cfg))
+            finally:
+                conn.close()
 
         logger.info(
             f"Analyzer loop started — "
@@ -1245,7 +1310,12 @@ class NewsAnalyzer:
                 trigger_reason = "threshold met" if threshold_met else "timer elapsed"
                 logger.info(f"Triggering TrendTracker run_cycle ({trigger_reason}). Analyzed since last run: {messages_analyzed_since_trend}")
                 try:
-                    await trend_tracker.run_cycle()
+                    source_types = self._trend_sources()
+                    trend_tracker.source_types = source_types
+                    if source_types == ():
+                        logger.debug("Trend cycle skipped: no enabled category has trends hook")
+                    else:
+                        await trend_tracker.run_cycle()
                     last_trend_run = now
                     messages_analyzed_since_trend = 0
                 except Exception as e:
@@ -1263,10 +1333,7 @@ class NewsAnalyzer:
                 max_pending = int((self.cfg.get("analyze_max_pending", 10)) if self.cfg else 10)
                 if max_pending > 0:
                     try:
-                        conn = get_db(self.db_path)
-                        min_len = int(self.cfg.get("min_message_length", 30)) if self.cfg else 30
-                        count = conn.execute("SELECT COUNT(*) FROM messages WHERE analyzed = 0 AND length(text) >= ?", (min_len,)).fetchone()[0]
-                        conn.close()
+                        count = self._pending_count()
                         if count >= max_pending:
                             logger.info(f"Threshold reached ({count} pending >= {max_pending}), waking up early")
                             break
@@ -1313,7 +1380,7 @@ async def main() -> None:
         cfg=cfg,
     )
 
-    await analyzer.run_loop()
+    await asyncio.gather(cfg.watch(), analyzer.run_loop())
 
 
 if __name__ == "__main__":

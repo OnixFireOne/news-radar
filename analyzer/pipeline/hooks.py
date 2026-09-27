@@ -31,3 +31,8 @@ def subscriptions(row: Row, result: Row, ctx: AnalyzeContext) -> None:
                     "summary": result.get("summary", ""), "source": row["source_name"],
                     "text": row["text"][:300],
                 }))
+
+
+@HOOKS.register("trends")
+def trends(row: Row, result: Row, ctx: AnalyzeContext) -> None:
+    """Opt into the separately scheduled trend cycle; no per-message action."""

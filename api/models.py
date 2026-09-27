@@ -51,6 +51,8 @@ class TopicResponse(BaseModel):
 
 
 class DigestResponse(BaseModel):
+    name: Optional[str] = None
+    category: Optional[str] = None
     id: int
     content_md: str
     parse_mode: str = "Markdown"

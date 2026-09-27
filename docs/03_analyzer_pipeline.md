@@ -143,10 +143,11 @@ if temp >= breaking_alert_min_temp and self.cfg.get("instant_alerts_temperature"
 `create_task` (не `await`) — alert уходит в фоне, не блокирует анализ.
 ## Профиль анализа `ai_value` (ТЗ #4, И3 шаг 5)
 
-Ключ `analysis_profile` в `settings.json` (`"crypto"` по умолчанию) читается на каждом цикле `analyze_pending`.
+Категория выбирает `analyzer: "crypto" | "ai_value"`; конфиг читается на каждом цикле `analyze_pending`.
+Без категорий используется старый crypto-путь.
 
 - `crypto` — старый путь: `SINGLE_MESSAGE_PROMPT`, одна статья = один вызов.
-- `ai_value` — нужен каталог провайдеров (`LLM_PROVIDERS` не пуст). Без него — WARNING и старый путь на этот цикл.
+- `ai_value` — нужен каталог провайдеров (`LLM_PROVIDERS` не пуст). Без него категория пропускается с WARNING на этот цикл.
   1. Эвристика рекламы и дедуп через Chroma — как в старом пути (`_preflight`).
   2. Остальные статьи цикла одним вызовом `LLMValueClassifier(router, task="classify", concurrency=llm_concurrency)`: батчи по 5, параллельно.
   3. Вердикт → `analysis` вместе с `content_type`, `value_score`, `has_outcome`, `takeaway` (`value_funnel.verdict_to_row`). Ошибка элемента → `analyzed=0`, статья повторится в следующем цикле.
@@ -161,12 +162,31 @@ if temp >= breaking_alert_min_temp and self.cfg.get("instant_alerts_temperature"
 | Реестр | Имена | Модуль | Что делает |
 |---|---|---|---|
 | `ANALYZERS` | `crypto`, `ai_value` | `analyzers.py` | батч записей → результаты анализа (крипто-промпт / классификатор ценности) |
-| `HOOKS` | `alerts`, `subscriptions` | `hooks.py` | побочные эффекты после записи (мгновенный алерт, совпадение подписки); не для рекламы |
+| `HOOKS` | `alerts`, `trends`, `subscriptions` | `hooks.py` | побочные эффекты после записи (мгновенный алерт, совпадение подписки); не для рекламы |
 | `SELECTORS` | `tiers`, `quotas` | `selectors.py` | отбор в дайджест: 4 уровня ТЗ #3 / квоты `value_funnel` |
 | `EXTRAS` | `knowledge` | `extras.py` | обогащение дайджеста (md базы знаний → `artifacts["md_map"]`) |
 | `WRITERS` | `classic`, `spoiler`, `ai_value` | `writers.py` | две фазы: `compose` (LLM-черновик) и `render` (текст + parse_mode) |
 
 - Запись результатов анализа — общая, `store.py` (транзакция на запись, Chroma, флаги `messages`), хуки вызываются оттуда.
 - Порядок дайджеста: окно → выборка → семантический дедуп → `select` → кросс-дедуп и эмоциональный баланс → raw/OpenClaw → `compose` → `extras` → `render` → отметки `in_digest`. Extras после черновика: упавший черновик не тратит md-вызовы.
-- Пока блоков `categories`/`digests` нет, набор выбирает `pipeline/legacy.py::resolve_legacy` по старым ключам (`analysis_profile`, `digest_template`) — поведение как до рефакторинга (закреплено `tests/test_pipeline_characterization.py`).
+- Если блоки `categories`/`digests` пусты, набор выбирает `pipeline/legacy.py::resolve_legacy` по старым ключам (`analysis_profile`, `digest_template`) — поведение как до рефакторинга (закреплено `tests/test_pipeline_characterization.py`).
 - Модуль `analyzer.analyzer` реэкспортирует `LLMValueClassifier` и `publish_selected`: кирпичики берут их оттуда, чтобы подмены в тестах действовали.
+
+
+## Категории (И4.1, шаг 2b)
+
+`pipeline/categories.py` читает включённые категории в порядке конфига, проверяет имена кирпичиков
+и распределяет типы источников. При конфликте первый владелец источника выигрывает (WARNING).
+У каждой категории собственные SQL-фильтр `sources` и `LIMIT batch_size`: большой выключенный
+Telegram-бэклог не вытесняет RSS/HN. Выключенные и нераспределённые записи остаются `analyzed=0`.
+Счётчик раннего пробуждения учитывает только доступные категории.
+
+Хуки выполняются исключительно из `category.hooks`: у articles список пуст, поэтому алертов и
+подписок нет даже при высокой температуре. `trends` — маркер участия в отдельном цикле трекера.
+Перед каждым циклом трекер получает объединение источников включённых категорий с этим хуком;
+пустое объединение пропускает цикл с DEBUG. Без категорий фильтра нет. На старте анализатора
+нераспределённые типы источников БД выводятся с WARNING.
+
+Параметры дайджеста: `digest_templates[cat.template]` поверхностно объединяется с `cat.params`.
+Пустые или недоступные категории не порождают сообщений; несколько категорий дайджеста дают
+несколько отдельных сообщений. Подробности окна, БД и API — в `06_digest.md`.

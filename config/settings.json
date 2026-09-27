@@ -35,8 +35,16 @@
     "crash"
   ],
   "_comment_template": "Active digest template. Options: classic | spoiler | ai_value",
-  "_comment_analysis_profile": "crypto | ai_value",
-  "analysis_profile": "ai_value",
+  "categories": {
+    "articles": {"enabled": true, "sources": ["rss", "hackernews"], "analyzer": "ai_value", "hooks": [],
+                 "select": "quotas", "template": "ai_value", "extras": ["knowledge"]},
+    "crypto": {"enabled": false, "sources": ["telegram"], "analyzer": "crypto", "hooks": ["alerts", "trends", "subscriptions"],
+               "select": "tiers", "template": "spoiler", "extras": []}
+  },
+  "digests": [
+    {"name": "articles", "enabled": true, "categories": ["articles"], "at": ["09:10"], "tz": "Europe/Moscow"},
+    {"name": "crypto", "enabled": false, "categories": ["crypto"], "at": ["12:00", "20:00"], "tz": "Europe/Moscow"}
+  ],
   "digest_template": "ai_value",
   "knowledge": {
     "enabled": true,
@@ -63,12 +71,12 @@
         "crypto": {"emoji": "₿", "label": "Крипто-тренд"},
         "_default": {"emoji": "🔹", "label": ""}
       },
-      "quotas": {"practical": 5, "tools_research": 2, "hype": 1, "crypto": 0},
-      "crypto_min_temperature": 8,
+      "quotas": {"practical": 5, "tools_research": 2, "hype": 1},
       "min_value_score": 5,
       "max_items": 8,
       "cross_dedup": false,
       "ongoing_trends": false,
+      "emotional_balance": false,
       "lookback_digests": 0,
       "llm_merge": true
     },

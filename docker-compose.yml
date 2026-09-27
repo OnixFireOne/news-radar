@@ -89,6 +89,7 @@ services:
       - ./llm_core:/app/llm_core
       - ./collectors:/app/collectors
       - ./tests:/app/tests
+      - ./bot:/app/bot:ro
       - ./pytest.ini:/app/pytest.ini
       - ./mypy.ini:/app/mypy.ini
       - ./knowledge:/app/knowledge   # knowledge.targets "local": md for tests, committed by the owner

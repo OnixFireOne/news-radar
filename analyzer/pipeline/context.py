@@ -49,3 +49,4 @@ class CategorySpec:
     template: str
     extras: tuple[str, ...]
     params: Mapping[str, Any] = field(default_factory=dict)
+    sources: tuple[str, ...] = ()

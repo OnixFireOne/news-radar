@@ -20,7 +20,10 @@ def setup(tmp_path, monkeypatch):
     conn.commit()
     source_id = conn.execute("SELECT id FROM sources WHERE name='feed'").fetchone()[0]
     conn.close()
-    cfg_values = {"analysis_profile": "ai_value", "min_message_length": 1,
+    cfg_values = {"categories": {"articles": {
+                      "enabled": True, "sources": ["rss", "hackernews"], "analyzer": "ai_value",
+                      "hooks": [], "select": "quotas", "template": "ai_value", "extras": []}},
+                  "min_message_length": 1,
                   "llm_concurrency": 3, "instant_alerts_temperature": False,
                   "ad_filter": {"enabled": True, "use_heuristic": True, "heuristic_keywords": ["#ad"]}}
     cfg = Mock()
@@ -98,27 +101,30 @@ async def test_error_stays_pending(setup, caplog):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("profile, catalog", [("crypto", True), ("ai_value", False)])
-async def test_legacy_and_missing_router_fallback(setup, profile, catalog, caplog):
-    setup.cfg["analysis_profile"] = profile
+async def test_crypto_and_missing_router_category(setup, profile, catalog, caplog):
+    setup.cfg["categories"]["articles"]["analyzer"] = profile
     if not catalog:
         setup.llm.router = None
     mid = setup.insert()
-    assert await setup.analyzer.analyze_pending() == 1
+    assert await setup.analyzer.analyze_pending() == (1 if catalog else 0)
     setup.factory.assert_not_called()
-    setup.llm.complete_json.assert_awaited_once()
     msg, row = setup.read(mid)
-    assert msg["analyzed"] == 1 and row["content_type"] is None
-    assert row["summary"] == "Legacy summary"
-    if not catalog:
+    if catalog:
+        setup.llm.complete_json.assert_awaited_once()
+        assert msg["analyzed"] == 1 and row["content_type"] is None
+        assert row["summary"] == "Legacy summary"
+    else:
+        setup.llm.complete_json.assert_not_awaited()
+        assert msg["analyzed"] == 0 and row is None
         assert caplog.text.count("requires a catalog router") == 1
 
 
 @pytest.mark.asyncio
-async def test_profile_is_read_each_cycle(setup):
-    setup.cfg["analysis_profile"] = "crypto"
+async def test_category_analyzer_is_read_each_cycle(setup):
+    setup.cfg["categories"]["articles"]["analyzer"] = "crypto"
     setup.insert()
     assert await setup.analyzer.analyze_pending() == 1
-    setup.cfg["analysis_profile"] = "ai_value"
+    setup.cfg["categories"]["articles"]["analyzer"] = "ai_value"
     mid = setup.insert()
     setup.classifier.classify.return_value = [ClassifyOutcome(str(mid), verdict(), None, "tool")]
     assert await setup.analyzer.analyze_pending() == 1

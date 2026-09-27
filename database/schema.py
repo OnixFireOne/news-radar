@@ -88,6 +88,8 @@ CREATE TABLE IF NOT EXISTS analysis (
 -- Digest snapshots sent to Telegram bot
 CREATE TABLE IF NOT EXISTS digests (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    name         TEXT,
+    category     TEXT,
     content_md   TEXT NOT NULL,          -- Markdown digest text
     parse_mode   TEXT DEFAULT 'Markdown', -- Telegram parse_mode: Markdown | MarkdownV2
     period_start DATETIME NOT NULL,
@@ -225,6 +227,8 @@ MIGRATIONS = [
     ("add_trends_alerted_at",
      "ALTER TABLE trends ADD COLUMN alerted_at DATETIME DEFAULT NULL"),
 
+    ("add_digest_name", "ALTER TABLE digests ADD COLUMN name TEXT"),
+    ("add_digest_category", "ALTER TABLE digests ADD COLUMN category TEXT"),
     ("add_digest_parse_mode",
      "ALTER TABLE digests ADD COLUMN parse_mode TEXT DEFAULT 'Markdown'"),
     ("add_message_alerted_at",
