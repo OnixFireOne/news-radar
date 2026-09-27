@@ -34,10 +34,10 @@
     "liquidat",
     "crash"
   ],
-  "_comment_template": "Active digest template. Options: classic | spoiler",
+  "_comment_template": "Active digest template. Options: classic | spoiler | ai_value",
   "_comment_analysis_profile": "crypto | ai_value",
-  "analysis_profile": "crypto",
-  "digest_template": "spoiler",
+  "analysis_profile": "ai_value",
+  "digest_template": "ai_value",
   "digest_templates": {
     "ai_value": {
       "quotas": {"practical": 5, "tools_research": 2, "hype": 1, "crypto": 0},
