@@ -1199,6 +1199,7 @@ class NewsAnalyzer:
                             # max_tokens не ограничен: с включённым thinking модель тратит
                             # ~5000 токенов на reasoning — жёсткий лимит 4096 обрывал JSON
                             disable_thinking=False,  # digest: always full thinking for quality
+                            task="digest",
                         )
                         digest_content, parse_mode = render_digest(llm_json, "spoiler", template_cfg, source_map=source_map)
                     else:
@@ -1208,6 +1209,7 @@ class NewsAnalyzer:
                             system_prompt=SYSTEM_PROMPT,
                             temperature=0.4,
                             disable_thinking=False,  # digest: always full thinking for quality
+                            task="digest",
                         )
                         digest_content, parse_mode = render_digest(raw_text, "classic", template_cfg)
                 except Exception as e:

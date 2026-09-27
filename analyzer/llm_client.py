@@ -173,6 +173,7 @@ class LLMClient:
         temperature: float = 0.3,
         max_tokens: int = -1,
         disable_thinking: bool | None = None,
+        task: str | None = None,
     ) -> str:
         """
         Send a request to the LLM and return the text response.
@@ -184,6 +185,8 @@ class LLMClient:
             max_tokens: max tokens in response. -1 = unlimited (server default).
             disable_thinking: override instance default. True=skip reasoning (fast),
                 False=full thinking (quality). None=use LLM_DISABLE_THINKING env var.
+            task: catalog task for this call (e.g. "digest"); None = the client's task.
+                Ignored in legacy single-endpoint mode.
 
         Returns:
             Model response as plain text (from content field)
@@ -209,7 +212,7 @@ class LLMClient:
         if self._router is not None:
             try:
                 response = await self._router.complete(
-                    self._task, messages, temperature=temperature,
+                    task or self._task, messages, temperature=temperature,
                     max_tokens=resolved_max_tokens, extra_payload=extra_payload or None,
                 )
             except LLMEmptyResponseError as exc:
@@ -289,6 +292,7 @@ class LLMClient:
         temperature: float = 0.1,
         max_tokens: int = -1,  # без лимита — модель сама решает
         disable_thinking: bool | None = None,
+        task: str | None = None,
     ) -> dict[str, Any]:
         """
         Request expecting a JSON response.
@@ -301,6 +305,7 @@ class LLMClient:
             temperature=temperature,
             max_tokens=max_tokens,
             disable_thinking=disable_thinking,
+            task=task,
         )
 
         # Strip markdown code fences if model added them

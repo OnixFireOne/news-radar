@@ -576,6 +576,7 @@ class TrendTracker:
                 ),
                 temperature=0.1,
                 disable_thinking=False,  # cluster naming: always full thinking for accuracy
+                task="trend_name",
             )
             cluster.topic = result.get("topic", cluster.topic)[:100]  # cap length
             cluster.llm_summary = result.get("summary", "")[:500]
