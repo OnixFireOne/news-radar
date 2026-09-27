@@ -155,4 +155,23 @@ def _log_dispatch(self, event_type, sent_to, status, payload_preview="", http_st
 - свободные слоты до `max_items` (8) добирают practical / tools_research / `opinion` (у opinion своей квоты нет); хайп и крипта сверх квоты — никогда;
 - сортировка внутри групп и итоговая — `value_score`, затем `temperature`.
 
-До И4 промпт и рендер у `ai_value` идут по ветке `classic` (неизвестный шаблон → classic). В `settings.json` шаблон не переключён.
+С И4 у `ai_value` свой промпт и рендер (ниже). В `settings.json` шаблон включён 27.09.
+
+## Template: ai_value (ТЗ #4, И4)
+
+Порядок в `generate_digest` после отбора по квотам:
+
+1. `DIGEST_PROMPT_AI_VALUE` → `complete_json(task="digest")`. Статьи — в разделителях `<<<ARTICLE N>>>` … `<<<END ARTICLE N>>>` (`knowledge_publisher.frame_article`, обрезка `text_max_chars`); ответ `{items: [{source_id, title, takeaway, summary}]}` на русском.
+2. База знаний: `knowledge_publisher.publish_selected` → `md_map` (source_id → blob URL в GitHub). Любой сбой — дайджест уходит без ссылки «разбор (md)».
+3. Пункты с неизвестным `source_id` выбрасываются; `content_type` берётся из БД, а не из ответа LLM.
+4. `render_digest(..., "ai_value", template_cfg, source_map, md_map)` → Telegram HTML: заголовок «🤖 AI-радар — 27 сентября», у пункта эмодзи и метка из `digest_templates.ai_value.types`, строка takeaway, `<blockquote expandable>` со сжатой идеей и ссылками «источник · разбор (md)».
+
+`source_map` для `ai_value` — `messages.url` (для Telegram — `post_url`).
+
+## База знаний: `analyzer/knowledge_publisher.py` (ТЗ #4, И4)
+
+- Для каждой отобранной статьи с `value_score ≥ knowledge.min_value_score` — отдельный вызов `KNOWLEDGE_MD_PROMPT_AI_VALUE` (`task="knowledge"`, в каталоге `openai.chat_completions` → gpt-6-sol), вход до `knowledge.max_input_chars`.
+- md: фронтматтер по р.5 спеки + `## Идея` / `## Вывод`. Путь `knowledge/YYYY/MM/YYYY-MM-DD-<slug>-<message_id>.md`, slug — транслит заголовка.
+- Пуш — GitHub Contents API (`PUT /repos/{repo}/contents/{path}`), токен `GITHUB_TOKEN`; 422 «уже есть» считается успехом. Путь пишется в `analysis.md_path`; если он уже есть — ни LLM, ни пуша, ссылка переиспользуется.
+- `knowledge.enabled: false` или нет токена → публикации нет, строка `Knowledge ...` в логе. Токен в лог не пишется никогда.
+- Каждый файл — отдельный коммит в ветку `knowledge.branch` (по умолчанию `main` этого репозитория): локальную `knowledge/` подтягивать `git pull`.

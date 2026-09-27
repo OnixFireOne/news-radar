@@ -140,6 +140,6 @@ alpha. `analyzer/jev_classifier.py` — вторая реализация пор
 
 ## Модель на задачу внутри профиля (27.09)
 
-`LLMClient.complete()` / `complete_json()` принимают `task=` — задачу каталога на этот вызов (`None` = задача клиента, обычно `default`). Генерация дайджеста передаёт `task="digest"`, название тренда — `task="trend_name"`, классификатор ценности сам ходит в роутер с `task="classify"`. Модель — `models[task]` активного профиля, иначе `models.default`. В legacy-режиме (`LLM_PROVIDERS` пуст) параметр игнорируется.
+`LLMClient.complete()` / `complete_json()` принимают `task=` — задачу каталога на этот вызов (`None` = задача клиента, обычно `default`). Генерация дайджеста передаёт `task="digest"`, название тренда — `task="trend_name"`, md для базы знаний — `task="knowledge"` (И4; в `openai.chat_completions` → gpt-6-sol), классификатор ценности сам ходит в роутер с `task="classify"`. Модель — `models[task]` активного профиля, иначе `models.default`. В legacy-режиме (`LLM_PROVIDERS` пуст) параметр игнорируется.
 
 Профиль `openai.chat_completions` (решение владельца 27.09): `classify` = gpt-6-luna (замер — `specs/reports/tz4-i3.md`, часть 5), `digest` = gpt-6-sol (не мерился), `default` = gpt-6-luna. Провайдер по-прежнему один на все задачи — выбирается `LLM_PROVIDERS` в `.env`.

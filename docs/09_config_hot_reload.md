@@ -123,4 +123,5 @@ def load_topics(self) -> dict:
 ## Ключи ТЗ #4, И3 шаг 5
 
 - `analysis_profile` — `"crypto"` | `"ai_value"`, читается через `get()` на каждом цикле анализа.
-- `digest_templates.ai_value` — квоты воронки. Из-за слияния только верхнего уровня блок продублирован целиком и в `DEFAULT_CONFIG`, и в `settings.json`: если в `settings.json` есть `digest_templates`, дефолтный блок не подмешивается.
+- `knowledge` (И4) — `enabled` (дефолт false), `repo`, `branch`, `dir`, `min_value_score`, `max_input_chars`; токен — env `GITHUB_TOKEN`. Читается на каждом дайджесте.
+- `digest_templates.ai_value` — квоты воронки, с И4 ещё `types` (эмодзи и метка по `content_type`), `show_md_link`, `title_max_words`, `summary_max_sentences`, `text_max_chars`. Из-за слияния только верхнего уровня блок продублирован целиком и в `DEFAULT_CONFIG`, и в `settings.json`: если в `settings.json` есть `digest_templates`, дефолтный блок не подмешивается.

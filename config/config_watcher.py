@@ -26,8 +26,30 @@ DEFAULT_CONFIG = {
     "digest_min_temperature": 5.0,
     "analysis_profile": "crypto",  # "crypto" | "ai_value"
     "digest_template": "classic",
+    "knowledge": {
+        "enabled": False,
+        "repo": "OnixFireOne/news-radar",
+        "branch": "main",
+        "dir": "knowledge",
+        "min_value_score": 6,
+        "max_input_chars": 12000,
+    },
     "digest_templates": {
         "ai_value": {
+            "show_md_link": True,
+            "title_max_words": 10,
+            "summary_max_sentences": 4,
+            "text_max_chars": 1500,
+            "types": {
+                "practical_case": {"emoji": "💡", "label": "Кейс"},
+                "tutorial": {"emoji": "📚", "label": "Туториал"},
+                "tool_release": {"emoji": "🛠", "label": "Инструмент"},
+                "research": {"emoji": "🔬", "label": "Research"},
+                "opinion": {"emoji": "💬", "label": "Мнение"},
+                "hype_news": {"emoji": "📰", "label": "Новость дня"},
+                "crypto": {"emoji": "₿", "label": "Крипто-тренд"},
+                "_default": {"emoji": "🔹", "label": ""},
+            },
             "quotas": {"practical": 5, "tools_research": 2, "hype": 1, "crypto": 0},
             "crypto_min_temperature": 8,
             "min_value_score": 5,
