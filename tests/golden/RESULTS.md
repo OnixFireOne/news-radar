@@ -19,3 +19,5 @@
 | 20260926T071557Z | openrouter.chat_completions | qwen/qwen3.8-max-0902 | ai_value-v2 | 5 | tool | 0.8055555555555556 | 1 | 0 | 0.20731 | 75.05408898500002 / 122.86332168799998 | missing cost: 0 calls |
 | 20260926T071648Z | openrouter.chat_completions | qwen/qwen3.7-flash | ai_value-v2 | 5 | tool | 0.8333333333333334 | 1 | 0 | 0.007201110000000001 | 89.04805577499998 / 111.57887086300002 | missing cost: 0 calls |
 | 20260926T072041Z | openrouter.decisions | ~typesafe/jev-latest | ai_value-v2 | 1 | jev | 0.7222222222222222 | 0 | 0 | 0.0023493960000000006 | 0.492871996999952 / 0.808902724999939 | missing cost: 0 calls |
+| 20260927T071646Z | openrouter.messages | anthropic/claude-haiku-4.5 | ai_value-v2 | 5 | tool | 0.8611111111111112 | 1 | 0 | 0.099999 | 17.386166038499994 / 18.98495724 | missing cost: 0 calls; candidates: value_candidates.jsonl |
+| 20260927T071711Z | openrouter.messages | anthropic/claude-haiku-4.5 | ai_value-v2 | 5 | tool | 0.8888888888888888 | 0 | 0 | 0.13878500000000002 | 20.45117994600001 / 22.81639976300002 | missing cost: 0 calls; candidates: value_candidates_fulltext.jsonl |

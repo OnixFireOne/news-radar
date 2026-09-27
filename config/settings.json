@@ -92,8 +92,9 @@
   "sources": {
     "max_age_hours": 72,
     "fulltext": {
-      "max_per_cycle": 20,
-      "max_per_feed": 5
+      "mode": "always",
+      "max_per_cycle": 60,
+      "max_per_feed": 15
     },
     "telegram": {
       "enabled": false

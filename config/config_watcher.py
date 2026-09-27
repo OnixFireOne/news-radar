@@ -76,7 +76,7 @@ DEFAULT_CONFIG = {
         # ТЗ #4 И2.1: fetch budget for FullTextFetcher — max_per_cycle across all
         # feeds/queries, max_per_feed so one feed early in iteration order can't
         # eat the whole cycle's budget.
-        "fulltext": {"max_per_cycle": 20, "max_per_feed": 5},
+        "fulltext": {"mode": "short_only", "max_per_cycle": 20, "max_per_feed": 5},
         # ТЗ #4 И3: Telegram is the crypto source, paused by config rather
         # than removed. Default True so an existing settings.json without this
         # key keeps prod collecting; read by collectors/telegram.py main().

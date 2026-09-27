@@ -55,6 +55,7 @@ class FullTextFetcher:
         self._fetches_this_cycle = 0
         self._fetches_this_feed: dict[str, int] = {}
         self._blocked_domains: set[str] = set()
+        self.last_capped: bool = False
 
     def new_cycle(self) -> None:
         """Call once at the start of each poll iteration to reset all per-cycle limits."""
@@ -69,6 +70,7 @@ class FullTextFetcher:
         per-feed fetch cap — it keeps one large feed from consuming the
         whole cycle's fetch budget before other feeds get a turn.
         """
+        self.last_capped = False
         domain = urlparse(url).netloc
 
         if domain in self._blocked_domains:
@@ -80,9 +82,11 @@ class FullTextFetcher:
             logger.debug(f"Domain {domain} still blocked for this cycle — skipping {url}")
             return None
         if self._fetches_this_cycle >= self._max_per_cycle:
+            self.last_capped = True
             logger.info(f"Full-text fetch cap reached ({self._max_per_cycle}/cycle) — skipping {url}")
             return None
         if self._fetches_this_feed.get(feed_key, 0) >= self._max_per_feed:
+            self.last_capped = True
             logger.info(f"Full-text fetch cap reached ({self._max_per_feed}/feed) for {feed_key} — skipping {url}")
             return None
 

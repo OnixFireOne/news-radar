@@ -43,6 +43,7 @@ class Args(Protocol):
     decisions_base_url: str
     decisions_path: str
     key_env: str
+    candidates: Path
 
 
 def parse_labels(text: str) -> dict[str, str]:
@@ -55,11 +56,13 @@ def parse_labels(text: str) -> dict[str, str]:
     return labels
 
 
-def load_items(limit: int | None = None) -> tuple[list[ValueItem], dict[str, str]]:
+def load_items(
+    limit: int | None = None, candidates: Path = ROOT / "value_candidates.jsonl",
+) -> tuple[list[ValueItem], dict[str, str]]:
     labels = parse_labels((ROOT / "LABELING.md").read_text(encoding="utf-8"))
     rows: list[dict[str, object]] = []
-    for name in ("value_candidates.jsonl", "synthetic.jsonl"):
-        for line in (ROOT / name).read_text(encoding="utf-8").splitlines():
+    for path in (candidates, ROOT / "synthetic.jsonl"):
+        for line in path.read_text(encoding="utf-8").splitlines():
             row: dict[str, object] = json.loads(line)
             rows.append(row)
     items: list[ValueItem] = []
@@ -105,7 +108,7 @@ def percentile(values: list[float], fraction: float) -> float | None:
 
 
 async def evaluate(args: Args) -> dict[str, object]:
-    items, labels = load_items(args.limit)
+    items, labels = load_items(args.limit, args.candidates)
     classifier = build_classifier(args)
     outcomes = await classifier.classify(items)
     calls = classifier.calls
@@ -171,6 +174,7 @@ async def evaluate(args: Args) -> dict[str, object]:
     result: dict[str, object] = {
         "date_utc": datetime.now(timezone.utc).isoformat(), "provider": args.provider,
         "impl": args.impl,
+        "candidates": args.candidates.name,
         "model": args.model, "prompt_version": AI_VALUE_PROMPT_VERSION,
         "batch_size": args.batch_size if args.impl == "llm" else 1,
         "structured": args.structured if args.impl == "llm" else "jev",
@@ -204,6 +208,7 @@ def main() -> None:
     parser.add_argument("--structured", choices=("tool", "text"), default="tool")
     parser.add_argument("--threshold", type=int, default=5)
     parser.add_argument("--limit", type=int)
+    parser.add_argument("--candidates", type=Path, default=ROOT / "value_candidates.jsonl")
     parser.add_argument("--catalog", type=Path, default=Path("/app/config/providers.json"))
     parser.add_argument("--out-dir", type=Path, default=ROOT / "runs")
     args = parser.parse_args()
@@ -230,7 +235,7 @@ def main() -> None:
     row = (f"| {stamp} | {args.provider} | {args.model} | {AI_VALUE_PROMPT_VERSION} | {args.batch_size if args.impl == 'llm' else 1} | "
            f"{args.structured if args.impl == 'llm' else 'jev'} | {accuracy} | {len(hype_violations)} | {result['broken']} | "
            f"{result['cost_usd']} | {latency_median} / {latency_p95} | missing cost: "
-           f"{result['calls_without_cost']} calls |\n")
+           f"{result['calls_without_cost']} calls; candidates: {args.candidates.name} |\n")
     with results_file.open("a", encoding="utf-8") as output:
         output.write(row)
     for key in ("accuracy", "accuracy_without_unfetchable", "unfetchable", "confusion", "hype_ge_8", "broken", "paths", "tokens_in", "tokens_out",

@@ -21,7 +21,7 @@ import os
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -105,6 +105,12 @@ async def run_collector(collector: BaseCollector, db_path: str) -> None:
 
 def build_collectors(sources_cfg: dict[str, Any], db_path: str | None = None) -> list[BaseCollector]:
     fulltext_cfg = sources_cfg.get("fulltext", {})
+    configured_mode = fulltext_cfg.get("mode", "short_only")
+    fulltext_mode: Literal["short_only", "always"] = "short_only"
+    if configured_mode == "always":
+        fulltext_mode = "always"
+    elif configured_mode != "short_only":
+        logger.warning("Unknown sources.fulltext.mode %r; using short_only", configured_mode)
     fetcher = FullTextFetcher(
         user_agent=DEFAULT_USER_AGENT,
         max_fetches_per_cycle=fulltext_cfg.get("max_per_cycle", 20),
@@ -119,6 +125,7 @@ def build_collectors(sources_cfg: dict[str, Any], db_path: str | None = None) ->
         collectors.append(
             RssCollector(
                 feeds=rss_cfg.get("feeds", []),
+                fulltext_mode=fulltext_mode,
                 poll_minutes=rss_cfg.get("poll_minutes", 60),
                 fetcher=fetcher,
                 max_age_hours=max_age_hours,

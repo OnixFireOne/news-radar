@@ -23,7 +23,7 @@ import html
 import logging
 import re
 from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncIterator, Callable
+from typing import Any, AsyncIterator, Callable, Literal
 
 import feedparser
 import httpx
@@ -56,11 +56,13 @@ class RssCollector(BaseCollector):
         fetcher: FullTextFetcher | None = None,
         max_age_hours: int = 72,
         is_known_url: Callable[[str], bool] | None = None,
+        fulltext_mode: Literal["short_only", "always"] = "short_only",
     ) -> None:
         self._feeds = feeds
         self._poll_seconds = poll_minutes * 60
         self._fetcher = fetcher or FullTextFetcher()
         self._max_age_hours = max_age_hours
+        self._fulltext_mode = fulltext_mode
         self._is_known_url = is_known_url or (lambda _url: False)
         self._seen_urls: set[str] = set()
         self._running = False
@@ -124,6 +126,7 @@ class RssCollector(BaseCollector):
 
         cutoff = datetime.now(timezone.utc) - timedelta(hours=self._max_age_hours)
         old_count = 0
+        deferred_count = 0
 
         for entry, link, timestamp in candidates:
             normalized_link = normalize_url(link)
@@ -145,9 +148,12 @@ class RssCollector(BaseCollector):
             raw_snippet = (entry.get("summary") or "").strip()
             snippet = _clean_snippet_html(raw_snippet)
             text = snippet
-            if len(snippet) < _MIN_SNIPPET_CHARS_FOR_FULL_FETCH:
+            if self._fulltext_mode == "always" or len(snippet) < _MIN_SNIPPET_CHARS_FOR_FULL_FETCH:
                 full_text = await self._fetcher.fetch(normalized_link, feed_key=feed_url)
-                if full_text:
+                if self._fetcher.last_capped is True:
+                    deferred_count += 1
+                    continue
+                if full_text and (self._fulltext_mode == "short_only" or len(full_text) > len(snippet)):
                     text = full_text
 
             if not text:
@@ -168,6 +174,8 @@ class RssCollector(BaseCollector):
                 timestamp=timestamp,
             )
 
+        if deferred_count:
+            logger.info("Deferred %s entries in feed %s due to full-text fetch caps", deferred_count, feed_url)
         if old_count:
             logger.info(f"Skipped {old_count} entries older than {self._max_age_hours}h in feed {feed_url}")
 
