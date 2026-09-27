@@ -10,7 +10,7 @@ import httpx
 import pytest
 
 from analyzer.knowledge_publisher import (
-    GitHubPublisher, KnowledgeDoc, blob_url, build_markdown, build_path,
+    GitHubPublisher, KnowledgeDoc, LocalPublisher, blob_url, build_markdown, build_path,
     generate_doc, publish_selected,
 )
 from analyzer.llm_client import LLMClient
@@ -160,3 +160,58 @@ async def test_input_limit_and_delimiter_neutralization() -> None:
     prompt = llm.complete_json.call_args.kwargs["user_prompt"]
     assert "text: 12345\n" in prompt and "SECRET" not in prompt
     assert prompt.count("<<<END ARTICLE 1>>>") == 1
+
+
+@pytest.mark.asyncio
+async def test_local_target_writes_md_without_token(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "")
+    monkeypatch.chdir(tmp_path)
+    path = str(tmp_path / "db.sqlite")
+    rows = seed(path)
+    llm = AsyncMock()
+    llm.complete_json.return_value = {"title": "Статья", "idea": "Суть", "conclusion": "Урок", "tags": ["ai", "agents"]}
+    cfg = {"knowledge": {"enabled": True, "targets": ["local"]}}
+    links = await publish_selected(llm, rows, cfg, None, path)
+    conn = get_db(path)
+    stored = conn.execute("SELECT md_path FROM analysis WHERE message_id=3").fetchone()[0]
+    conn.close()
+    written = tmp_path / stored
+    assert stored.startswith("knowledge/") and written.is_file()
+    assert written.read_text(encoding="utf-8").startswith("---\ntitle: \"Статья\"")
+    assert links["3"] == blob_url("OnixFireOne/news-radar", "main", stored)
+
+
+@pytest.mark.asyncio
+async def test_local_target_keeps_existing_file(tmp_path: Path) -> None:
+    target = LocalPublisher(tmp_path)
+    assert await target.publish("knowledge/a.md", "first", "m")
+    assert await target.publish("knowledge/a.md", "second", "m")
+    assert (tmp_path / "knowledge/a.md").read_text(encoding="utf-8") == "first"
+    assert not await target.publish("../escape.md", "x", "m")
+    assert not (tmp_path.parent / "escape.md").exists()
+
+
+@pytest.mark.asyncio
+async def test_failed_target_does_not_block_other(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "fake")
+    monkeypatch.chdir(tmp_path)
+    path = str(tmp_path / "db.sqlite")
+    rows = seed(path)
+    llm = AsyncMock()
+    llm.complete_json.return_value = {"title": "Статья", "idea": "Суть", "conclusion": "Урок", "tags": ["ai", "agents"]}
+    failing = AsyncMock(spec=GitHubPublisher)
+    failing.publish.return_value = False
+    monkeypatch.setattr("analyzer.knowledge_publisher.GitHubPublisher", lambda *args, **kwargs: failing)
+    cfg = {"knowledge": {"enabled": True, "targets": ["github", "local"]}}
+    links = await publish_selected(llm, rows, cfg, None, path)
+    assert "3" in links and failing.publish.await_count == 1
+    assert list((tmp_path / "knowledge").rglob("*.md"))
+
+
+@pytest.mark.asyncio
+async def test_github_target_without_token_is_skipped(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GITHUB_TOKEN", "")
+    llm = AsyncMock()
+    cfg = {"knowledge": {"enabled": True, "targets": ["github"]}}
+    assert await publish_selected(llm, seed(str(tmp_path / "db.sqlite")), cfg, None, str(tmp_path / "db.sqlite")) == {}
+    llm.complete_json.assert_not_awaited()

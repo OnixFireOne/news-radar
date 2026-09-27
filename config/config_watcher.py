@@ -33,6 +33,7 @@ DEFAULT_CONFIG = {
         "dir": "knowledge",
         "min_value_score": 6,
         "max_input_chars": 12000,
+        "targets": ["github"],  # "local" (md into ./knowledge, tests) | "github" (Contents API, prod)
     },
     "digest_templates": {
         "ai_value": {

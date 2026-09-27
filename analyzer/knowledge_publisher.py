@@ -8,8 +8,9 @@ from datetime import datetime
 import json
 import logging
 import os
+from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Protocol
 from urllib.parse import quote
 
 import httpx
@@ -81,6 +82,30 @@ def frame_article(row: Mapping[str, Any], source_id: str, max_chars: int) -> str
             f"<<<END ARTICLE {source_id}>>>")
 
 
+class KnowledgeTarget(Protocol):
+    async def publish(self, path: str, content: str, message: str) -> bool: ...
+
+
+class LocalPublisher:
+    """Test-mode target: writes md into the mounted working copy; the owner commits it."""
+
+    def __init__(self, root: str | Path = ".") -> None:
+        self.root = Path(root).resolve()
+
+    async def publish(self, path: str, content: str, message: str) -> bool:
+        try:
+            target = (self.root / path).resolve()
+            if not target.is_relative_to(self.root):
+                raise ValueError("path escapes knowledge root")
+            if not target.exists():
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_text(content, encoding="utf-8")
+            return True
+        except Exception:
+            logger.warning("Knowledge local write failed: %s", path)
+            return False
+
+
 class GitHubPublisher:
     def __init__(self, repo: str, branch: str, token: str,
                  client: httpx.AsyncClient | None = None, timeout: float = 30) -> None:
@@ -149,16 +174,33 @@ async def generate_doc(llm: LLMClient, row: Mapping[str, Any], cfg: Mapping[str,
 
 async def publish_selected(
     llm: LLMClient, rows: Sequence[Mapping[str, Any]], cfg: Mapping[str, Any],
-    publisher: GitHubPublisher | None, db_path: str,
+    publisher: KnowledgeTarget | None, db_path: str,
 ) -> dict[str, str]:
+    """Generate md once per article and publish it to every target in knowledge.targets.
+
+    An explicit ``publisher`` replaces the configured targets and is treated as GitHub.
+    """
     knowledge = cfg.get("knowledge", {})
-    token = os.getenv("GITHUB_TOKEN", "").strip()
-    if not knowledge.get("enabled", False) or not token:
-        logger.info("Knowledge disabled or token missing: published=0 reused=0 failed=0")
+    if not knowledge.get("enabled", False):
+        logger.info("Knowledge disabled: published=0 reused=0 failed=0")
         return {}
     repo = str(knowledge.get("repo", "OnixFireOne/news-radar"))
     branch = str(knowledge.get("branch", "main"))
-    active_publisher = publisher or GitHubPublisher(repo, branch, token)
+    token = os.getenv("GITHUB_TOKEN", "").strip()
+    names = ["github"] if publisher is not None else [str(name) for name in knowledge.get("targets", ["github"])]
+    targets: list[KnowledgeTarget] = []
+    for name in names:
+        if name == "local":
+            targets.append(LocalPublisher())
+        elif name == "github" and token:
+            targets.append(publisher or GitHubPublisher(repo, branch, token))
+        elif name == "github":
+            logger.info("Knowledge target github skipped: GITHUB_TOKEN missing")
+        else:
+            logger.warning("Unknown knowledge target: %s", name)
+    if not targets:
+        logger.info("Knowledge has no usable targets: published=0 reused=0 failed=0")
+        return {}
     semaphore = asyncio.Semaphore(max(1, int(cfg.get("llm_concurrency", 3))))
     counts = {"published": 0, "reused": 0, "failed": 0}
     links: dict[str, str] = {}
@@ -182,7 +224,11 @@ async def publish_selected(
                         counts["failed"] += 1
                         return
                     path = build_path(doc, str(knowledge.get("dir", "knowledge")))
-                    if not await active_publisher.publish(path, build_markdown(doc), f"docs(knowledge): add article {doc.message_id}"):
+                    content = build_markdown(doc)
+                    message = f"docs(knowledge): add article {doc.message_id}"
+                    # Sequential on purpose: one article's targets never race each other.
+                    delivered = [await target.publish(path, content, message) for target in targets]
+                    if not any(delivered):
                         counts["failed"] += 1
                         return
                     conn = get_db(db_path)

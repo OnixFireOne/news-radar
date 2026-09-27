@@ -39,12 +39,13 @@
   "analysis_profile": "ai_value",
   "digest_template": "ai_value",
   "knowledge": {
-    "enabled": false,
+    "enabled": true,
     "repo": "OnixFireOne/news-radar",
     "branch": "main",
     "dir": "knowledge",
     "min_value_score": 6,
-    "max_input_chars": 12000
+    "max_input_chars": 12000,
+    "targets": ["local"]
   },
   "digest_templates": {
     "ai_value": {

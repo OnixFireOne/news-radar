@@ -172,6 +172,9 @@ def _log_dispatch(self, event_type, sent_to, status, payload_preview="", http_st
 
 - Для каждой отобранной статьи с `value_score ≥ knowledge.min_value_score` — отдельный вызов `KNOWLEDGE_MD_PROMPT_AI_VALUE` (`task="knowledge"`, в каталоге `openai.chat_completions` → gpt-6-sol), вход до `knowledge.max_input_chars`.
 - md: фронтматтер по р.5 спеки + `## Идея` / `## Вывод`. Путь `knowledge/YYYY/MM/YYYY-MM-DD-<slug>-<message_id>.md`, slug — транслит заголовка.
-- Пуш — GitHub Contents API (`PUT /repos/{repo}/contents/{path}`), токен `GITHUB_TOKEN`; 422 «уже есть» считается успехом. Путь пишется в `analysis.md_path`; если он уже есть — ни LLM, ни пуша, ссылка переиспользуется.
-- `knowledge.enabled: false` или нет токена → публикации нет, строка `Knowledge ...` в логе. Токен в лог не пишется никогда.
-- Каждый файл — отдельный коммит в ветку `knowledge.branch` (по умолчанию `main` этого репозитория): локальную `knowledge/` подтягивать `git pull`.
+- Площадки — список `knowledge.targets` (И4.1), md генерируется один раз и уходит на каждую по очереди:
+  - `local` — режим тестов: файл пишется в `./knowledge/` рабочей копии (том `./knowledge:/app/knowledge` у `analyzer` и `news-radar-api`), токен не нужен; существующий файл не перезаписывается. В GitHub попадает обычным коммитом владельца.
+  - `github` — прод: GitHub Contents API (`PUT /repos/{repo}/contents/{path}`), токен `GITHUB_TOKEN`; 422 «уже есть» считается успехом. Нет токена → площадка пропускается (INFO), остальные работают.
+- Статья считается опубликованной, если её приняла хотя бы одна площадка. Путь пишется в `analysis.md_path`; если он уже есть — ни LLM, ни публикации, ссылка переиспользуется. Ссылка «разбор (md)» — всегда blob URL в `knowledge.repo` (для `local` — будущий, после коммита).
+- `knowledge.enabled: false` или нет ни одной рабочей площадки → публикации нет, строка `Knowledge ...` в логе. Токен в лог не пишется никогда.
+- `github`: каждый файл — отдельный коммит в ветку `knowledge.branch` (по умолчанию `main` этого репозитория): локальную `knowledge/` подтягивать `git pull`.

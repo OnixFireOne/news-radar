@@ -91,6 +91,7 @@ services:
       - ./tests:/app/tests
       - ./pytest.ini:/app/pytest.ini
       - ./mypy.ini:/app/mypy.ini
+      - ./knowledge:/app/knowledge   # knowledge.targets "local": md for tests, committed by the owner
     restart: unless-stopped
     networks:
       - news-radar-network
@@ -120,6 +121,7 @@ services:
       - ./analyzer:/app/analyzer
       - ./database:/app/database
       - ./llm_core:/app/llm_core
+      - ./knowledge:/app/knowledge   # knowledge.targets "local": md for tests, committed by the owner
     restart: unless-stopped
     networks:
       - news-radar-network
