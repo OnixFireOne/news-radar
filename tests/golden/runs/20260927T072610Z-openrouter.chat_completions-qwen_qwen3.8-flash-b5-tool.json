@@ -1,0 +1,441 @@
+{
+  "date_utc": "2026-09-27T07:26:10.838881+00:00",
+  "provider": "openrouter.chat_completions",
+  "impl": "llm",
+  "candidates": "value_candidates_fulltext.jsonl",
+  "model": "qwen/qwen3.8-flash",
+  "prompt_version": "ai_value-v2",
+  "batch_size": 5,
+  "structured": "tool",
+  "threshold": 5,
+  "accuracy": 0.0,
+  "accuracy_without_unfetchable": 0.0,
+  "unfetchable": [
+    "g22",
+    "g32"
+  ],
+  "evaluated": 36,
+  "confusion": {
+    "valuable/broken": 18,
+    "not_valuable/broken": 18
+  },
+  "hype_ge_8": [],
+  "mismatches": [],
+  "broken": 36,
+  "paths": {
+    "none": 36
+  },
+  "tokens_in": 0,
+  "tokens_out": 0,
+  "cost_usd": null,
+  "calls_without_cost": 8,
+  "cost_sources": {
+    "none": 8
+  },
+  "latency_median": 2.634518898999996,
+  "latency_p95": 32.199521597,
+  "adversarial": [
+    {
+      "gid": "g20",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    }
+  ],
+  "items": [
+    {
+      "gid": "g01",
+      "label": "ценно",
+      "path": "none",
+      "error": "LLMRetryExhaustedError: LLM request to https://openrouter.ai/api/v1 failed after all retries: Client error '429 Too Many Requests' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "verdict": null
+    },
+    {
+      "gid": "g02",
+      "label": "хайп",
+      "path": "none",
+      "error": "LLMRetryExhaustedError: LLM request to https://openrouter.ai/api/v1 failed after all retries: Client error '429 Too Many Requests' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "verdict": null
+    },
+    {
+      "gid": "g03",
+      "label": "шум",
+      "path": "none",
+      "error": "LLMRetryExhaustedError: LLM request to https://openrouter.ai/api/v1 failed after all retries: Client error '429 Too Many Requests' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "verdict": null
+    },
+    {
+      "gid": "g04",
+      "label": "ценно",
+      "path": "none",
+      "error": "LLMRetryExhaustedError: LLM request to https://openrouter.ai/api/v1 failed after all retries: Client error '429 Too Many Requests' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "verdict": null
+    },
+    {
+      "gid": "g05",
+      "label": "шум",
+      "path": "none",
+      "error": "LLMRetryExhaustedError: LLM request to https://openrouter.ai/api/v1 failed after all retries: Client error '429 Too Many Requests' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429",
+      "verdict": null
+    },
+    {
+      "gid": "g06",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g07",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g08",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g09",
+      "label": "хайп",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g10",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g11",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g12",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g13",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g14",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g15",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g16",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g17",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g18",
+      "label": "хайп",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g19",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g20",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g22",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g23",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g25",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g26",
+      "label": "хайп",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g27",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g29",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g32",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g33",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "g34",
+      "label": "ценно",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+      "verdict": null
+    }
+  ],
+  "calls": [
+    {
+      "latency_seconds": 32.199521597,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.chat_completions",
+      "model": "qwen/qwen3.8-flash",
+      "path": "none",
+      "error": "LLMRetryExhaustedError: LLM request to https://openrouter.ai/api/v1 failed after all retries: Client error '429 Too Many Requests' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/429"
+    },
+    {
+      "latency_seconds": 0.5697434830000034,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.chat_completions",
+      "model": "qwen/qwen3.8-flash",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 0.6178112139999996,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.chat_completions",
+      "model": "qwen/qwen3.8-flash",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 4.555907140999999,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.chat_completions",
+      "model": "qwen/qwen3.8-flash",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 4.556569535000001,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.chat_completions",
+      "model": "qwen/qwen3.8-flash",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 19.718936738000004,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.chat_completions",
+      "model": "qwen/qwen3.8-flash",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 0.543967459000001,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.chat_completions",
+      "model": "qwen/qwen3.8-flash",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    },
+    {
+      "latency_seconds": 0.7131306569999936,
+      "prompt_tokens": null,
+      "completion_tokens": null,
+      "cost_usd": null,
+      "cost_source": "none",
+      "provider": "openrouter.chat_completions",
+      "model": "qwen/qwen3.8-flash",
+      "path": "none",
+      "error": "HTTPStatusError: Client error '400 Bad Request' for url 'https://openrouter.ai/api/v1/chat/completions'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400"
+    }
+  ],
+  "confidence_accuracy": {},
+  "pass": false
+}

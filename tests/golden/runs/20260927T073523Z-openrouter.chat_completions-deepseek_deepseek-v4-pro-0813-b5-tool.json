@@ -1,0 +1,441 @@
+{
+  "date_utc": "2026-09-27T07:35:23.760035+00:00",
+  "provider": "openrouter.chat_completions",
+  "impl": "llm",
+  "candidates": "value_candidates_fulltext.jsonl",
+  "model": "deepseek/deepseek-v4-pro-0813",
+  "prompt_version": "ai_value-v2",
+  "batch_size": 5,
+  "structured": "tool",
+  "threshold": 5,
+  "accuracy": 0.0,
+  "accuracy_without_unfetchable": 0.0,
+  "unfetchable": [
+    "g22",
+    "g32"
+  ],
+  "evaluated": 36,
+  "confusion": {
+    "valuable/broken": 18,
+    "not_valuable/broken": 18
+  },
+  "hype_ge_8": [],
+  "mismatches": [],
+  "broken": 36,
+  "paths": {
+    "text": 36
+  },
+  "tokens_in": 51601,
+  "tokens_out": 36173,
+  "cost_usd": 0.038132886719999995,
+  "calls_without_cost": 0,
+  "cost_sources": {
+    "provider": 8
+  },
+  "latency_median": 82.54904157300001,
+  "latency_p95": 103.56063957900001,
+  "adversarial": [
+    {
+      "gid": "g20",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    }
+  ],
+  "items": [
+    {
+      "gid": "g01",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g02",
+      "label": "хайп",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g03",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g04",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g05",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g06",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g07",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g08",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g09",
+      "label": "хайп",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g10",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g11",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g12",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g13",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g14",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g15",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g16",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g17",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g18",
+      "label": "хайп",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g19",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g20",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g22",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g23",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g25",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g26",
+      "label": "хайп",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g27",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g29",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g32",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g33",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g34",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    }
+  ],
+  "calls": [
+    {
+      "latency_seconds": 70.377427953,
+      "prompt_tokens": 6722,
+      "completion_tokens": 4123,
+      "cost_usd": 0.0046620222,
+      "cost_source": "provider",
+      "provider": "openrouter.chat_completions",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "path": "text",
+      "error": "ValueError: no JSON object in response"
+    },
+    {
+      "latency_seconds": 103.56063957900001,
+      "prompt_tokens": 7144,
+      "completion_tokens": 6118,
+      "cost_usd": 0.0062266116,
+      "cost_source": "provider",
+      "provider": "openrouter.chat_completions",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "path": "text",
+      "error": "ValueError: no JSON object in response"
+    },
+    {
+      "latency_seconds": 78.215282446,
+      "prompt_tokens": 7908,
+      "completion_tokens": 4623,
+      "cost_usd": 0.0053179434,
+      "cost_source": "provider",
+      "provider": "openrouter.chat_completions",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "path": "text",
+      "error": "ValueError: no JSON object in response"
+    },
+    {
+      "latency_seconds": 99.04320367500003,
+      "prompt_tokens": 7980,
+      "completion_tokens": 6047,
+      "cost_usd": 0.0063787482,
+      "cost_source": "provider",
+      "provider": "openrouter.chat_completions",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "path": "text",
+      "error": "ValueError: no JSON object in response"
+    },
+    {
+      "latency_seconds": 86.88280070000002,
+      "prompt_tokens": 5515,
+      "completion_tokens": 5235,
+      "cost_usd": 0.00493981968,
+      "cost_source": "provider",
+      "provider": "openrouter.chat_completions",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "path": "text",
+      "error": "ValueError: no JSON object in response"
+    },
+    {
+      "latency_seconds": 89.80982515400001,
+      "prompt_tokens": 8211,
+      "completion_tokens": 5144,
+      "cost_usd": 0.00553151628,
+      "cost_source": "provider",
+      "provider": "openrouter.chat_completions",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "path": "text",
+      "error": "ValueError: no JSON object in response"
+    },
+    {
+      "latency_seconds": 59.39344613700007,
+      "prompt_tokens": 6960,
+      "completion_tokens": 3388,
+      "cost_usd": 0.00393957648,
+      "cost_source": "provider",
+      "provider": "openrouter.chat_completions",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "path": "text",
+      "error": "ValueError: no JSON object in response"
+    },
+    {
+      "latency_seconds": 29.203981849,
+      "prompt_tokens": 1161,
+      "completion_tokens": 1495,
+      "cost_usd": 0.00113664888,
+      "cost_source": "provider",
+      "provider": "openrouter.chat_completions",
+      "model": "deepseek/deepseek-v4-pro-0813",
+      "path": "text",
+      "error": "ValueError: no JSON object in response"
+    }
+  ],
+  "confidence_accuracy": {},
+  "pass": false
+}
