@@ -70,7 +70,7 @@
 - `1752095` feat(tz4-i4.1): knowledge targets with local test mode
 - `6df89cc` test(tz4-i4.1): pin current analysis and digest behaviour before refactor
 - `abaab16` refactor(tz4-i4.1): split analysis and digest into registered bricks
-- шаг 2b — `feat(tz4-i4.1): categories and named digests with time-of-day schedules`
+- `934c301` feat(tz4-i4.1): categories and named digests with time-of-day schedules
 
 ## Новые зависимости
 
