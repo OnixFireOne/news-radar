@@ -1,6 +1,6 @@
 # ТЗ #4 — И4.1: категории и дайджесты (р.3.3) + площадки базы знаний (р.5)
 
-**Статус:** в работе с 27.09. Шаг 1 сделан; шаги 2a/2b — по плану ниже, код пишет Codex.
+**Статус:** в работе с 27.09. Шаги 1 и 2a сделаны; 2b — следующий, код пишет Codex.
 
 ## Решения владельца 27.09
 
@@ -54,9 +54,22 @@
 - **docs:** `06_digest.md`, `09_config_hot_reload.md`.
 - Проверено: API-контейнер импортируется и пишет в `./knowledge` хоста.
 
+## Шаг 2a — кирпичики без изменения поведения (27.09)
+
+- **Фаза A (Codex, `6df89cc`)** — `tests/test_pipeline_characterization.py`: 8 тестов, фиксирующих текущее поведение `generate_digest` (classic по 4 уровням с точным промптом, spoiler, raw, force/hours/since, эмоциональный баланс, OpenClaw) и `analyze_pending` (crypto и ai_value: строки `analysis`, флаги, Chroma, алерты, подписки). Прогнаны на старом коде до рефакторинга. Оркестратор поправил 2 неверных ожидания Codex (fill-уровень берёт одну запись на тему; `has_outcome` по дефолту 0) и одну ошибку mypy.
+- **Фаза B (Codex + правка оркестратора)** — пакет `analyzer/pipeline/`: `registry.py` (реестры `ANALYZERS` / `HOOKS` / `SELECTORS` / `EXTRAS` / `WRITERS`), `context.py` (`AnalyzeContext`, `DigestContext`, `CategorySpec`), `analyzers.py`, `store.py`, `hooks.py`, `selectors.py`, `extras.py`, `writers.py`, `legacy.py`. `analyze_pending` / `generate_digest` — дирижёры (−300 строк в `analyzer.py`). Тест `tests/test_pipeline_registry.py`.
+- Правка оркестратора: у Codex extras (база знаний) запускались изнутри writer'а `ai_value` — кирпичики снова сцеплены. Writer разделён на `compose` (LLM-черновик) и `render`; дирижёр зовёт `compose → extras → render`. Порядок вызовов прежний (его закрепляет `test_digest_ai_value`: сначала текст дайджеста, потом md).
+- Реэкспорт `LLMValueClassifier` / `publish_selected` в `analyzer.analyzer` помечен явно (strict mypy): существующие тесты подменяют их там.
+- `renderer.py`, `prompts.py` и существующие тесты не тронуты.
+- **Закреплено как есть (сменится в 2b):** алерты и подписки срабатывают и для записей `ai_value`; после `force=True` запись, помеченная `in_digest=2`, следующим вызовом сбрасывается в 0. Трекер трендов не тронут.
+- **Решение владельца 27.09:** имя кирпичика `ai_value` не переименовываем (категория — `articles`, анализатор/шаблон — `ai_value`).
+- **Кандидаты в `extras` для 2b:** кросс-дедуп против прошлых дайджестов и эмоциональный баланс — по сути крипто-шаги, пока в дирижёре.
+
 ## Коммиты
 
-- шаг 1 — см. `git log` (`feat(tz4-i4.1): knowledge targets with local test mode`).
+- `1752095` feat(tz4-i4.1): knowledge targets with local test mode
+- `6df89cc` test(tz4-i4.1): pin current analysis and digest behaviour before refactor
+- шаг 2a — `refactor(tz4-i4.1): split analysis and digest into registered bricks`
 
 ## Новые зависимости
 
@@ -70,7 +83,7 @@
 
 ## Что НЕ сделано / отложено
 
-- Шаги 2a и 2b.
+- Шаг 2b.
 - Два анализатора на одну запись (общий флаг `analyzed`, общая таблица `analysis`) — не нужно, пока у записи одна категория; при третьем анализаторе со своими полями — статус «запись × анализатор» и `analysis.extra` (JSON).
 - Смесь категорий в одном сообщении (по спеке — в планах).
 
@@ -87,3 +100,4 @@ docker compose run --rm --no-deps news-radar-api python -c "import api.main; pri
 ```
 
 **Результат шага 1 (27.09):** 199 passed · mypy `Success: no issues found in 38 source files` · импорт API ok.
+**Результат шага 2a (27.09):** 214 passed · mypy `Success: no issues found in 49 source files` · импорт API ok.

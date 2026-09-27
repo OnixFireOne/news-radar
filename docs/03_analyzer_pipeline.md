@@ -153,3 +153,20 @@ if temp >= breaking_alert_min_temp and self.cfg.get("instant_alerts_temperature"
   4. Дубль (sim > 0.90) копирует value-поля из строки `analysis` оригинала; если у оригинала их нет (анализирован профилем `crypto`) — классифицируется заново.
   5. Одна строка лога на цикл: число вызовов, токены, цена, суммарная задержка.
 - `content_type` вне перечисления → `opinion`, `topic` вне перечисления → `other` (WARNING), иначе статья повторялась бы вечно.
+
+## Кирпичики конвейера: `analyzer/pipeline/` (ТЗ #4, И4.1 шаг 2a)
+
+Анализ и сборка дайджеста разложены на функции в реестрах по имени (`pipeline/registry.py`). `analyze_pending` и `generate_digest` — дирижёры: выбирают набор кирпичиков (`CategorySpec`) и зовут их по имени. Новый анализатор/отбор/шаблон = функция с `@<REGISTRY>.register("имя")`, ядро не меняется.
+
+| Реестр | Имена | Модуль | Что делает |
+|---|---|---|---|
+| `ANALYZERS` | `crypto`, `ai_value` | `analyzers.py` | батч записей → результаты анализа (крипто-промпт / классификатор ценности) |
+| `HOOKS` | `alerts`, `subscriptions` | `hooks.py` | побочные эффекты после записи (мгновенный алерт, совпадение подписки); не для рекламы |
+| `SELECTORS` | `tiers`, `quotas` | `selectors.py` | отбор в дайджест: 4 уровня ТЗ #3 / квоты `value_funnel` |
+| `EXTRAS` | `knowledge` | `extras.py` | обогащение дайджеста (md базы знаний → `artifacts["md_map"]`) |
+| `WRITERS` | `classic`, `spoiler`, `ai_value` | `writers.py` | две фазы: `compose` (LLM-черновик) и `render` (текст + parse_mode) |
+
+- Запись результатов анализа — общая, `store.py` (транзакция на запись, Chroma, флаги `messages`), хуки вызываются оттуда.
+- Порядок дайджеста: окно → выборка → семантический дедуп → `select` → кросс-дедуп и эмоциональный баланс → raw/OpenClaw → `compose` → `extras` → `render` → отметки `in_digest`. Extras после черновика: упавший черновик не тратит md-вызовы.
+- Пока блоков `categories`/`digests` нет, набор выбирает `pipeline/legacy.py::resolve_legacy` по старым ключам (`analysis_profile`, `digest_template`) — поведение как до рефакторинга (закреплено `tests/test_pipeline_characterization.py`).
+- Модуль `analyzer.analyzer` реэкспортирует `LLMValueClassifier` и `publish_selected`: кирпичики берут их оттуда, чтобы подмены в тестах действовали.
