@@ -54,7 +54,7 @@
     "dir": "knowledge",
     "min_value_score": 6,
     "max_input_chars": 12000,
-    "targets": ["local"]
+    "targets": ["github"]
   },
   "digest_templates": {
     "ai_value": {
