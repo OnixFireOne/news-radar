@@ -53,7 +53,8 @@
     "branch": "main",
     "dir": "knowledge",
     "min_value_score": 6,
-    "max_input_chars": 12000,
+    "max_input_chars": 24000,
+    "format": "full",
     "targets": ["github"],
     "batch_commit": true
   },

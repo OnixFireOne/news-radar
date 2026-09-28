@@ -501,3 +501,16 @@ pytest 245 passed, 10 skipped · mypy `Success: no issues found in 66 source fil
 
 **9. Исполнитель:** Codex по брифу (крупная правка `analyzer.py` + `value_funnel.py`), Claude проверяет диф, гоняет
 приёмку, коммитит. Новых зависимостей нет. **Расхождение со спекой:** р.3.2 (окно и один выпуск) — правит владелец.
+
+### Разбор md — структурированный пересказ (28.09, решение владельца)
+
+- Владелец: «Идея/Вывод» слишком коротки, разбор должен заменять чтение статьи. `analyzer/prompts.py` —
+  `KNOWLEDGE_MD_PROMPT_FULL` (`knowledge-v2`), старый промпт не тронут. `knowledge_publisher.py`: `build_full_body`
+  (8 разделов, пустые пропускаются; без «Коротко» или < 3 пунктов «Главного» — отказ), `KnowledgeDoc.body`,
+  флаг `knowledge.format` (`brief` в `DEFAULT_CONFIG`, `full` в `settings.json`), `max_input_chars` 24000 в
+  `settings.json`. Тесты `tests/test_knowledge_publisher_full.py` (6); старые тесты не менялись.
+- Образцы на 3 статьях (id 114, 121, 127; `data/knowledge-samples/`, вне git): 612–733 слова, ~$0.03 за разбор
+  (оценка по токенам: скрипт образцов не пишет `llm_usage`). По просьбе владельца добавлено округление цифр —
+  проверено повторной генерацией 114.
+- pytest 260 passed, 12 skipped · mypy `Success: no issues found in 69 source files`. Новых зависимостей нет.
+  Спека v1.15 (р.5) — внёс исполнитель по поручению владельца.

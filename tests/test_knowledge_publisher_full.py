@@ -1,0 +1,60 @@
+"""knowledge.format "full": structured retelling instead of Идея/Вывод."""
+from __future__ import annotations
+
+from typing import Any
+from unittest.mock import AsyncMock
+
+import pytest
+
+from analyzer.knowledge_publisher import build_full_body, build_markdown, generate_doc
+
+ROW = {"id": 7, "text": "Article", "url": "https://example.org/a", "collected_at": "2026-09-28 10:00:00",
+       "source_type": "rss", "content_type": "tutorial", "value_score": 8, "topic": "agents"}
+
+
+def answer(**overrides: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {
+        "title": "Статья", "tldr": "Суть статьи.", "context": "", "key_points": ["Один", "Два", "Три"],
+        "how": "Шаги.", "results": "", "limitations": "Не проверено.", "takeaways": ["Урок"],
+        "read_original_if": "Нужен код.", "tags": ["ai", "agents"],
+    }
+    return {**base, **overrides}
+
+
+def test_body_skips_empty_sections_and_keeps_order() -> None:
+    body = build_full_body(answer())
+    headings = [line for line in body.splitlines() if line.startswith("## ")]
+    assert headings == ["## Коротко", "## Главное", "## Как сделано", "## Ограничения",
+                        "## Что взять себе", "## Читать оригинал, если…"]
+    assert "## Главное\n- Один\n- Два\n- Три" in body
+
+
+@pytest.mark.parametrize("bad", [{"tldr": ""}, {"key_points": ["Один", "Два"]}, {"key_points": "текст"}])
+def test_body_requires_tldr_and_key_points(bad: dict[str, Any]) -> None:
+    with pytest.raises(ValueError):
+        build_full_body(answer(**bad))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("fmt", ["full", "brief"])
+async def test_generate_doc_uses_format(fmt: str) -> None:
+    llm = AsyncMock()
+    llm.complete_json.return_value = (answer() if fmt == "full"
+                                      else {"title": "Статья", "idea": "Идея", "conclusion": "Вывод", "tags": ["ai", "agents"]})
+    doc = await generate_doc(llm, ROW, {"format": fmt, "max_input_chars": 24000})
+    assert doc is not None
+    prompt = llm.complete_json.call_args.kwargs["user_prompt"]
+    md = build_markdown(doc)
+    assert md.startswith('---\ntitle: "Статья"\nsource_url: "https://example.org/a"')
+    if fmt == "full":
+        assert "read_original_if" in prompt and "## Коротко\nСуть статьи." in md and "## Идея" not in md
+        assert (doc.idea, doc.conclusion) == ("Суть статьи.", "Урок")
+    else:
+        assert "read_original_if" not in prompt and "## Идея\nИдея\n\n## Вывод\nВывод" in md
+
+
+@pytest.mark.asyncio
+async def test_full_format_rejects_answer_without_key_points() -> None:
+    llm = AsyncMock()
+    llm.complete_json.return_value = answer(key_points=[])
+    assert await generate_doc(llm, ROW, {"format": "full"}) is None

@@ -171,7 +171,7 @@ def _log_dispatch(self, event_type, sent_to, status, payload_preview="", http_st
 ## База знаний: `analyzer/knowledge_publisher.py` (ТЗ #4, И4)
 
 - Для каждой отобранной статьи с `value_score ≥ knowledge.min_value_score` — отдельный вызов `KNOWLEDGE_MD_PROMPT_AI_VALUE` (`task="knowledge"`, в каталоге `openai.chat_completions` → gpt-6-sol), вход до `knowledge.max_input_chars`.
-- md: фронтматтер по р.5 спеки + `## Идея` / `## Вывод`. Путь `knowledge/YYYY/MM/YYYY-MM-DD-<slug>-<message_id>.md`, slug — транслит заголовка.
+- md: фронтматтер по р.5 спеки + тело по `knowledge.format`: `brief` (дефолт кода) — `## Идея` / `## Вывод` (`KNOWLEDGE_MD_PROMPT_AI_VALUE`); `full` (в `settings.json` с 28.09) — структурированный пересказ `KNOWLEDGE_MD_PROMPT_FULL` (`knowledge-v2`): Коротко · Контекст · Главное · Как сделано · Результаты · Ограничения · Что взять себе · Читать оригинал, если…; пустые разделы пропускаются, без «Коротко» или хотя бы 3 пунктов «Главного» — генерация считается неудачной. Цифры округляются до значимых, версии/цены/настройки — точно. Путь `knowledge/YYYY/MM/YYYY-MM-DD-<slug>-<message_id>.md`, slug — транслит заголовка.
 - Площадки — список `knowledge.targets` (И4.1), md генерируется один раз и уходит на каждую по очереди:
   - `local` — режим тестов: файл пишется в `./knowledge/` рабочей копии (том `./knowledge:/app/knowledge` у `analyzer` и `news-radar-api`), токен не нужен; существующий файл не перезаписывается. В GitHub попадает обычным коммитом владельца.
   - `github` — прод: GitHub Contents API (`PUT /repos/{repo}/contents/{path}`), токен `GITHUB_TOKEN`; 422 «уже есть» считается успехом. Нет токена → площадка пропускается (INFO), остальные работают.

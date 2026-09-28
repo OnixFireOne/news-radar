@@ -37,6 +37,7 @@ DEFAULT_CONFIG = {
         "max_input_chars": 12000,
         "targets": ["github"],  # "local" (md into ./knowledge, tests) | "github" (Contents API, prod)
         "batch_commit": False,  # github: one commit per digest run instead of one per article
+        "format": "brief",  # "brief" (Идея/Вывод) | "full" (structured retelling, knowledge-v2)
     },
     "digest_templates": {
         "ai_value": {
