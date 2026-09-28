@@ -504,6 +504,10 @@ async def perform_scheduled_digest(app: Application, name: str | None = None) ->
         await send_digest_stats(app.bot, digest["stats"])
 
 
+# A digest slot missed while the host slept still runs on wake-up, once, if within this window.
+DIGEST_MISFIRE_GRACE_SECONDS = 6 * 3600
+
+
 async def scheduled_digest_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await perform_scheduled_digest(ctx.application, ctx.job.data)
 
@@ -525,7 +529,9 @@ async def refresh_digest_schedule(app: Application) -> None:
             job.schedule_removal()
     for name, slot in slots:
         app.job_queue.run_daily(scheduled_digest_job, time=slot, data=name,
-                                name=f"digest:{name if name is not None else 'legacy'}:{slot:%H:%M}")
+                                name=f"digest:{name if name is not None else 'legacy'}:{slot:%H:%M}",
+                                job_kwargs={"misfire_grace_time": DIGEST_MISFIRE_GRACE_SECONDS,
+                                            "coalesce": True})
     app.bot_data["digest_slots"] = keys
     logger.info("Digest schedule refreshed: %s", keys)
 
