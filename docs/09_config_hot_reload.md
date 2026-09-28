@@ -123,7 +123,7 @@ def load_topics(self) -> dict:
 ## Ключи ТЗ #4, И3 шаг 5
 
 - `categories.<имя>.analyzer` — `"crypto"` | `"ai_value"`, читается на каждом цикле анализа (заменил `analysis_profile` в И4.1).
-- `knowledge` (И4) — `enabled` (дефолт false), `repo`, `branch`, `dir`, `min_value_score`, `max_input_chars`, `targets` (И4.1: `["github"]` по умолчанию, в `settings.json` — `["local"]`, см. `06_digest.md`); токен — env `GITHUB_TOKEN`. Читается на каждом дайджесте.
+- `knowledge` (И4) — `enabled` (дефолт false), `repo`, `branch`, `dir`, `min_value_score`, `max_input_chars`, `targets` (И4.1: `["github"]` по умолчанию и в `settings.json` с 28.09, см. `06_digest.md`), `batch_commit` (дефолт `false`, в `settings.json` — `true`: один коммит на прогон); токен — env `GITHUB_TOKEN`. Читается на каждом дайджесте.
 - `digest_templates.ai_value` — квоты воронки, с И4 ещё `types` (эмодзи и метка по `content_type`), `show_md_link`, `title_max_words`, `summary_max_sentences`, `text_max_chars`. Из-за слияния только верхнего уровня блок продублирован целиком и в `DEFAULT_CONFIG`, и в `settings.json`: если в `settings.json` есть `digest_templates`, дефолтный блок не подмешивается.
 
 ## Категории и расписание (И4.1, шаг 2b)

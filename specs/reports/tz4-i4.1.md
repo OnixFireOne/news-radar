@@ -438,3 +438,20 @@ pytest 245 passed, 10 skipped · mypy `Success: no issues found in 66 source fil
   блокчейн-студия); спорная одна — id 81 (MCP, оценка 6). 50 вернулись в отбор, из них 8 с оценкой 7–8
   (Gradio Workflow, skillmem, GLM → Jev, OTUS/MLOps, DealMind, Keva). По базе теперь `is_ad=1` у 19 из 240 (8%).
 - Большинство вернувшихся статей от 11.09 — вне окна дайджеста; в выпуски попадут только свежие.
+
+### Сон мака и один коммит на выпуск (28.09, по решению владельца)
+
+- **Сон:** PTB `run_daily` без `misfire_grace_time` → APScheduler выкидывает задание, опоздавшее больше чем на 1 с;
+  если в 09:10 мак спит, выпуск за день пропадал молча. `bot/telegram_bot.py`: `job_kwargs` —
+  `misfire_grace_time` 6 ч, `coalesce`. Тест `tests/test_bot_misfire.py` (параметры задания + настоящий
+  планировщик догоняет проспанный запуск один раз). Коммит `c75e172`. Не покрыто: перезапуск бота после 09:10.
+- **`knowledge.targets: ["github"]`** вместо `["local"]`; `GITHUB_TOKEN` у владельца (fine-grained, Contents: write
+  на news-radar), право push проверено.
+- **`knowledge.batch_commit`** (дефолт `false`, в `settings.json` — `true`): все md прогона одним коммитом через
+  Git Data API, повтор при сдвинутой ветке (422) до 3 раз. Флаг, а не замена: `test_digest_ai_value.py` подменяет
+  `GitHubPublisher.publish` и идёт путём из конфига — с флагом по умолчанию тест не менялся. Тесты
+  `tests/test_knowledge_batch.py` (порядок вызовов, повтор, сбой дерева, прогон publish_selected: один коммит,
+  при сбое — ни ссылок, ни `md_path`). Живой токен: чтение ref и commit — 200; запись проверится первым выпуском.
+- pytest 253 passed, 12 skipped · mypy `Success: no issues found in 68 source files` · бот unittest OK.
+- Новых зависимостей нет. Расхождение со спекой: р.5 описывает Contents API (`PUT .../contents/{path}`) — при
+  `batch_commit` используется Git Data API.

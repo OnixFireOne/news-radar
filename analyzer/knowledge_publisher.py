@@ -2,6 +2,7 @@
 
 import asyncio
 import base64
+import contextlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
@@ -10,7 +11,7 @@ import logging
 import os
 from pathlib import Path
 import re
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from urllib.parse import quote
 
 import httpx
@@ -107,13 +108,73 @@ class LocalPublisher:
 
 
 class GitHubPublisher:
+    """GitHub target. With ``batch=True`` all files of one run go into a single commit (Git Data API)."""
+
     def __init__(self, repo: str, branch: str, token: str,
-                 client: httpx.AsyncClient | None = None, timeout: float = 30) -> None:
+                 client: httpx.AsyncClient | None = None, timeout: float = 30, batch: bool = False) -> None:
         self.repo = repo
         self.branch = branch
         self.token = token
         self.client = client
         self.timeout = timeout
+        self.batch = batch
+
+    def _headers(self) -> dict[str, str]:
+        return {"Authorization": f"Bearer {self.token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28"}
+
+    async def _request(self, client: httpx.AsyncClient, method: str, path: str,
+                       payload: Mapping[str, Any] | None = None) -> httpx.Response:
+        url = f"https://api.github.com/repos/{self.repo}/{path}"
+        return await client.request(method, url, json=payload, headers=self._headers(), timeout=self.timeout)
+
+    async def commit_files(self, files: Sequence[tuple[str, str]], message: str, attempts: int = 3) -> bool:
+        """Add or overwrite ``files`` (path, content) on the branch in one commit; retries a moved branch."""
+        if not files:
+            return True
+        ref_path = f"git/refs/heads/{quote(self.branch, safe='')}"
+        try:
+            async with contextlib.AsyncExitStack() as stack:
+                client = self.client
+                if client is None:
+                    client = await stack.enter_async_context(httpx.AsyncClient(timeout=self.timeout))
+                for _ in range(max(1, attempts)):
+                    ref = await self._request(client, "GET", f"git/ref/heads/{quote(self.branch, safe='')}")
+                    if ref.status_code != 200:
+                        logger.warning("Knowledge batch commit failed: ref HTTP %s", ref.status_code)
+                        return False
+                    head = str(ref.json()["object"]["sha"])
+                    commit = await self._request(client, "GET", f"git/commits/{head}")
+                    if commit.status_code != 200:
+                        logger.warning("Knowledge batch commit failed: commit HTTP %s", commit.status_code)
+                        return False
+                    tree = await self._request(client, "POST", "git/trees", {
+                        "base_tree": commit.json()["tree"]["sha"],
+                        "tree": [{"path": path, "mode": "100644", "type": "blob", "content": content}
+                                 for path, content in files],
+                    })
+                    if tree.status_code != 201:
+                        logger.warning("Knowledge batch commit failed: tree HTTP %s", tree.status_code)
+                        return False
+                    created = await self._request(client, "POST", "git/commits", {
+                        "message": message, "tree": tree.json()["sha"], "parents": [head],
+                    })
+                    if created.status_code != 201:
+                        logger.warning("Knowledge batch commit failed: commit create HTTP %s", created.status_code)
+                        return False
+                    moved = await self._request(client, "PATCH", ref_path,
+                                                {"sha": created.json()["sha"], "force": False})
+                    if moved.status_code == 200:
+                        return True
+                    if moved.status_code != 422:  # 422: branch moved meanwhile, rebuild on the new head
+                        logger.warning("Knowledge batch commit failed: ref update HTTP %s", moved.status_code)
+                        return False
+                logger.warning("Knowledge batch commit failed: branch kept moving")
+        except Exception:
+            # Exception strings and response bodies can contain credentials; never log them.
+            logger.warning("Knowledge batch commit failed: request error")
+        return False
 
     async def publish(self, path: str, content: str, message: str) -> bool:
         try:
@@ -193,7 +254,8 @@ async def publish_selected(
         if name == "local":
             targets.append(LocalPublisher())
         elif name == "github" and token:
-            targets.append(publisher or GitHubPublisher(repo, branch, token))
+            targets.append(publisher or GitHubPublisher(repo, branch, token,
+                                                      batch=bool(knowledge.get("batch_commit", False))))
         elif name == "github":
             logger.info("Knowledge target github skipped: GITHUB_TOKEN missing")
         else:
@@ -204,6 +266,20 @@ async def publish_selected(
     semaphore = asyncio.Semaphore(max(1, int(cfg.get("llm_concurrency", 3))))
     counts = {"published": 0, "reused": 0, "failed": 0}
     links: dict[str, str] = {}
+    # Batch targets collect every new file of the run and commit once after generation.
+    batch_targets = [cast(GitHubPublisher, t) for t in targets if getattr(t, "batch", False) is True]
+    direct_targets = [t for t in targets if t not in batch_targets]
+    staged: list[tuple[int, Mapping[str, Any], str, str, bool]] = []
+
+    def store(index: int, row: Mapping[str, Any], path: str) -> None:
+        conn = get_db(db_path)
+        try:
+            conn.execute("UPDATE analysis SET md_path=? WHERE message_id=?", (path, row["id"]))
+            conn.commit()
+        finally:
+            conn.close()
+        counts["published"] += 1
+        links[str(index)] = blob_url(repo, branch, path)
 
     async def publish_one(index: int, row: Mapping[str, Any]) -> None:
         async with semaphore:
@@ -218,31 +294,42 @@ async def publish_selected(
                 path = stored["md_path"] if stored else row.get("md_path")
                 if path:
                     counts["reused"] += 1
+                    links[str(index)] = blob_url(repo, branch, str(path))
+                    return
+                doc = await generate_doc(llm, row, knowledge)
+                if doc is None:
+                    counts["failed"] += 1
+                    return
+                path = build_path(doc, str(knowledge.get("dir", "knowledge")))
+                content = build_markdown(doc)
+                message = f"docs(knowledge): add article {doc.message_id}"
+                # Sequential on purpose: one article's targets never race each other.
+                delivered = [await target.publish(path, content, message) for target in direct_targets]
+                if batch_targets:
+                    staged.append((index, row, path, content, any(delivered)))
+                elif any(delivered):
+                    store(index, row, path)
                 else:
-                    doc = await generate_doc(llm, row, knowledge)
-                    if doc is None:
-                        counts["failed"] += 1
-                        return
-                    path = build_path(doc, str(knowledge.get("dir", "knowledge")))
-                    content = build_markdown(doc)
-                    message = f"docs(knowledge): add article {doc.message_id}"
-                    # Sequential on purpose: one article's targets never race each other.
-                    delivered = [await target.publish(path, content, message) for target in targets]
-                    if not any(delivered):
-                        counts["failed"] += 1
-                        return
-                    conn = get_db(db_path)
-                    try:
-                        conn.execute("UPDATE analysis SET md_path=? WHERE message_id=?", (path, row["id"]))
-                        conn.commit()
-                    finally:
-                        conn.close()
-                    counts["published"] += 1
-                links[str(index)] = blob_url(repo, branch, str(path))
+                    counts["failed"] += 1
             except Exception:
                 counts["failed"] += 1
                 logger.warning("Knowledge processing failed for message %s", row.get("id"))
 
     await asyncio.gather(*(publish_one(i, row) for i, row in enumerate(rows, 1)))
+    if staged:
+        files = [(path, content) for _, _, path, content, _ in staged]
+        message = f"docs(knowledge): add {len(files)} article summaries"
+        batch_ok = False
+        for target in batch_targets:
+            batch_ok = await target.commit_files(files, message) or batch_ok
+        for index, row, path, _, direct_ok in staged:
+            try:
+                if batch_ok or direct_ok:
+                    store(index, row, path)
+                else:
+                    counts["failed"] += 1
+            except Exception:
+                counts["failed"] += 1
+                logger.warning("Knowledge processing failed for message %s", row.get("id"))
     logger.info("Knowledge: published=%s reused=%s failed=%s", counts["published"], counts["reused"], counts["failed"])
     return links

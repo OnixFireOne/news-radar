@@ -54,7 +54,8 @@
     "dir": "knowledge",
     "min_value_score": 6,
     "max_input_chars": 12000,
-    "targets": ["github"]
+    "targets": ["github"],
+    "batch_commit": true
   },
   "digest_templates": {
     "ai_value": {

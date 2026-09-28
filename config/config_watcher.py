@@ -36,6 +36,7 @@ DEFAULT_CONFIG = {
         "min_value_score": 6,
         "max_input_chars": 12000,
         "targets": ["github"],  # "local" (md into ./knowledge, tests) | "github" (Contents API, prod)
+        "batch_commit": False,  # github: one commit per digest run instead of one per article
     },
     "digest_templates": {
         "ai_value": {
