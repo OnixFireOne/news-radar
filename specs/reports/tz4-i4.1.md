@@ -427,3 +427,14 @@ pytest 245 passed, 10 skipped · mypy `Success: no issues found in 66 source fil
   `analyzer/digest_stats.py`: `TaskUsage.models` (`GROUP_CONCAT(DISTINCT model)`, в сравнении не участвует —
   старый тест не менялся), задача — отдельной строкой `• classify (gpt-6-luna): …`. Новый тест
   `test_usage_lists_models_per_task`. pytest 247 passed, 10 skipped · mypy ok · API/бот unittest OK.
+
+### Переразбор старой «рекламы» по v3 (28.09, решение владельца)
+
+- 67 статей с `is_ad=1`, разобранных v2 (`analysis.analyzed_at` до 16:18:47 UTC), ни одна не была в выпуске:
+  строки `analysis` удалены, `analyzed=0, is_ad=0`. Копия базы — `data/news.db.bak-before-v3-reclassify`,
+  список id — `data/reclassify_v3_ids.txt`. Очередь разобралась за ~3 мин (ранний подъём при ≥ 10 в очереди),
+  ~$0.015, ошибок нет.
+- **Итог:** рекламой остались 17 из 67 — в основном мусор с оценкой 1–3 (стоматология, курорт, финтех-SEO,
+  блокчейн-студия); спорная одна — id 81 (MCP, оценка 6). 50 вернулись в отбор, из них 8 с оценкой 7–8
+  (Gradio Workflow, skillmem, GLM → Jev, OTUS/MLOps, DealMind, Keva). По базе теперь `is_ad=1` у 19 из 240 (8%).
+- Большинство вернувшихся статей от 11.09 — вне окна дайджеста; в выпуски попадут только свежие.
