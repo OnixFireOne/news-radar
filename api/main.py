@@ -36,6 +36,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from analyzer.digest_stats import latest_digest_stats, format_digest_stats
+from analyzer.usage_store import install_usage_sink
+
 from api.models import (
     MessageResponse,
     AnalysisResponse,
@@ -97,6 +100,7 @@ DB_PATH = os.environ.get("DATABASE_PATH", "/app/data/news.db")
 async def startup():
     """Initialize database on startup."""
     init_db(DB_PATH)
+    install_usage_sink(DB_PATH)
     logger.info("News Radar API started")
 
 
@@ -298,7 +302,16 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
                     responses.append(DigestResponse(**dict(row)).model_dump())
             if not responses:
                 return {"status": "dispatched", "name": spec.name if spec else name, "parts": []}
-            return {**responses[0], "parts": responses}
+            result = {**responses[0], "parts": responses}
+            if analyzer.cfg.get("digest_stats", {}).get("enabled", False):
+                try:
+                    cfg = {key: analyzer.cfg.get(key, default) for key, default in (
+                        ("digests", []), ("categories", {}), ("digest_templates", {}))}
+                    result["stats"] = format_digest_stats(latest_digest_stats(
+                        conn, spec.name if spec else name, cfg, digest_id=responses[-1]["id"]))
+                except Exception:
+                    logger.warning("Digest statistics unavailable", exc_info=True)
+            return result
         finally:
             conn.close()
     result = await analyzer.generate_digest(hours=hours, force=force)
@@ -322,6 +335,21 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
         period_end=datetime.fromisoformat(row["period_end"]),
         created_at=datetime.fromisoformat(row["created_at"]),
     ).model_dump(exclude_none=True)
+
+
+@app.get("/digest/stats")
+async def get_digest_stats(name: Optional[str] = Query(None)):
+    from config.config_watcher import ConfigWatcher
+    watcher = ConfigWatcher(str(CONFIG_PATH))
+    cfg = {key: watcher.get(key, default) for key, default in (
+        ("digests", []), ("categories", {}), ("digest_templates", {}))}
+    conn = get_db(DB_PATH)
+    try:
+        return {"text": format_digest_stats(latest_digest_stats(conn, name, cfg))}
+    except (UnknownDigestError, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    finally:
+        conn.close()
 
 
 @app.get("/digest/latest", response_model=DigestResponse, response_model_exclude_none=True)

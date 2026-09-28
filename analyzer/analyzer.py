@@ -44,6 +44,8 @@ import analyzer.pipeline.writers  # Register writers.
 from analyzer.embedder import get_embedder
 from analyzer.chroma_client import ChromaClient
 from analyzer.trend_tracker import TrendTracker   # Phase 2: trend detection
+from uuid import uuid4
+from analyzer.usage_store import install_usage_sink, usage_category
 from database.schema import get_db, init_db
 from config.config_watcher import ConfigWatcher
 
@@ -126,8 +128,12 @@ class NewsAnalyzer:
                     continue
                 pending_batch = [dict(r) for r in rows]
                 ctx = AnalyzeContext(self, conn, cfg, subs_list, concurrency, spec.params,
-                                      embeddings="embeddings" in spec.hooks)
-                results = await ANALYZERS.get(spec.analyzer)(pending_batch, ctx)
+                                      embeddings="embeddings" in spec.hooks, category=spec.name)
+                category_token = usage_category.set(spec.name)
+                try:
+                    results = await ANALYZERS.get(spec.analyzer)(pending_batch, ctx)
+                finally:
+                    usage_category.reset(category_token)
                 count += store_results(results, ctx, spec.hooks, spec.analyzer == "ai_value")
 
         finally:
@@ -718,19 +724,21 @@ class NewsAnalyzer:
         # Freeze the window before the first category writes its snapshot.
         since = self._digest_since(hours, digest.name)
         parts: list[DigestPart] = []
+        run_id = uuid4().hex
         for category_name in dict.fromkeys(digest.categories):
             cat = categories.get(category_name)
             if cat is None:
                 logger.warning("Digest %s: category %s disabled, missing or unavailable", digest.name, category_name)
                 continue
-            result = await self.run_category(cat, digest.name, hours, force, return_raw, _since=since)
+            result = await self.run_category(cat, digest.name, hours, force, return_raw, _since=since, _run_id=run_id)
             if result:
                 parts.append(DigestPart(cat.name, result, self._last_digest_id))
         return parts
 
     async def run_category(self, cat: CategorySpec, digest_name: str | None,
                            hours: int | None = None, force: bool = False,
-                           return_raw: bool = False, *, _since: datetime | None = None) -> str | None:
+                           return_raw: bool = False, *, _since: datetime | None = None,
+                           _run_id: str | None = None) -> str | None:
         """Select and render one category, preserving the legacy pipeline order."""
         self._last_digest_id: int | None = None
         spec = cat
@@ -1036,6 +1044,7 @@ class NewsAnalyzer:
                 return None
             # route_via_openclaw=false → use local LLM
             with LLMLock():
+                category_token = usage_category.set(cat.name)
                 try:
                     digest_ctx.artifacts.update({
                         "source_map": source_map, "prompt": prompt, "period": period,
@@ -1052,6 +1061,8 @@ class NewsAnalyzer:
                     logger.error(f"Local LLM digest generation failed: {e}")
                     self.digest_failures.append("llm")
                     return None
+                finally:
+                    usage_category.reset(category_token)
             if not digest_content:
                 self.digest_failures.append("llm")
 
@@ -1061,14 +1072,20 @@ class NewsAnalyzer:
             try:
                 if digest_content:
                     cursor = conn.execute(
-                        "INSERT INTO digests (content_md, parse_mode, period_start, period_end, name, category) "
-                        "VALUES (?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO digests (content_md, parse_mode, period_start, period_end, name, category, run_id, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         (digest_content, parse_mode, since.isoformat(), datetime.utcnow().isoformat(),
-                         digest_name, cat.name if digest_name is not None else None),
+                         digest_name, cat.name if digest_name is not None else None,
+                         _run_id or uuid4().hex, datetime.utcnow().isoformat(sep=" ")),
                     )
                     self._last_digest_id = cursor.lastrowid
 
                 selected_ids = [row["id"] for row in selected]
+                if self._last_digest_id is not None:
+                    conn.executemany(
+                        "INSERT OR IGNORE INTO digest_messages (digest_id, message_id) VALUES (?, ?)",
+                        [(self._last_digest_id, mid) for mid in selected_ids],
+                    )
                 conn.executemany(
                     "UPDATE messages SET in_digest=1 WHERE id=?",
                     [(mid,) for mid in selected_ids]
@@ -1371,6 +1388,7 @@ async def main() -> None:
     interval = int(os.environ.get("ANALYZE_INTERVAL_MINUTES", "30"))
 
     init_db(db_path)
+    install_usage_sink(db_path)
 
     from analyzer.llm_client import build_llm_client
 

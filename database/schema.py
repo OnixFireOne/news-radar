@@ -10,7 +10,21 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-SCHEMA = """
+USAGE_SCHEMA = """CREATE TABLE IF NOT EXISTS llm_usage (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    task TEXT, category TEXT, provider TEXT, model TEXT,
+    prompt_tokens INTEGER, completion_tokens INTEGER,
+    cost_usd REAL, cost_source TEXT
+)"""
+DIGEST_MESSAGES_SCHEMA = """CREATE TABLE IF NOT EXISTS digest_messages (
+    digest_id INTEGER NOT NULL REFERENCES digests(id),
+    message_id INTEGER NOT NULL REFERENCES messages(id),
+    PRIMARY KEY (digest_id, message_id)
+)"""
+
+SCHEMA = USAGE_SCHEMA + ";\n" + DIGEST_MESSAGES_SCHEMA + ";\n" + """
+CREATE INDEX IF NOT EXISTS idx_llm_usage_created ON llm_usage(created_at);
 -- Migration tracking: prevents re-running migrations on every startup
 CREATE TABLE IF NOT EXISTS schema_migrations (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -90,6 +104,7 @@ CREATE TABLE IF NOT EXISTS digests (
     id           INTEGER PRIMARY KEY AUTOINCREMENT,
     name         TEXT,
     category     TEXT,
+    run_id       TEXT,
     content_md   TEXT NOT NULL,          -- Markdown digest text
     parse_mode   TEXT DEFAULT 'Markdown', -- Telegram parse_mode: Markdown | MarkdownV2
     period_start DATETIME NOT NULL,
@@ -178,6 +193,10 @@ CREATE INDEX IF NOT EXISTS idx_dispatch_log_type     ON dispatch_log(event_type)
 # Use IF NOT EXISTS / OR IGNORE everywhere to be safe.
 # ─────────────────────────────────────────────────────────
 MIGRATIONS = [
+    ("add_llm_usage", USAGE_SCHEMA),
+    ("add_llm_usage_index", "CREATE INDEX IF NOT EXISTS idx_llm_usage_created ON llm_usage(created_at)"),
+    ("add_digest_messages", DIGEST_MESSAGES_SCHEMA),
+    ("add_digest_run_id", "ALTER TABLE digests ADD COLUMN run_id TEXT"),
     # Initial columns added after the original deploy
     ("add_chroma_synced",
      "ALTER TABLE messages ADD COLUMN chroma_synced INTEGER DEFAULT 0"),

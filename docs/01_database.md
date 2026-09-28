@@ -183,3 +183,18 @@ def get_db(db_path: str | None = None) -> sqlite3.Connection:
 - `busy_timeout=30000` — 30 секунд retry при lock (бывает при одновременном доступе collector + analyzer)
 - `WAL mode` — reader не блокирует writer и наоборот
 - `row_factory = sqlite3.Row` — доступ по ключу `row["temperature"]`, не только по индексу
+## Учёт LLM и состав выпусков (И4.1, шаг 2d)
+
+`llm_usage` хранит одну строку на учтённый вызов: `id`, `created_at` (UTC,
+по умолчанию `CURRENT_TIMESTAMP`), `task`, `category`, `provider`, `model`,
+`prompt_tokens`, `completion_tokens`, `cost_usd`, `cost_source`.
+Категория, провайдер и цена могут быть NULL; неизвестная цена не равна нулевой.
+Индекс `idx_llm_usage_created` построен по `created_at`. Схема и миграции идемпотентны.
+Старые вызовы из логов не восстанавливаются.
+
+`digests.run_id` объединяет части одного запуска именованного дайджеста.
+`digest_messages(digest_id, message_id)` с составным первичным ключом фиксирует
+выбранные статьи каждой сохранённой части, отдельно от поглощённых дублей тренда.
+Без этой связи глобальное `messages.in_digest=1` включает также предыдущие выпуски.
+У исторических выпусков `run_id` отсутствует: состав и количество md показываются
+как «н/д», поскольку достоверно восстановить их нельзя.

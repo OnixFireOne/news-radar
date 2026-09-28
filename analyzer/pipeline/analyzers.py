@@ -8,6 +8,8 @@ from typing import Any
 
 from analyzer.pipeline.context import AnalysisResult, AnalyzeContext, Row
 from analyzer.pipeline.registry import ANALYZERS
+from analyzer.llm_client import get_usage_tracker
+from llm_core.usage import UsageRecord
 from analyzer.value_classifier import ValueItem
 from analyzer.value_funnel import verdict_to_row
 
@@ -71,6 +73,13 @@ async def ai_value(rows: list[Row], ctx: AnalyzeContext) -> list[AnalysisResult]
         value_result["embedding"] = result.get("embedding")
         results[index] = (row, value_result)
     calls = classifier.calls
+    for call in calls:
+        get_usage_tracker().record(UsageRecord(
+            model=call.model, provider=call.provider, task="classify", category=ctx.category,
+            prompt_tokens=call.prompt_tokens or 0, completion_tokens=call.completion_tokens or 0,
+            total_tokens=(call.prompt_tokens or 0) + (call.completion_tokens or 0),
+            cost_usd=call.cost_usd, cost_source=call.cost_source, call_kind="classify",
+        ))
     prompt_tokens = [call.prompt_tokens for call in calls]
     completion_tokens = [call.completion_tokens for call in calls]
     costs = [call.cost_usd for call in calls]

@@ -34,6 +34,7 @@ from llm_core.client import (
     LLMCoreClient,
     LLMRetryExhaustedError,
 )
+from analyzer.usage_store import usage_category
 from analyzer.llm_local import thinking_payload
 from llm_core.catalog import load_catalog, resolve_active
 from llm_core.client_messages import LLMEmptyResponseError
@@ -216,14 +217,14 @@ class LLMClient:
                     max_tokens=resolved_max_tokens, extra_payload=extra_payload or None,
                 )
             except LLMEmptyResponseError as exc:
-                self._record_catalog_usage(exc.response)
+                self._record_catalog_usage(exc.response, task)
                 logger.warning(
                     "LLM empty response: provider=%s stop_reason=%s tokens=%s",
                     exc.response.provider, exc.stop_reason,
                     exc.usage.total_tokens if exc.usage is not None else "n/a",
                 )
                 return ""
-            self._record_catalog_usage(response)
+            self._record_catalog_usage(response, task)
             return response.content
 
         try:
@@ -245,7 +246,7 @@ class LLMClient:
                     prompt_tokens=result.usage.prompt_tokens,
                     completion_tokens=result.usage.completion_tokens,
                     total_tokens=result.usage.total_tokens,
-                    call_kind="complete",
+                    call_kind="complete", task=task or self._task, category=usage_category.get(),
                 )
             )
             logger.info(
@@ -264,7 +265,7 @@ class LLMClient:
 
         return content
 
-    def _record_catalog_usage(self, response: LLMResponse) -> None:
+    def _record_catalog_usage(self, response: LLMResponse, task: str | None = None) -> None:
         usage = response.usage
         _usage_tracker.record(UsageRecord(
             model=response.model,
@@ -272,6 +273,7 @@ class LLMClient:
             completion_tokens=usage.completion_tokens if usage is not None else 0,
             total_tokens=usage.total_tokens if usage is not None else 0,
             call_kind="complete", provider=response.provider,
+            task=task or self._task, category=usage_category.get(),
             cost_usd=response.cost_usd, cost_source=response.cost_source,
         ))
         logger.info(

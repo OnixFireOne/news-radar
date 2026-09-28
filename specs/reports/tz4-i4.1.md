@@ -307,3 +307,55 @@ docker compose run --rm --no-deps -v "$PWD/bot:/app/bot:ro" -v "$PWD/tests:/app/
 docker cp news-radar-chroma:/data/. data/chroma/   # до пересоздания chroma
 docker compose --profile feeds up -d --build
 ```
+
+## Шаг 2d — статистика дайджеста админам (28.09, Codex + Claude Code)
+
+Решения владельца 28.09: план 2d — ок, **только вместе с дайджестом** (плюс `/stats` по запросу); цены сверить.
+
+### Что сделано (Codex по брифу, диф проверен оркестратором)
+
+- **Учёт LLM в БД:** таблица `llm_usage` (время, задача, категория, провайдер, модель, токены, `cost_usd`,
+  `cost_source`), миграции `add_llm_usage*`. `llm_core/usage.py`: у `UsageTracker` слушатели
+  (`add_listener`, сбой слушателя не ломает вызов), у `UsageRecord` поля `task`/`category`. `llm_core` по-прежнему
+  без SQLite. `analyzer/usage_store.py::install_usage_sink` — запись в SQLite, ставится в анализаторе и на старте
+  API (дайджест генерируется в процессе API). Категория — через `contextvar` `usage_category`. Вызовы
+  классификатора пишутся в брике `ai_value` по `classifier.calls` (один раз на вызов).
+- **Состав выпуска:** таблица `digest_messages (digest_id, message_id)` и `digests.run_id` (части одного запуска).
+  Решение Codex: `in_digest` не говорит, в каком выпуске статья; у старых выпусков состав — «н/д».
+  `digests.created_at` теперь пишется явно (UTC, с микросекундами), раньше — `CURRENT_TIMESTAMP`.
+- **`analyzer/digest_stats.py`:** окно — от предыдущего выпуска с тем же именем до текущего (у первого — его
+  `period_start`); собрано по типам источников, разобрано, реклама, в очереди, прошло порог `min_value_score`,
+  в выпуске, md-разборов; токены и деньги по задачам (`≈` и «цена неизвестна», если у вызова нет цены).
+  Текст ≤ 1500 символов.
+- **API:** `POST /digest/generate` добавляет `stats` при `digest_stats.enabled` (сбой статистики — WARNING,
+  дайджест отдаётся); `GET /digest/stats?name=` — статистика последнего выпуска, 404 без выпуска.
+- **Бот:** `TELEGRAM_ADMIN_USERS` (в `.env.example`), статистика отдельным сообщением только админам — после
+  дайджеста по расписанию и после `/digest`; `/stats [имя]` только для админов.
+- **Конфиг:** `digest_stats.enabled` — `false` в `DEFAULT_CONFIG`, `true` в `settings.json`.
+- **Документы:** `docs/01_database.md`, `07_bot.md`, `08_api.md`, `09_config_hot_reload.md`, `12_llm_providers.md`.
+- **Цены GPT-6 сверены** с developers.openai.com/api/docs/pricing 28.09: luna $0.10/$0.50, sol $2/$10,
+  astra $10/$50 — совпадают с каталогом. Не моделируется: кэшированный вход в 10 раз дешевле (оценка завышена),
+  длинный контекст дороже. Комментарий в `config/providers.json` (коммит `ce7af5e`).
+- Тесты: `tests/test_usage_store.py` (5), `tests/test_digest_stats.py` (1, плотный: окно, изоляция имён и
+  категорий, границы, цены, формат, длина), `tests/test_api_digest_stats.py`, `tests/test_bot_digest_stats.py` (3).
+- Новых зависимостей нет. Расхождений со спекой нет (р.3.3 статистику не описывает — это пожелание владельца
+  28.09; при случае внести в спеку).
+
+### Результат приёмки
+
+pytest 245 passed, 10 skipped · mypy `Success: no issues found in 66 source files` · импорт API ok ·
+`test_api_*` (образ API) 3 OK · `test_bot_*` (образ бота) 7 OK.
+
+### Что НЕ сделано / за владельцем
+
+- Вписать свой Telegram ID в `TELEGRAM_ADMIN_USERS` в `.env` (пусто — статистику не получает никто).
+- Пересборка бота и API: `docker compose build bot` и `docker compose --profile feeds up -d --build`.
+- Живая проверка не делалась. Учтите: токены классификатора копятся только с подъёма нового анализатора, поэтому
+  первая статистика покажет расходы на разбор неполностью; у старых выпусков (без `run_id`) состав — «н/д».
+
+### п.5 — подготовлено
+
+- `tests/golden/ADS.md` + `ads_candidates.jsonl` (18 статей, коммит `ce7af5e`) — ждут разметки владельца.
+- `tests/eval_ad_flags.py` — замер `is_ad` по разметке (ложные «да» ≤ 15% от «нет», пропущенные ≤ 25% от «да»),
+  тесты `tests/test_eval_ad_flags.py`. Запуск после разметки:
+  `docker compose run --rm --no-deps analyzer python tests/eval_ad_flags.py --provider openai.chat_completions --model gpt-6-luna`

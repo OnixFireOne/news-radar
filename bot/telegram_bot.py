@@ -22,7 +22,7 @@ from bot.digest_schedule import schedule_slots, slot_key, split_message
 from pathlib import Path
 
 import httpx
-from telegram import Update, BotCommand
+from telegram import Update, BotCommand, Bot
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Set of allowed Telegram user IDs (get yours from @userinfobot)
 ALLOWED_USERS: set[int] = set()
+ADMIN_USERS: set[int] = set()
 
 
 def is_allowed(user_id: int) -> bool:
@@ -109,6 +110,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/my_tracks — your active subscriptions\n"
         "/ask <question> — ask the AI agent\n"
         "/status — system statistics\n"
+        "/stats [name] — статистика дайджеста (только админы)\n"
         "/help — this message"
     )
 
@@ -266,6 +268,26 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 except Exception as e2:
                     logger.error(f"Plain text fallback also failed: {e2}")
 
+    if digest.get("stats"):
+        await send_digest_stats(ctx.bot, digest["stats"])
+
+
+async def send_digest_stats(bot: Bot, text: str) -> None:
+    for user_id in sorted(ADMIN_USERS):
+        try:
+            await bot.send_message(chat_id=user_id, text=text, parse_mode=None)
+        except Exception:
+            logger.warning("Failed to send digest statistics to admin %s", user_id, exc_info=True)
+
+
+async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_user.id not in ADMIN_USERS:
+        return
+    name = ctx.args[0] if ctx.args else None
+    result = await fetch_api("/digest/stats" + ("?" + urlencode({"name": name}) if name else ""))
+    await update.message.reply_text(result["text"] if result else "Статистика недоступна: выпуск не найден.",
+                                    parse_mode=None)
+
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if not is_allowed(update.effective_user.id):
@@ -284,6 +306,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/my_tracks — your active subscriptions\n"
         "/ask <question> — ask the AI agent anything\n"
         "/status — system stats (channels, messages)\n"
+        "/stats [name] — статистика дайджеста (только админы)\n"
         "/help — this message"
     )
 
@@ -477,6 +500,9 @@ async def perform_scheduled_digest(app: Application, name: str | None = None) ->
                     except Exception as e2:
                         logger.error(f"Fallback send also failed for {user_id}: {e2}")
 
+    if digest.get("stats"):
+        await send_digest_stats(app.bot, digest["stats"])
+
 
 async def scheduled_digest_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
     await perform_scheduled_digest(ctx.application, ctx.job.data)
@@ -522,6 +548,9 @@ def main():
     interval_hours = int(os.environ.get("DIGEST_INTERVAL_HOURS", "3"))
 
     # Load allowed user IDs from env
+    for uid in os.environ.get("TELEGRAM_ADMIN_USERS", "").split(","):
+        if uid.strip():
+            ADMIN_USERS.add(int(uid.strip()))
     allowed_raw = os.environ.get("TELEGRAM_ALLOWED_USERS", "")
     for uid in allowed_raw.split(","):
         uid = uid.strip()
@@ -538,6 +567,7 @@ def main():
     app.add_handler(CommandHandler("hot", cmd_hot))
     app.add_handler(CommandHandler("digest", cmd_digest))
     app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("track", cmd_track))
     app.add_handler(CommandHandler("untrack", cmd_untrack))
     app.add_handler(CommandHandler("my_tracks", cmd_my_tracks))
@@ -560,6 +590,7 @@ def main():
             BotCommand("my_tracks", "Мои активные подписки"),
             BotCommand("ask",       "Спросить агента: /ask что с BTC?"),
             BotCommand("status",    "Статистика системы"),
+            BotCommand("stats", "Статистика дайджеста (админы)"),
             BotCommand("help",      "Справка"),
         ])
         logger.info("Bot commands registered in Telegram menu")

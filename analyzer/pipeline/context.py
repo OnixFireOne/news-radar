@@ -23,6 +23,7 @@ class AnalyzeContext:
     concurrency: int
     params: Mapping[str, Any] = field(default_factory=dict)
     embeddings: bool = True
+    category: str = ""
 
 
 @dataclass
