@@ -243,6 +243,7 @@ docker compose run --rm --no-deps -v "$PWD/bot:/app/bot:ro" -v "$PWD/tests:/app/
   `tests/test_api_digest_errors.py` (400/502, образ API). Оба в `mypy.ini` strict.
 - Документы: `docs/03_analyzer_pipeline.md` (хук, коды ответа), грабли 37–39.
 - Новых зависимостей нет. Расхождений со спекой нет.
+- Коммит: `4ee7766` fix(tz4-i4.1): address step 2b live-run findings.
 
 ### Результат приёмки
 
