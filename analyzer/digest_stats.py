@@ -1,7 +1,7 @@
 """Digest accounting over UTC windows, with explicit membership of stored parts."""
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import sqlite3
 from typing import Any, Mapping, Sequence
@@ -19,6 +19,8 @@ class TaskUsage:
     completion_tokens: int
     cost_usd: float
     unknown_cost: bool
+    # Distinct models seen for the task in the window; display only, not part of equality.
+    models: tuple[str, ...] = field(default=(), compare=False)
 
 
 @dataclass(frozen=True)
@@ -88,12 +90,13 @@ def compute_digest_stats(
     usage_rows = conn.execute(
         "SELECT COALESCE(task, 'default'), COUNT(*), COALESCE(SUM(prompt_tokens), 0), "
         "COALESCE(SUM(completion_tokens), 0), COALESCE(SUM(cost_usd), 0), "
-        "MAX(cost_usd IS NULL) FROM llm_usage "
+        "MAX(cost_usd IS NULL), GROUP_CONCAT(DISTINCT model) FROM llm_usage "
         f"WHERE category IN ({category_slots}) AND julianday(created_at)>=julianday(?) "
         "AND julianday(created_at)<julianday(?) GROUP BY COALESCE(task, 'default') ORDER BY 1",
         (*categories, since.isoformat(), until.isoformat()),
     ).fetchall()
-    usage = tuple(TaskUsage(str(r[0]), int(r[1]), int(r[2]), int(r[3]), float(r[4]), bool(r[5]))
+    usage = tuple(TaskUsage(str(r[0]), int(r[1]), int(r[2]), int(r[3]), float(r[4]), bool(r[5]),
+                            tuple(sorted(str(r[6]).split(','))) if r[6] else ())
                   for r in usage_rows)
     total_row = conn.execute(
         "SELECT COALESCE(SUM(cost_usd), 0), MAX(cost_usd IS NULL), MIN(created_at) FROM llm_usage"
@@ -155,19 +158,32 @@ def format_digest_stats(stats: DigestStats) -> str:
     stamp = stats.until.astimezone(ZoneInfo('Europe/Moscow'))
     hours = max(0, (stats.until - stats.since).total_seconds() / 3600)
     sources = ', '.join(f'{key[:25]} {value}' for key, value in sorted(stats.collected.items()))
-    tasks = ' · '.join(
-        f'{u.task[:24]} {u.calls} выз. {tokens(u.prompt_tokens)}/{tokens(u.completion_tokens)} ток. '
-        f'{cost(u.cost_usd, u.unknown_cost)}' for u in stats.usage
-    ) or 'нет вызовов'
+    task_lines: list[str] = []
+    budget = 800
+    for u in stats.usage:
+        models = f' ({", ".join(m[:40] for m in u.models)})' if u.models else ''
+        line = (f'• {u.task[:24]}{models[:90]}: {u.calls} выз. · '
+                f'{tokens(u.prompt_tokens)}/{tokens(u.completion_tokens)} ток. · {cost(u.cost_usd, u.unknown_cost)}')
+        budget -= len(line) + 1
+        if budget < 0:
+            task_lines.append('• …')
+            break
+        task_lines.append(line)
     total = cost(sum(u.cost_usd for u in stats.usage), any(u.unknown_cost for u in stats.usage))
     lines = [
         f'📊 Дайджест «{stats.name[:80]}» · {stamp:%d.%m %H:%M} МСК (за {hours:.1f} ч)',
-        f'Собрано: {sum(stats.collected.values())} ({sources[:200]}) · разобрано {stats.analyzed} · '
-        f'реклама {stats.ads} · в очереди {stats.pending}',
-        f'Прошло порог: {count(stats.passed)} · в выпуске {count(stats.selected)} · md-разборов {count(stats.knowledge)}',
-        f'LLM: {tasks[:800]}', f'Итого: {total}',
+        '',
+        f'📥 Собрано: {sum(stats.collected.values())} ({sources[:200]})',
+        f'🔍 Разобрано {stats.analyzed} · в очереди {stats.pending} · реклама {stats.ads}',
+        f'✅ Прошло порог {count(stats.passed)} → в выпуске {count(stats.selected)} · '
+        f'md-разборов {count(stats.knowledge)}',
+        '',
+        '🤖 LLM' + (':' if task_lines else ': нет вызовов'),
+        *task_lines,
+        '',
+        f'💰 Итого: {total}',
     ]
     if stats.total_since is not None:
-        lines.append(f'Всего с {stats.total_since.astimezone(ZoneInfo("Europe/Moscow")):%d.%m.%Y}: '
+        lines.append(f'📈 Всего с {stats.total_since.astimezone(ZoneInfo("Europe/Moscow")):%d.%m.%Y}: '
                      f'{cost(stats.total_cost_usd, stats.total_unknown_cost)}')
     return '\n'.join(lines)[:1500]

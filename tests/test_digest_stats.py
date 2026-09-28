@@ -101,3 +101,25 @@ def test_total_spend_covers_all_recorded_usage(tmp_path: Path) -> None:
         assert 'Всего с 01.09.2026: $0.8750' in format_digest_stats(stats)
     finally:
         conn.close()
+
+
+def test_usage_lists_models_per_task(tmp_path: Path) -> None:
+    path = str(tmp_path / 'models.db')
+    init_db(path)
+    conn = get_db(path)
+    try:
+        conn.executemany('INSERT INTO llm_usage (created_at, task, category, model, prompt_tokens, completion_tokens, cost_usd) '
+                         'VALUES (?, ?, ?, ?, ?, ?, ?)', [
+            ('2026-09-28T02:00:00+00:00', 'classify', 'articles', 'gpt-6-luna', 1000, 100, .001),
+            ('2026-09-28T03:00:00+00:00', 'classify', 'articles', 'gpt-6-luna', 1000, 100, .001),
+            ('2026-09-28T04:00:00+00:00', 'digest', 'articles', 'gpt-6-sol', 3000, 900, .02),
+            ('2026-09-28T05:00:00+00:00', 'digest', 'articles', 'claude-opus-5-5', 3000, 900, .05),
+        ])
+        stats = compute_digest_stats(conn, 'articles', datetime(2026, 9, 28, tzinfo=timezone.utc),
+                                     datetime(2026, 9, 29, tzinfo=timezone.utc), ['articles'], ['rss'])
+        assert [u.models for u in stats.usage] == [('gpt-6-luna',), ('claude-opus-5-5', 'gpt-6-sol')]
+        text = format_digest_stats(stats)
+        assert '• classify (gpt-6-luna): 2 выз.' in text
+        assert '• digest (claude-opus-5-5, gpt-6-sol): 2 выз.' in text
+    finally:
+        conn.close()
