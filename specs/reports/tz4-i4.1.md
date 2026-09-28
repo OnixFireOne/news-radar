@@ -336,6 +336,7 @@ docker compose --profile feeds up -d --build
 - **Цены GPT-6 сверены** с developers.openai.com/api/docs/pricing 28.09: luna $0.10/$0.50, sol $2/$10,
   astra $10/$50 — совпадают с каталогом. Не моделируется: кэшированный вход в 10 раз дешевле (оценка завышена),
   длинный контекст дороже. Комментарий в `config/providers.json` (коммит `ce7af5e`).
+- Коммиты: `138528a` feat(tz4-i4.1): digest statistics for admins · `7f1d190` test(tz4-i4.1): is_ad eval against owner ad labels.
 - Тесты: `tests/test_usage_store.py` (5), `tests/test_digest_stats.py` (1, плотный: окно, изоляция имён и
   категорий, границы, цены, формат, длина), `tests/test_api_digest_stats.py`, `tests/test_bot_digest_stats.py` (3).
 - Новых зависимостей нет. Расхождений со спекой нет (р.3.3 статистику не описывает — это пожелание владельца
