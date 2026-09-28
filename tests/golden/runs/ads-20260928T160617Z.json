@@ -1,0 +1,18 @@
+{
+  "ads": 7,
+  "clean": 9,
+  "false_ad": [
+    "a13"
+  ],
+  "missed_ad": [
+    "a07"
+  ],
+  "broken": [],
+  "false_ad_rate": 0.111,
+  "missed_ad_rate": 0.143,
+  "pass": true,
+  "provider": "openai.chat_completions",
+  "model": "gpt-6-luna",
+  "prompt": "ai_value-v3",
+  "cost_usd": 0.0040349
+}
