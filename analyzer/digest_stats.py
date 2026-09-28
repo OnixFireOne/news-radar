@@ -34,6 +34,10 @@ class DigestStats:
     selected: int | None
     knowledge: int | None
     usage: tuple[TaskUsage, ...]
+    # All recorded LLM spend of the project (every task and category), and whether any call lacked a price.
+    total_cost_usd: float = 0.0
+    total_unknown_cost: bool = False
+    total_since: datetime | None = None
 
 
 def _utc(value: str) -> datetime:
@@ -91,9 +95,14 @@ def compute_digest_stats(
     ).fetchall()
     usage = tuple(TaskUsage(str(r[0]), int(r[1]), int(r[2]), int(r[3]), float(r[4]), bool(r[5]))
                   for r in usage_rows)
+    total_row = conn.execute(
+        "SELECT COALESCE(SUM(cost_usd), 0), MAX(cost_usd IS NULL), MIN(created_at) FROM llm_usage"
+    ).fetchone()
     return DigestStats(name, since, until, collected, analyzed, ads, pending,
                        passed if thresholds else None, selected if membership_known else None,
-                       knowledge if membership_known else None, usage)
+                       knowledge if membership_known else None, usage,
+                       float(total_row[0]), bool(total_row[1]),
+                       _utc(str(total_row[2]).replace(" ", "T")) if total_row[2] else None)
 
 
 def latest_digest_stats(conn: sqlite3.Connection, name: str | None, cfg: Mapping[str, Any],
@@ -158,4 +167,7 @@ def format_digest_stats(stats: DigestStats) -> str:
         f'Прошло порог: {count(stats.passed)} · в выпуске {count(stats.selected)} · md-разборов {count(stats.knowledge)}',
         f'LLM: {tasks[:800]}', f'Итого: {total}',
     ]
+    if stats.total_since is not None:
+        lines.append(f'Всего с {stats.total_since.astimezone(ZoneInfo("Europe/Moscow")):%d.%m.%Y}: '
+                     f'{cost(stats.total_cost_usd, stats.total_unknown_cost)}')
     return '\n'.join(lines)[:1500]

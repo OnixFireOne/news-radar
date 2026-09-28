@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from analyzer.digest_stats import TaskUsage, format_digest_stats, latest_digest_stats
+from analyzer.digest_stats import TaskUsage, compute_digest_stats, format_digest_stats, latest_digest_stats
 from database.schema import get_db, init_db
 
 
@@ -79,5 +79,25 @@ def test_named_window_counts_costs_and_parts(tmp_path: Path) -> None:
         assert latest_digest_stats(conn, 'articles', cfg).since == datetime(2026, 9, 28, 1, tzinfo=timezone.utc)
         conn.execute('UPDATE digests SET run_id=NULL WHERE id=4')
         assert latest_digest_stats(conn, 'articles', cfg).selected is None
+    finally:
+        conn.close()
+
+
+def test_total_spend_covers_all_recorded_usage(tmp_path: Path) -> None:
+    path = str(tmp_path / 'total.db')
+    init_db(path)
+    conn = get_db(path)
+    try:
+        conn.executemany('INSERT INTO llm_usage (created_at, task, category, model, prompt_tokens, completion_tokens, cost_usd) '
+                         'VALUES (?, ?, ?, ?, ?, ?, ?)', [
+            ('2026-09-01 10:00:00', 'classify', 'articles', 'm', 1, 1, .5),
+            ('2026-09-28T02:00:00+00:00', 'digest', 'crypto', 'm', 1, 1, .25),
+            ('2026-09-28 03:00:00', 'knowledge', None, 'm', 1, 1, .125),
+        ])
+        stats = compute_digest_stats(conn, 'articles', datetime(2026, 9, 28, tzinfo=timezone.utc),
+                                     datetime(2026, 9, 29, tzinfo=timezone.utc), ['articles'], ['rss'])
+        assert stats.usage == ()  # the window has no articles usage
+        assert (stats.total_cost_usd, stats.total_unknown_cost) == (.875, False)
+        assert 'Всего с 01.09.2026: $0.8750' in format_digest_stats(stats)
     finally:
         conn.close()
