@@ -78,6 +78,9 @@ class NewsAnalyzer:
         # Vector store for semantic search + dedup (Phase 1)
         self.chroma = ChromaClient()
         self.embedder = get_embedder()  # BGE-m3, loaded on first encode() call
+        # Why the last digest run produced nothing, per category: "no_news" | "llm" | "db".
+        # Lets the API tell an empty window from a failed generation.
+        self.digest_failures: list[str] = []
 
         # Phase 3: topic normalization table (reloaded hot from topics.json)
         self._topics: dict[str, Any] = cfg.load_topics() if cfg else {}
@@ -122,7 +125,8 @@ class NewsAnalyzer:
                 if not rows:
                     continue
                 pending_batch = [dict(r) for r in rows]
-                ctx = AnalyzeContext(self, conn, cfg, subs_list, concurrency, spec.params)
+                ctx = AnalyzeContext(self, conn, cfg, subs_list, concurrency, spec.params,
+                                      embeddings="embeddings" in spec.hooks)
                 results = await ANALYZERS.get(spec.analyzer)(pending_batch, ctx)
                 count += store_results(results, ctx, spec.hooks, spec.analyzer == "ai_value")
 
@@ -133,12 +137,14 @@ class NewsAnalyzer:
         return count
 
     async def _preflight(
-        self, row: dict[str, Any], conn: sqlite3.Connection, ai_value: bool,
+        self, row: dict[str, Any], conn: sqlite3.Connection, ai_value: bool, embeddings: bool = True,
     ) -> tuple[dict[str, Any] | None, list[float] | None]:
         # 0. Heuristic ad pre-filter (no LLM call needed)
         if self._is_heuristic_ad(row["text"]):
             logger.info(f"Message {row['id']} flagged as ad by heuristic filter — skipping LLM")
             return {"__heuristic_ad": True}, None
+        if not embeddings:
+            return None, None
 
         # 1. Pre-flight Semantic Deduplication
         embedding: list[float] | None = None
@@ -689,6 +695,7 @@ class NewsAnalyzer:
 
     async def generate_digest(self, hours: int | None = None, force: bool = False, return_raw: bool = False) -> str | None:
         cfg = self._pipeline_config()
+        self.digest_failures = []
         if cfg["digests"]:
             parts = await self.run_digest(None, hours, force, return_raw)
             return parts[0].result if parts else None
@@ -701,6 +708,7 @@ class NewsAnalyzer:
                          force: bool = False, return_raw: bool = False) -> list[DigestPart]:
         cfg = self._pipeline_config()
         digest = resolve_digest(cfg, name)
+        self.digest_failures = []
         if not cfg["digests"]:
             result = await self.generate_digest(hours, force, return_raw)
             return [DigestPart("crypto", result, self._last_digest_id)] if result else []
@@ -807,11 +815,14 @@ class NewsAnalyzer:
 
         if not rows:
             logger.warning("No analyzed messages available for digest")
+            self.digest_failures.append("no_news")
             return None
 
         # ── Semantic dedup via ChromaDB FIRST ──
         rows_dicts = [dict(r) for r in rows]
-        if dedup_threshold < 1.0:
+        # Without the embeddings hook the category never loads BGE-m3, so no semantic dedup.
+        use_embeddings = "embeddings" in cat.hooks
+        if dedup_threshold < 1.0 and use_embeddings:
             rows_dicts = self._dedup_by_similarity(rows_dicts, threshold=dedup_threshold)
 
         digest_ctx = DigestContext(
@@ -827,10 +838,11 @@ class NewsAnalyzer:
 
         if not selected:
             logger.warning("Digest priority queue produced 0 candidates")
+            self.digest_failures.append("no_news")
             return None
 
         # ── Cross-digest dedup: driven by template flags ──
-        use_cross_dedup    = template_cfg.get("cross_dedup", True)
+        use_cross_dedup    = template_cfg.get("cross_dedup", True) and use_embeddings
         use_ongoing_trends = template_cfg.get("ongoing_trends", True)
         lookback_digests   = template_cfg.get("lookback_digests", 2)
 
@@ -1020,6 +1032,7 @@ class NewsAnalyzer:
         if not agent_succeeded:
             if route_enabled:
                 logger.error("Agent digest push failed and legacy fallback is disabled when route_via_openclaw=true.")
+                self.digest_failures.append("llm")
                 return None
             # route_via_openclaw=false → use local LLM
             with LLMLock():
@@ -1037,7 +1050,10 @@ class NewsAnalyzer:
                     digest_content, parse_mode = writer.render(draft, selected, digest_ctx)
                 except Exception as e:
                     logger.error(f"Local LLM digest generation failed: {e}")
+                    self.digest_failures.append("llm")
                     return None
+            if not digest_content:
+                self.digest_failures.append("llm")
 
         # ── 3. Mark in DB ──
         try:
@@ -1083,6 +1099,7 @@ class NewsAnalyzer:
 
         except Exception as e:
             logger.error(f"Failed to finalise digest DB state: {e}")
+            self.digest_failures.append("db")
             return None
 
     def _dedup_by_similarity(self, candidates: list[dict[str, Any]], threshold: float) -> list[dict[str, Any]]:
@@ -1347,6 +1364,8 @@ async def main() -> None:
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
+    # httpx logs every request URL at INFO; Telegram URLs carry the bot token.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     db_path = os.environ.get("DATABASE_PATH", "/app/data/news.db")
     interval = int(os.environ.get("ANALYZE_INTERVAL_MINUTES", "30"))

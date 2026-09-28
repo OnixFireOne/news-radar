@@ -19,7 +19,7 @@ def resolve_legacy(
     if profile == "ai_value" and not has_router and warn_on_fallback:
         logger.warning("ai_value requires a catalog router; using crypto for this cycle")
     return CategorySpec(
-        name=str(profile), analyzer=analyzer, hooks=("alerts", "subscriptions"),
+        name=str(profile), analyzer=analyzer, hooks=("embeddings", "alerts", "subscriptions"),
         select="quotas" if template == "ai_value" else "tiers",
         template=str(template), extras=("knowledge",) if template == "ai_value" else (),
     )

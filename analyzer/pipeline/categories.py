@@ -78,6 +78,8 @@ def load_categories(cfg: Mapping[str, Any], has_router: bool = True) -> list[Cat
         if not sources:
             logger.warning("Category %s has no unclaimed sources; skipped", name)
             continue
+        if "trends" in spec.hooks and "embeddings" not in spec.hooks:
+            logger.warning("Category %s uses trends without embeddings; it gets no trend clusters", name)
         result.append(replace(spec, sources=tuple(sources)))
     return result
 

@@ -60,6 +60,8 @@ from analyzer.analyzer import NewsAnalyzer
 from analyzer.pipeline.categories import UnknownDigestError, resolve_digest
 
 logger = logging.getLogger(__name__)
+# httpx logs every request URL at INFO; keep URLs with tokens out of the logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Shared ChromaDB client and embedder (initialized once at startup)
 # The embedder loads BGE-m3 lazily on first /search call
@@ -259,6 +261,16 @@ async def get_raw_digest(hours: Optional[int] = Query(None, ge=1, le=48), force:
         raise HTTPException(status_code=400, detail="No suitable news for digest")
     return {"raw_text": result}
 
+def _digest_failure(analyzer: NewsAnalyzer) -> HTTPException:
+    """Tell an empty window (400) from a failed LLM/DB step (502)."""
+    raw = getattr(analyzer, "digest_failures", None)
+    failures = set(raw) if isinstance(raw, list) else set()
+    if failures - {"no_news"}:
+        kinds = ", ".join(sorted(failures - {"no_news"}))
+        return HTTPException(status_code=502, detail=f"Digest generation failed ({kinds} error), see analyzer logs")
+    return HTTPException(status_code=400, detail="No new analyzed news for digest")
+
+
 @app.post("/digest/generate")
 async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force: bool = Query(False), name: Optional[str] = Query(None)):
     """Manually trigger AI digest generation for the last N hours.
@@ -276,7 +288,7 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
         except UnknownDigestError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
         if not parts:
-            raise HTTPException(status_code=400, detail="Could not generate digest (no news or LLM error)")
+            raise _digest_failure(analyzer)
         conn = get_db(DB_PATH)
         try:
             responses = []
@@ -293,7 +305,7 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
     if result == "dispatched":
         return {"status": "dispatched"}
     elif not result:
-        raise HTTPException(status_code=400, detail="Could not generate digest (no news or LLM error)")
+        raise _digest_failure(analyzer)
 
     conn = get_db(DB_PATH)
     try:

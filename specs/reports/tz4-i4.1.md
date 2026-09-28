@@ -215,3 +215,94 @@ docker compose run --rm --no-deps -v "$PWD/bot:/app/bot:ro" -v "$PWD/tests:/app/
 6. Ответ API «no news or LLM error» не различает пустое окно и сбой LLM.
 7. Ссылки «разбор (md)» ведут на GitHub (`knowledge.repo`), а `knowledge.targets = ["local"]` — файлы лежат
    только в `knowledge/`, по ссылке 404, пока их не закоммитить и не запушить.
+
+## Шаг 2c — находки живого прогона (28.09, Claude Code)
+
+### Что сделано
+
+1. **Токен бота в логах** — `httpx` → WARNING в `bot/telegram_bot.py::main`, `analyzer/analyzer.py::main`,
+   `api/main.py` (на импорте модуля: uvicorn запускает API без `__main__`).
+2. **Том Chroma** — `docker-compose.yml`: `./data/chroma:/data` (chroma 1.x пишет в `/data`). Живые векторы
+   (3.8 МБ) пока внутри контейнера — **до пересоздания** скопировать: `docker cp news-radar-chroma:/data/. data/chroma/`
+   (оркестратору это действие заблокировано, за владельцем). Грабля 38.
+3. **bge-m3 грузился трижды** — баг в `analyzer/embedder.py::_load`: под блокировкой была только проверка,
+   загрузка шла вне её. Теперь внутри. Грабля 37.
+4. **Хук `embeddings`** (`analyzer/pipeline/hooks.py`, маркер) — без него: нет пре-дедупа и `encode` при анализе,
+   нет записи в Chroma (`chroma_synced=0`), нет дедупа внутри дайджеста и кросс-дедупа. Проводка:
+   `AnalyzeContext.embeddings`, `_preflight(..., embeddings)`, `store.py`, `run_category`. Legacy-набор получил
+   `embeddings` (поведение прежнее). `settings.json`: у `crypto` хук добавлен, у `articles` нет. `trends` без
+   `embeddings` — WARNING в `load_categories`.
+6. **«Пусто» или «сбой»** — `NewsAnalyzer.digest_failures` (`no_news` / `llm` / `db`, по категориям; пустой
+   рендер тоже `llm`). `POST /digest/generate`: 400 «No new analyzed news for digest» или 502 «Digest generation
+   failed (llm error), see analyzer logs». Бот показывает `detail` как раньше.
+
+- Тесты (с разрешения владельца 28.09): фикстура `tests/test_analyzer_ai_value.py` — у articles
+  `hooks: ["embeddings"]` (проверки пути с векторами без изменений); `tests/test_pipeline_registry.py::test_legacy_resolution`
+  ожидает `("embeddings", "alerts", "subscriptions")`. Новые: `tests/test_embeddings_hook.py` (6: анализ с хуком и
+  без, дедуп дайджеста с хуком и без, `digest_failures`, одна загрузка модели из трёх потоков — без фикса падает),
+  `tests/test_api_digest_errors.py` (400/502, образ API). Оба в `mypy.ini` strict.
+- Документы: `docs/03_analyzer_pipeline.md` (хук, коды ответа), грабли 37–39.
+- Новых зависимостей нет. Расхождений со спекой нет.
+
+### Результат приёмки
+
+pytest 237 passed, 6 skipped · mypy `Success: no issues found in 58 source files` · импорт API ok ·
+`test_api_*` (образ API) 2 OK · `test_bot_*` (образ бота) OK.
+
+### Что НЕ сделано
+
+- **п.5 реклама** — не сделан, нужна разметка владельца (план ниже).
+- **п.7 ссылки «разбор (md)» ведут на GitHub при `targets: ["local"]`** — не был в списке одобренных, не трогал.
+- Пересборка/пересоздание контейнеров (`docker compose up -d --build`) — за владельцем, после `docker cp` векторов.
+
+### Побочные находки
+
+- Сейчас `is_ad=1` у **47 из 159** разобранных статей RSS/HN (30%), среди них `value_score` 7–8 (Хабр — правила
+  для LLM, 8; MCP-шлюзы, 7; Gradio Workflow, 7; OTUS/MLOps, 7). `is_ad=1` исключает статью из дайджеста целиком.
+- `chromadb/chroma:latest` — тег плавает; сменил путь данных без предупреждения. Предложение: закрепить версию.
+
+### План п.5 (реклама) — на согласование
+
+1. **Разметка:** `tests/golden/ADS.md` (датированный набор 28.09) — ~16 статей из этих 47: 8 с высокой оценкой
+   (вероятно, ложная «реклама»: вендорский технический пост) и 8 явных (курсовые работы, отельные системы, «Top AI tools
+   2026» с партнёрскими ссылками). Тексты заморожены в `tests/golden/ads_candidates.jsonl`. Владелец ставит
+   `реклама: да/нет`.
+2. **Метрика:** `eval_value_scoring.py --ads` считает ложные «да» и пропущенные «да». Предлагаемый порог: ложных
+   ≤ 1 из 8, пропущенных ≤ 2 из 8; точность ценности на основном наборе не ниже 88.9%.
+3. **Промпт `ai_value-v3`:** `is_ad=true` только если главная цель — продать/привлечь без самостоятельной пользы
+   (спонсорский пост, партнёрские ссылки, реклама услуги, купоны). Пост компании о своём продукте с техническими
+   деталями, релиз, туториал на своём инструменте — `is_ad=false`, самореклама снижает `value_score`.
+4. **Замер luna:** 2 прогона по основному набору и набору рекламы (~$0.02). Правило «не трогать classic/spoiler»
+   соблюдается: меняется только `AI_VALUE_MESSAGE_PROMPT`.
+
+### План шага 2d (статистика админу) — на согласование
+
+Сейчас usage есть только в логах (`UsageTracker` в памяти, `classifier.calls`), в БД ничего не хранится.
+
+1. **Учёт:** таблица `llm_usage` (время, задача `classify`/`digest`/`knowledge`/`legacy`, провайдер, модель,
+   токены вход/выход, `cost_usd`, `cost_source`, категория). Идемпотентная миграция в `database/schema.py`.
+   `llm_core` остаётся без БД (переносимый плагин): у `UsageTracker` — необязательный колбэк-приёмник, анализатор
+   подключает `analyzer/usage_store.py`, который пишет в SQLite. Классификатор (`classifier.calls`) пишется туда же.
+2. **Статистика дайджеста** (`analyzer/digest_stats.py`, чистая функция по БД и окну): собрано по источникам,
+   разобрано, реклама, ошибки/в очереди, прошло порог, попало в выпуск, md-разборов; токены и деньги по задачам
+   с прошлого выпуска этого имени.
+3. **Доставка:** `POST /digest/generate` добавляет `stats` в ответ; бот отдельным сообщением шлёт их админам.
+   Новая переменная `TELEGRAM_ADMIN_USERS` в `.env.example` (ID через запятую; пусто — не слать). Флаг
+   `digest_stats.enabled` (по умолчанию `false`) — в `DEFAULT_CONFIG` и `settings.json`. Команда `/stats [имя]` —
+   по запросу.
+4. **Вопросы владельцу:** (а) только к дайджесту или ещё по каждому циклу анализа (раз в 30 мин — шумно;
+   предлагаю только к дайджесту плюс `/stats`); (б) цены GPT-6 взяты из листинга OpenRouter — деньги будут
+   оценкой, пока не сверены с биллингом OpenAI.
+- Новых зависимостей нет. Исполнитель — Codex по брифу (модуль на ~300–400 строк с тестами).
+
+### Команды приёмки шага 2c
+
+```bash
+docker compose run --rm --no-deps analyzer python -m pytest -q --ignore=tests/collector
+docker compose run --rm --no-deps analyzer python -m mypy
+docker compose run --rm --no-deps news-radar-api python -c "import api.main; print('ok')"
+docker compose run --rm --no-deps -v "$PWD/tests:/app/tests:ro" news-radar-api python -m unittest discover -s /app/tests -p 'test_api_*.py'
+docker compose run --rm --no-deps -v "$PWD/bot:/app/bot:ro" -v "$PWD/tests:/app/tests:ro" bot python -m unittest discover -s /app/tests -p 'test_bot_*.py'
+docker cp news-radar-chroma:/data/. data/chroma/   # до пересоздания chroma
+docker compose --profile feeds up -d --build
+```

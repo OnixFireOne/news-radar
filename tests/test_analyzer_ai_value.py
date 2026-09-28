@@ -22,7 +22,7 @@ def setup(tmp_path, monkeypatch):
     conn.close()
     cfg_values = {"categories": {"articles": {
                       "enabled": True, "sources": ["rss", "hackernews"], "analyzer": "ai_value",
-                      "hooks": [], "select": "quotas", "template": "ai_value", "extras": []}},
+                      "hooks": ["embeddings"], "select": "quotas", "template": "ai_value", "extras": []}},
                   "min_message_length": 1,
                   "llm_concurrency": 3, "instant_alerts_temperature": False,
                   "ad_filter": {"enabled": True, "use_heuristic": True, "heuristic_keywords": ["#ad"]}}

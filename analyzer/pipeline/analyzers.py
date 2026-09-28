@@ -19,7 +19,7 @@ async def _preflight_batch(rows: list[Row], ctx: AnalyzeContext, ai_value: bool)
 
     async def process_row(row: Row) -> AnalysisResult:
         async with sem:
-            prepared, embedding = await ctx.analyzer._preflight(row, ctx.conn, ai_value)
+            prepared, embedding = await ctx.analyzer._preflight(row, ctx.conn, ai_value, ctx.embeddings)
             if prepared is not None:
                 return row, prepared
             if ai_value:

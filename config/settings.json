@@ -38,7 +38,7 @@
   "categories": {
     "articles": {"enabled": true, "sources": ["rss", "hackernews"], "analyzer": "ai_value", "hooks": [],
                  "select": "quotas", "template": "ai_value", "extras": ["knowledge"]},
-    "crypto": {"enabled": false, "sources": ["telegram"], "analyzer": "crypto", "hooks": ["alerts", "trends", "subscriptions"],
+    "crypto": {"enabled": false, "sources": ["telegram"], "analyzer": "crypto", "hooks": ["embeddings", "alerts", "trends", "subscriptions"],
                "select": "tiers", "template": "spoiler", "extras": []}
   },
   "digests": [

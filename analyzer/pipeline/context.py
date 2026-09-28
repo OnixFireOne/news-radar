@@ -22,6 +22,7 @@ class AnalyzeContext:
     subs_list: list[Row]
     concurrency: int
     params: Mapping[str, Any] = field(default_factory=dict)
+    embeddings: bool = True
 
 
 @dataclass

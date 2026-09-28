@@ -48,18 +48,19 @@ def store_results(results: list[AnalysisResult], ctx: AnalyzeContext, hooks: tup
                     f"VALUES ({', '.join('?' for _ in columns)})", values,
                 )
 
-                emb = result.get("embedding")
-                if emb is None:
-                    emb = analyzer.embedder.encode(row["text"])
-                analyzer.chroma.add_message(
-                    message_id=row["id"], embedding=emb, text=row["text"],
-                    source_name=row["source_name"],
-                    timestamp=row.get("collected_at", datetime.utcnow().isoformat()),
-                    temperature=result.get("temperature", 5.0), topic=normalized_topic,
-                )
+                if ctx.embeddings:
+                    emb = result.get("embedding")
+                    if emb is None:
+                        emb = analyzer.embedder.encode(row["text"])
+                    analyzer.chroma.add_message(
+                        message_id=row["id"], embedding=emb, text=row["text"],
+                        source_name=row["source_name"],
+                        timestamp=row.get("collected_at", datetime.utcnow().isoformat()),
+                        temperature=result.get("temperature", 5.0), topic=normalized_topic,
+                    )
                 conn.execute(
-                    "UPDATE messages SET analyzed=1, chroma_synced=1, is_ad=? WHERE id=?",
-                    (is_ad_llm, row["id"]),
+                    "UPDATE messages SET analyzed=1, chroma_synced=?, is_ad=? WHERE id=?",
+                    (1 if ctx.embeddings else 0, is_ad_llm, row["id"]),
                 )
                 conn.commit()
                 count += 1

@@ -515,6 +515,8 @@ def main():
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
+    # httpx logs every request URL at INFO; Telegram URLs carry the bot token.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     interval_hours = int(os.environ.get("DIGEST_INTERVAL_HOURS", "3"))

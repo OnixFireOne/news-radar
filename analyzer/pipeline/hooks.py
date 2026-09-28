@@ -33,6 +33,11 @@ def subscriptions(row: Row, result: Row, ctx: AnalyzeContext) -> None:
                 }))
 
 
+@HOOKS.register("embeddings")
+def embeddings(row: Row, result: Row, ctx: AnalyzeContext) -> None:
+    """Opt into BGE-m3 vectors (pre-flight dedup, Chroma, digest dedup); no per-message action."""
+
+
 @HOOKS.register("trends")
 def trends(row: Row, result: Row, ctx: AnalyzeContext) -> None:
     """Opt into the separately scheduled trend cycle; no per-message action."""

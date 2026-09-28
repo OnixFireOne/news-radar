@@ -39,7 +39,7 @@ def test_legacy_resolution(
     spec = resolve_legacy(cfg, router)
     assert spec.name == profile
     assert spec.analyzer == expected_analyzer
-    assert spec.hooks == ("alerts", "subscriptions")
+    assert spec.hooks == ("embeddings", "alerts", "subscriptions")
     assert spec.select == expected_selector
     assert spec.template == template
     assert spec.extras == expected_extras

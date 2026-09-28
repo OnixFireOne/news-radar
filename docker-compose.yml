@@ -12,7 +12,7 @@ services:
     ports:
       - "8200:8000"
     volumes:
-      - ./data/chroma:/chroma/chroma   # persistent vector data
+      - ./data/chroma:/data   # persistent vector data (chroma >= 1.0 persists to /data)
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE

@@ -47,24 +47,25 @@ class Embedder:
         if self._model is not None:
             return
 
+        # Hold the lock for the whole load: concurrent encode() calls from the thread pool
+        # used to load the model once each.
         with self._lock:
             if self._model is not None:
                 return
             logger.info(f"Loading embedding model '{self.model_name}' (first run may take a while)...")
-
-        try:
-            from sentence_transformers import SentenceTransformer
-            self._model = SentenceTransformer(
-                self.model_name,
-                cache_folder=self.cache_dir,
-            )
-            logger.info(f"Embedding model loaded. Dim={self._model.get_sentence_embedding_dimension()}")
-        except ImportError:
-            logger.error("sentence-transformers not installed. Run: pip install sentence-transformers")
-            raise
-        except Exception as e:
-            logger.error(f"Failed to load embedding model: {e}")
-            raise
+            try:
+                from sentence_transformers import SentenceTransformer
+                self._model = SentenceTransformer(
+                    self.model_name,
+                    cache_folder=self.cache_dir,
+                )
+                logger.info(f"Embedding model loaded. Dim={self._model.get_sentence_embedding_dimension()}")
+            except ImportError:
+                logger.error("sentence-transformers not installed. Run: pip install sentence-transformers")
+                raise
+            except Exception as e:
+                logger.error(f"Failed to load embedding model: {e}")
+                raise
 
     def encode(self, text: str) -> list[float]:
         """
