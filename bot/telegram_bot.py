@@ -18,7 +18,7 @@ import os
 import sys
 from datetime import datetime, time
 from urllib.parse import urlencode
-from bot.digest_schedule import schedule_slots, slot_key
+from bot.digest_schedule import schedule_slots, slot_key, split_message
 from pathlib import Path
 
 import httpx
@@ -246,25 +246,25 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
 
     for part in digest.get("parts", [digest]):
-        content = part.get("content_md", "")
         parse_mode = part.get("parse_mode", "Markdown")
 
-        try:
-            await update.message.reply_text(
-                content,
-                parse_mode=parse_mode,
-                disable_web_page_preview=True,
-            )
-        except Exception as e:
-            logger.error(f"Digest send failed (parse_mode={parse_mode}): {e} — retrying as plain text")
-            # Strip HTML/Markdown tags so user sees readable plain text
-            import re
-            plain = re.sub(r"<[^>]+>", "", content)   # strip HTML tags
-            plain = plain.replace("*", "").replace("_", "").replace("`", "")  # strip MD
+        for content in split_message(part.get("content_md", "")):
             try:
-                await update.message.reply_text(plain, disable_web_page_preview=True)
-            except Exception as e2:
-                logger.error(f"Plain text fallback also failed: {e2}")
+                await update.message.reply_text(
+                    content,
+                    parse_mode=parse_mode,
+                    disable_web_page_preview=True,
+                )
+            except Exception as e:
+                logger.error(f"Digest send failed (parse_mode={parse_mode}): {e} — retrying as plain text")
+                # Strip HTML/Markdown tags so user sees readable plain text
+                import re
+                plain = re.sub(r"<[^>]+>", "", content)   # strip HTML tags
+                plain = plain.replace("*", "").replace("_", "").replace("`", "")  # strip MD
+                try:
+                    await update.message.reply_text(plain, disable_web_page_preview=True)
+                except Exception as e2:
+                    logger.error(f"Plain text fallback also failed: {e2}")
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -456,25 +456,26 @@ async def perform_scheduled_digest(app: Application, name: str | None = None) ->
             await _notify_users(app, "⚠️ Scheduled digest generated but content is empty.")
             return
 
-        for user_id in list(ALLOWED_USERS):
-            try:
-                await app.bot.send_message(
-                    chat_id=user_id,
-                    text=content,
-                    parse_mode=parse_mode,
-                    disable_web_page_preview=True,
-                )
-            except Exception as e:
-                logger.error(f"Failed to send digest to {user_id} (parse_mode={parse_mode}): {e}")
-                # Fallback: send without formatting — never send error text to user
+        for chunk in split_message(content):
+            for user_id in list(ALLOWED_USERS):
                 try:
                     await app.bot.send_message(
                         chat_id=user_id,
-                        text=content,
+                        text=chunk,
+                        parse_mode=parse_mode,
                         disable_web_page_preview=True,
                     )
-                except Exception as e2:
-                    logger.error(f"Fallback send also failed for {user_id}: {e2}")
+                except Exception as e:
+                    logger.error(f"Failed to send digest to {user_id} (parse_mode={parse_mode}): {e}")
+                    # Fallback: send without formatting — never send error text to user
+                    try:
+                        await app.bot.send_message(
+                            chat_id=user_id,
+                            text=chunk,
+                            disable_web_page_preview=True,
+                        )
+                    except Exception as e2:
+                        logger.error(f"Fallback send also failed for {user_id}: {e2}")
 
 
 async def scheduled_digest_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:

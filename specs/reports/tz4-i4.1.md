@@ -178,3 +178,40 @@ docker compose run --rm --no-deps -v "$PWD/bot:/app/bot:ro" -v "$PWD/tests:/app/
   - Бот при недоступном API на старте ставит legacy-слоты 12:00/20:00 и через ≤ 60 с переходит на `digests`.
 - Результат: **pytest 228 passed, 5 skipped** · mypy `Success: no issues found in 55 source files` ·
   импорт API ok · `test_api_named` (образ API) 1 OK · `test_bot_named` (образ бота) 4 OK.
+
+### Живой прогон шага 2b (28.09)
+
+- Бот пересобран (`docker compose build bot`), стек поднят с `--profile feeds`. Бот взял расписание из
+  `/settings`: `digest:articles:09:10` (Europe/Moscow), заданий крипты нет. Миграции `add_digest_name` /
+  `add_digest_category` применились на живой базе.
+- Анализатор: `openai.chat_completions`, `classify` = gpt-6-luna. 80 из 89 старых статей (11.09) разобраны
+  батчами по 10 без ошибок, ~$0.0013 за батч. Трендовый цикл без категорий с `trends` пропускается.
+- По решению владельца включены `sources.rss.enabled` и `sources.hackernews.enabled` (`settings.json`):
+  в базе были только статьи от 11.09, вне окна дайджеста.
+- `/digest new article` → 404 «неизвестное имя» (ожидаемо). Первый `/digest new articles` → 400
+  «no news»: свежие статьи ещё не были проанализированы (коллектор перезапущен за 34 с до команды).
+- Второй `/digest new articles` → дайджест №1 (`name`/`category` = `articles`), 8 пунктов, HTML
+  6378 символов, **видимых 4254 — больше лимита Telegram 4096**. Бот не доставил ни HTML, ни plain text.
+- **Исправлено:** `bot/digest_schedule.py::split_message` режет часть по пустым строкам между пунктами
+  (HTML не рвётся), крупный блок — по строкам, затем жёстко. Используется в `/digest` и в отправке по
+  расписанию. Тест `tests/test_bot_split.py` (3 теста, strict mypy). Повтор `/digest articles` — пришло
+  2 сообщения, владелец подтвердил.
+- По решению владельца `digest_templates.ai_value`: `max_items` 8 → 7, `quotas.practical` 5 → 4
+  (только `settings.json`; `DEFAULT_CONFIG` не менялся — дефолты кода прежние). 7 пунктов ≈ 3700
+  видимых символов — одно сообщение; нарезка остаётся страховкой.
+- Приёмка после правки: pytest 231 passed, 5 skipped · mypy `Success: no issues found in 56 source files` ·
+  `test_bot_*` в образе бота OK.
+
+**Находки живого прогона (одобрено владельцем чинить шагом 2c):**
+1. Токен бота в логах: `httpx` на INFO пишет URL `api.telegram.org/bot<токен>/...`.
+2. `chromadb:latest` пишет в `/data`, а смонтирован `./data/chroma:/chroma/chroma` — векторы не переживают
+   пересоздание контейнера.
+3. bge-m3 грузится трижды при старте (3 × «Loading embedding model»), первый старт на чистой машине
+   ~25 мин (скачивание ~2.2 ГБ).
+4. Эмбеддинг — отдельным кирпичиком-хуком `embeddings` (решение владельца): новостям нужен, статьям спорно.
+5. **luna ставит `is_ad=1` 20 из 80 статей (25%)**, в т.ч. ценные (туториал по MCP-шлюзам — 7, Gradio
+   Workflow — 7, IBM Granite — 6): вендорский пост о своём продукте считается рекламой. Решение владельца —
+   вариант (а): уточнить определение рекламы в промпте, добавить такие примеры в golden set, перемерить luna.
+6. Ответ API «no news or LLM error» не различает пустое окно и сбой LLM.
+7. Ссылки «разбор (md)» ведут на GitHub (`knowledge.repo`), а `knowledge.targets = ["local"]` — файлы лежат
+   только в `knowledge/`, по ссылке 404, пока их не закоммитить и не запушить.

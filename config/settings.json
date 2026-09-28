@@ -71,9 +71,9 @@
         "crypto": {"emoji": "₿", "label": "Крипто-тренд"},
         "_default": {"emoji": "🔹", "label": ""}
       },
-      "quotas": {"practical": 5, "tools_research": 2, "hype": 1},
+      "quotas": {"practical": 4, "tools_research": 2, "hype": 1},
       "min_value_score": 5,
-      "max_items": 8,
+      "max_items": 7,
       "cross_dedup": false,
       "ongoing_trends": false,
       "emotional_balance": false,
@@ -131,7 +131,7 @@
       "enabled": false
     },
     "rss": {
-      "enabled": false,
+      "enabled": true,
       "poll_minutes": 60,
       "feeds": [
         "https://openai.com/news/rss.xml",
@@ -143,7 +143,7 @@
       ]
     },
     "hackernews": {
-      "enabled": false,
+      "enabled": true,
       "poll_minutes": 60,
       "queries": ["llm", "ai agents"],
       "min_points": 30,
