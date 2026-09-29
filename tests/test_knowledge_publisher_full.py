@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from analyzer.llm_client import LLMJSONError
 from analyzer.knowledge_publisher import build_full_body, build_markdown, generate_doc
 
 ROW = {"id": 7, "text": "Article", "url": "https://example.org/a", "collected_at": "2026-09-28 10:00:00",
@@ -115,3 +116,21 @@ def test_split_parts_is_lossless() -> None:
     text = "a\n" * 30 + "b" * 25 + "\nc\n"
     parts = split_parts(text, 10)
     assert "".join(parts) == text and all(len(part) <= 10 for part in parts)
+
+
+@pytest.mark.asyncio
+async def test_invalid_json_is_retried_once() -> None:
+    # Message 284: the model randomly broke JSON syntax; the same call succeeded on a re-run.
+    llm = AsyncMock()
+    llm.complete_json.side_effect = [LLMJSONError("broken"), answer()]
+    doc = await generate_doc(llm, ROW, {"format": "full"})
+    assert doc is not None and doc.title == "Статья"
+    assert llm.complete_json.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_invalid_json_twice_fails_without_third_call() -> None:
+    llm = AsyncMock()
+    llm.complete_json.side_effect = [LLMJSONError("broken"), LLMJSONError("broken"), answer()]
+    assert await generate_doc(llm, ROW, {"format": "full"}) is None
+    assert llm.complete_json.await_count == 2

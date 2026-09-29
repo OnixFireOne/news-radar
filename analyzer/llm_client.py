@@ -94,6 +94,10 @@ def is_llm_locked() -> bool:
     return False
 
 
+class LLMJSONError(ValueError):
+    """The model answered, but not with parseable JSON; a fresh call usually succeeds."""
+
+
 class LLMLock:
     """Context manager for locking the LLM across processes.
 
@@ -321,8 +325,10 @@ class LLMClient:
             parsed: dict[str, Any] = json.loads(raw)
             return parsed
         except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse LLM JSON response: {e}\nRaw: {raw[:300]}")
-            raise ValueError(f"LLM returned invalid JSON: {raw[:200]}")
+            # Log the text around the error too: the break is often thousands of chars in.
+            logger.error(f"Failed to parse LLM JSON response: {e}\nRaw: {raw[:300]}"
+                         f"\nNear error: {raw[max(0, e.pos - 300):e.pos + 100]!r}")
+            raise LLMJSONError(f"LLM returned invalid JSON: {raw[:200]}") from e
 
     async def health_check(self) -> bool:
         """Check if the LLM API is reachable."""
