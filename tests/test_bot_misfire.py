@@ -22,7 +22,7 @@ class DigestMisfireTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(bot, "fetch_api", AsyncMock(return_value=settings)):
             await bot.refresh_digest_schedule(app)
         job_kwargs = app.job_queue.run_daily.call_args.kwargs["job_kwargs"]
-        self.assertGreaterEqual(job_kwargs["misfire_grace_time"], 3600)
+        self.assertGreaterEqual(job_kwargs["misfire_grace_time"], 12 * 3600)
         self.assertTrue(job_kwargs["coalesce"])
 
     async def test_late_wakeup_runs_once_within_grace(self) -> None:
@@ -37,8 +37,8 @@ class DigestMisfireTests(unittest.IsolatedAsyncioTestCase):
         scheduler = AsyncIOScheduler(timezone=timezone.utc)
         scheduler.start()
         try:
-            # Simulates waking up 30 minutes after the slot: the run time is already in the past.
-            scheduler.add_job(job, "date", run_date=datetime.now(timezone.utc) - timedelta(minutes=30),
+            # Simulates the real 29.09 case: waking up 7 h 53 min after the slot.
+            scheduler.add_job(job, "date", run_date=datetime.now(timezone.utc) - timedelta(hours=7, minutes=53),
                               misfire_grace_time=bot.DIGEST_MISFIRE_GRACE_SECONDS, coalesce=True)
             await asyncio.sleep(0.3)
         finally:

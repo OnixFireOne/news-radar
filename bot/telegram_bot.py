@@ -504,8 +504,9 @@ async def perform_scheduled_digest(app: Application, name: str | None = None) ->
         await send_digest_stats(app.bot, digest["stats"])
 
 
-# A digest slot missed while the host slept still runs on wake-up, once, if within this window.
-DIGEST_MISFIRE_GRACE_SECONDS = 6 * 3600
+# A digest slot missed while the host slept still runs on wake-up, once, if within this window
+# (a Mac can sleep all night and half the day; 20 h still ends before the next daily slot).
+DIGEST_MISFIRE_GRACE_SECONDS = 20 * 3600
 
 
 async def scheduled_digest_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:

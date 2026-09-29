@@ -83,7 +83,7 @@
     "base_url": "https://api.openai.com/v1",
     "protocol": "chat_completions",
     "auth_style": "bearer",
-    "models": {"default": "gpt-6-luna", "classify": "gpt-6-luna", "digest": "gpt-6-sol", "knowledge": "gpt-6-sol"},
+    "models": {"default": "gpt-6-luna", "classify": "gpt-6-luna", "digest": "gpt-6-sol", "knowledge": "gpt-6-luna"},
     "models_path": "/models",
     "cost_source": "table",
     "price_table": {
