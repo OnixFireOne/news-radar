@@ -58,3 +58,17 @@ async def test_full_format_rejects_answer_without_key_points() -> None:
     llm = AsyncMock()
     llm.complete_json.return_value = answer(key_points=[])
     assert await generate_doc(llm, ROW, {"format": "full"}) is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("tags,expected", [
+    (["api", "токены", "кэш"], ["api", "agents"]),
+    (["токены"], ["agents", "ai"]),
+    ("не список", ["agents", "ai"]),
+    (["ai", "agents", "llm"], ["ai", "agents", "llm"]),
+])
+async def test_full_format_repairs_non_latin_tags(tags: Any, expected: list[str]) -> None:
+    llm = AsyncMock()
+    llm.complete_json.return_value = answer(tags=tags)
+    doc = await generate_doc(llm, ROW, {"format": "full"})
+    assert doc is not None and doc.tags == expected

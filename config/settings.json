@@ -75,6 +75,7 @@
         "_default": {"emoji": "🔹", "label": ""}
       },
       "quotas": {"practical": 4, "tools_research": 2, "hype": 1},
+      "carryover_days": 7,
       "min_value_score": 5,
       "max_items": 7,
       "cross_dedup": false,

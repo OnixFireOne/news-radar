@@ -780,6 +780,19 @@ class NewsAnalyzer:
 
         in_digest_filter = "" if force else "AND m.in_digest = 0"
 
+        # Carry-over pool (quota selection only): every article not yet in a digest and published within
+        # carryover_days competes, instead of "since the previous digest". collected_at of RSS/HN is the
+        # publication time, so the window alone lost articles collected after the digest they predate.
+        # Only the top-ranked handful reaches the LLM, so the 24h context cap does not apply here.
+        carryover_days = float(template_cfg.get("carryover_days", 0) or 0) if spec.select == "quotas" else 0.0
+        pool_since = since
+        order_by = "a.temperature DESC"
+        row_limit = 100
+        if carryover_days > 0 and hours is None:
+            pool_since = datetime.utcnow() - timedelta(days=carryover_days)
+            order_by = "a.value_score DESC, m.collected_at DESC, a.temperature DESC"
+            row_limit = 500
+
         try:
             rows = conn.execute(f"""
                 SELECT
@@ -815,9 +828,9 @@ class NewsAnalyzer:
                   {in_digest_filter}
                   {source_filter}
                   AND a.temperature IS NOT NULL
-                ORDER BY a.temperature DESC
-                LIMIT 100
-            """, (trend_src_min, since.isoformat(), *source_params)).fetchall()
+                ORDER BY {order_by}
+                LIMIT {row_limit}
+            """, (trend_src_min, pool_since.isoformat(), *source_params)).fetchall()
         finally:
             conn.close()
 

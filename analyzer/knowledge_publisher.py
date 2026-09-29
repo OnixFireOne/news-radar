@@ -223,6 +223,17 @@ def _items(value: object) -> list[str]:
     return [item.strip() for item in value if isinstance(item, str) and item.strip()] if isinstance(value, list) else []
 
 
+def _full_tags(value: object, row: Mapping[str, Any]) -> list[str]:
+    """Keep valid latin tags; a long retelling is not rejected over tags (models sometimes answer in Cyrillic)."""
+    tags = [tag for tag in _items(value) if re.fullmatch(r"[a-z][a-z0-9-]{0,39}", tag)][:6]
+    for extra in (re.sub(r"[^a-z0-9-]+", "-", str(row.get("topic") or "").lower()).strip("-"), "ai"):
+        if len(tags) >= 2:
+            break
+        if extra and re.fullmatch(r"[a-z][a-z0-9-]{0,39}", extra) and extra not in tags:
+            tags.append(extra)
+    return tags if len(tags) >= 2 else [*tags, "llm"]
+
+
 def build_full_body(result: Mapping[str, Any]) -> str:
     """Render the structured retelling; sections the article has nothing for are omitted."""
     if not _text(result.get("tldr")) or len(_items(result.get("key_points"))) < 3:
@@ -248,7 +259,7 @@ async def generate_doc(llm: LLMClient, row: Mapping[str, Any], cfg: Mapping[str,
         body = ""
         if full:
             body = build_full_body(result)
-            result = {**result, "idea": _text(result.get("tldr")),
+            result = {**result, "tags": _full_tags(result.get("tags"), row), "idea": _text(result.get("tldr")),
                       "conclusion": "\n".join(_items(result.get("takeaways"))) or _text(result.get("tldr"))}
         if not all(isinstance(result.get(key), str) and result[key].strip()
                    for key in ("title", "idea", "conclusion")):

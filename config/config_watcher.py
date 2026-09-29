@@ -57,6 +57,7 @@ DEFAULT_CONFIG = {
             },
             "quotas": {"practical": 5, "tools_research": 2, "hype": 1},
             "min_value_score": 5,
+            "carryover_days": 0,  # >0: unselected articles stay in the pool for N days (quota selection)
             "max_items": 8,
             "cross_dedup": False,
             "ongoing_trends": False,
