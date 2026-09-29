@@ -38,6 +38,9 @@ DEFAULT_CONFIG = {
         "targets": ["github"],  # "local" (md into ./knowledge, tests) | "github" (Contents API, prod)
         "batch_commit": False,  # github: one commit per digest run instead of one per article
         "format": "brief",  # "brief" (Идея/Вывод) | "full" (structured retelling, knowledge-v2)
+        # full format: 0 = cut the article at max_input_chars (old behaviour); >0 = send the whole article,
+        # and split longer ones into parts condensed to notes first, so the end of an article is never lost.
+        "split_over_chars": 0,
     },
     "digest_templates": {
         "ai_value": {
@@ -104,7 +107,8 @@ DEFAULT_CONFIG = {
         # ТЗ #4 И2.1: fetch budget for FullTextFetcher — max_per_cycle across all
         # feeds/queries, max_per_feed so one feed early in iteration order can't
         # eat the whole cycle's budget.
-        "fulltext": {"mode": "short_only", "max_per_cycle": 20, "max_per_feed": 5},
+        "fulltext": {"mode": "short_only", "max_per_cycle": 20, "max_per_feed": 5,
+                     "include_comments": True},  # trafilatura default; settings.json turns comments off
         # ТЗ #4 И3: Telegram is the crypto source, paused by config rather
         # than removed. Default True so an existing settings.json without this
         # key keeps prod collecting; read by collectors/telegram.py main().

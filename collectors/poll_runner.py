@@ -115,6 +115,7 @@ def build_collectors(sources_cfg: dict[str, Any], db_path: str | None = None) ->
         user_agent=DEFAULT_USER_AGENT,
         max_fetches_per_cycle=fulltext_cfg.get("max_per_cycle", 20),
         max_fetches_per_feed=fulltext_cfg.get("max_per_feed", 5),
+        include_comments=bool(fulltext_cfg.get("include_comments", True)),
     )
     max_age_hours = sources_cfg.get("max_age_hours", 72)
     is_known_url = make_known_url_checker(db_path) if db_path else None

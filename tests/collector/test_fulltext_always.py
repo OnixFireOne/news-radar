@@ -156,3 +156,14 @@ def test_runner_passes_mode(mode: str | None, expected: str, caplog: pytest.LogC
     assert collector._fulltext_mode == expected
     warnings = [r for r in caplog.records if r.levelname == "WARNING"]
     assert bool(warnings) == (mode == "invalid")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("include", [True, False])
+async def test_comments_switch_reaches_trafilatura(include: bool) -> None:
+    fetcher = FullTextFetcher(per_domain_delay_seconds=0, include_comments=include)
+    with respx.mock() as router, patch("collectors.fulltext_fetcher.trafilatura.extract",
+                                       return_value="x" * 300) as extract:
+        router.get("https://example.com/a").mock(return_value=httpx.Response(200, text="<html></html>"))
+        assert await fetcher.fetch("https://example.com/a", "feed")
+    assert extract.call_args.kwargs["include_comments"] is include

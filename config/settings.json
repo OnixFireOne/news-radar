@@ -55,6 +55,7 @@
     "min_value_score": 6,
     "max_input_chars": 40000,
     "format": "full",
+    "split_over_chars": 150000,
     "targets": ["github"],
     "batch_commit": true
   },
@@ -129,7 +130,8 @@
     "fulltext": {
       "mode": "always",
       "max_per_cycle": 60,
-      "max_per_feed": 15
+      "max_per_feed": 15,
+      "include_comments": false
     },
     "telegram": {
       "enabled": false

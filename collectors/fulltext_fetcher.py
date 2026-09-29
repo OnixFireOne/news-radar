@@ -45,8 +45,11 @@ class FullTextFetcher:
         per_domain_delay_seconds: float = 2.0,
         max_fetches_per_cycle: int = 20,
         max_fetches_per_feed: int = 5,
+        include_comments: bool = True,
     ) -> None:
         self.user_agent = user_agent
+        # Reader comments are not part of the article; off in settings.json, kept switchable for later analysis.
+        self._include_comments = include_comments
         self._timeout = timeout
         self._per_domain_delay = per_domain_delay_seconds
         self._max_per_cycle = max_fetches_per_cycle
@@ -114,7 +117,7 @@ class FullTextFetcher:
             logger.info(f"Full-text fetch failed for {url}: {e} — keeping snippet")
             return None
 
-        extracted: str | None = trafilatura.extract(html)
+        extracted: str | None = trafilatura.extract(html, include_comments=self._include_comments)
         if not extracted or len(extracted.strip()) < _MIN_EXTRACTED_CHARS:
             logger.info(f"Full-text extraction too short/empty for {url} — keeping snippet")
             return None

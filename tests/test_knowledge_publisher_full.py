@@ -72,3 +72,46 @@ async def test_full_format_repairs_non_latin_tags(tags: Any, expected: list[str]
     llm.complete_json.return_value = answer(tags=tags)
     doc = await generate_doc(llm, ROW, {"format": "full"})
     assert doc is not None and doc.tags == expected
+
+
+@pytest.mark.asyncio
+async def test_whole_article_is_sent_without_cut() -> None:
+    llm = AsyncMock()
+    llm.complete_json.return_value = answer()
+    text = "Начало. " + "x" * 60000 + " КОНЕЦСТАТЬИ"
+    doc = await generate_doc(llm, {**ROW, "text": text},
+                             {"format": "full", "max_input_chars": 40000, "split_over_chars": 150000})
+    assert doc is not None
+    assert llm.complete_json.await_count == 1
+    assert "КОНЕЦСТАТЬИ" in llm.complete_json.call_args.kwargs["user_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_huge_article_goes_through_part_notes() -> None:
+    llm = AsyncMock()
+    prompts: list[str] = []
+
+    async def complete_json(**kwargs: Any) -> dict[str, Any]:
+        prompts.append(kwargs["user_prompt"])
+        if "condensed notes" in kwargs["user_prompt"]:
+            return {"notes": [f"заметка {len(prompts)}"]}
+        return answer()
+
+    llm.complete_json.side_effect = complete_json
+    paragraph = "Абзац текста статьи.\n" * 500  # ~10.5k chars
+    text = paragraph * 3 + "ФИНАЛЬНЫЙВЫВОД\n"
+    doc = await generate_doc(llm, {**ROW, "text": text},
+                             {"format": "full", "max_input_chars": 1000, "split_over_chars": 20000})
+    assert doc is not None
+    notes_calls = [p for p in prompts if "condensed notes" in p]
+    assert len(notes_calls) == 4  # 31.5k chars in parts of 10k, nothing dropped
+    assert "ФИНАЛЬНЫЙВЫВОД" in notes_calls[-1]
+    final = prompts[-1]
+    assert "[Часть 1 из 4]" in final and "[Часть 4 из 4]" in final and "заметка 4" in final
+
+
+def test_split_parts_is_lossless() -> None:
+    from analyzer.knowledge_publisher import split_parts
+    text = "a\n" * 30 + "b" * 25 + "\nc\n"
+    parts = split_parts(text, 10)
+    assert "".join(parts) == text and all(len(part) <= 10 for part in parts)
