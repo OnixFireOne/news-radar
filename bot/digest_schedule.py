@@ -1,5 +1,8 @@
 """Lightweight schedule parsing for the bot image (which has no analyzer package)."""
+from collections.abc import Callable
 from datetime import time
+from html import unescape
+import re
 from typing import Any, Mapping
 from zoneinfo import ZoneInfo
 
@@ -33,32 +36,43 @@ def slot_key(name: str | None, slot: time) -> tuple[str | None, str, str]:
 TELEGRAM_MESSAGE_LIMIT = 4096
 
 
-def split_message(text: str, limit: int = TELEGRAM_MESSAGE_LIMIT) -> list[str]:
+_TAG = re.compile(r"<[^>]*>")
+
+
+def telegram_len(text: str, html: bool = False) -> int:
+    """Length as Telegram counts it: UTF-16 code units of the visible text (tags parsed away)."""
+    visible = unescape(_TAG.sub("", text)) if html else text
+    return len(visible.encode("utf-16-le")) // 2
+
+
+def split_message(text: str, limit: int = TELEGRAM_MESSAGE_LIMIT, html: bool = False) -> list[str]:
     """Split a digest into Telegram-sized chunks on blank lines between items.
 
     Items are separated by blank lines and keep their HTML tags balanced, so
-    splitting there never breaks markup. Raw length is measured (tags
-    included), which is an upper bound on what Telegram counts. A single block
-    longer than the limit falls back to line splits, then to hard cuts.
+    splitting there never breaks markup. With ``html`` the limit applies to the
+    visible text, as in Telegram: link URLs and tags do not count. Otherwise the
+    raw length is measured. A single block longer than the limit falls back to
+    line splits, then to hard cuts of the raw text.
     """
-    if len(text) <= limit:
+    size: Callable[[str], int] = (lambda chunk: telegram_len(chunk, html=True)) if html else len
+    if size(text) <= limit:
         return [text]
     chunks: list[str] = []
     current = ""
     for block in text.split("\n\n"):
         candidate = f"{current}\n\n{block}" if current else block
-        if len(candidate) <= limit:
+        if size(candidate) <= limit:
             current = candidate
             continue
         if current:
             chunks.append(current)
             current = ""
-        if len(block) <= limit:
+        if size(block) <= limit:
             current = block
             continue
         for line in block.split("\n"):
             candidate = f"{current}\n{line}" if current else line
-            if len(candidate) <= limit:
+            if size(candidate) <= limit:
                 current = candidate
                 continue
             if current:

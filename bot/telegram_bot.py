@@ -250,7 +250,7 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     for part in digest.get("parts", [digest]):
         parse_mode = part.get("parse_mode", "Markdown")
 
-        for content in split_message(part.get("content_md", "")):
+        for content in split_message(part.get("content_md", ""), html=parse_mode == "HTML"):
             try:
                 await update.message.reply_text(
                     content,
@@ -479,7 +479,7 @@ async def perform_scheduled_digest(app: Application, name: str | None = None) ->
             await _notify_users(app, "⚠️ Scheduled digest generated but content is empty.")
             return
 
-        for chunk in split_message(content):
+        for chunk in split_message(content, html=parse_mode == "HTML"):
             for user_id in list(ALLOWED_USERS):
                 try:
                     await app.bot.send_message(
