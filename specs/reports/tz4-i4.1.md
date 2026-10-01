@@ -1,6 +1,6 @@
 # ТЗ #4 — И4.1: категории и дайджесты (р.3.3) + площадки базы знаний (р.5)
 
-**Статус:** в работе с 27.09. Шаги 1, 2a и 2b сделаны; ждёт приёмки владельца и живого прогона дайджеста `articles`.
+**Статус:** ✅ **принята владельцем 01.10.2026** (в работе с 27.09). Последняя часть — «Ручной запуск, битый JSON разбора, нарезка выпуска (29–30.09)» в конце файла.
 
 ## Решения владельца 27.09
 
@@ -567,3 +567,54 @@ pytest 245 passed, 10 skipped · mypy `Success: no issues found in 66 source fil
   (до чистки И3), в пул 7 дней не попадают.
 - pytest 269 passed, 12 skipped · коллектор 66 passed · mypy `Success: no issues found in 70 source files`.
   Новых зависимостей нет. Спека v1.17.
+
+### Ручной запуск, битый JSON разбора, нарезка выпуска (29–30.09, Claude Code)
+
+**Что сделано**
+- **Как устроен запуск по таймеру** (по вопросу владельца): контейнер `bot`, `job_queue` (APScheduler) раз в минуту
+  перечитывает `/settings` и ставит `run_daily` на каждый слот `digests[].at` → `scheduled_digest_job` →
+  `perform_scheduled_digest(app, name)` → `POST /digest/generate?name=…` → рассылка `TELEGRAM_ALLOWED_USERS`,
+  статистика — `TELEGRAM_ADMIN_USERS`. Выпуск `articles` запущен этой функцией вручную в контейнере бота — 200, дошёл.
+  Статистика при ручном запуске не пришла — ошибка исполнителя (в скрипте не заполнен `ADMIN_USERS`; в `main()` он
+  заполняется, расписание не затронуто), дослана отдельно.
+- **Битый JSON разбора (message 284):** gpt-6-luna сломала синтаксис JSON на ~3600-м символе пересказа, md не
+  создался; повтор того же вызова дал валидный JSON — сбой случайный. `analyzer/llm_client.py`: `LLMJSONError`
+  (подкласс `ValueError`) и лог текста вокруг места поломки; `analyzer/knowledge_publisher.py`: `_complete_json` —
+  один повтор при битом JSON (разбор и нарезка частей). Тесты в `tests/test_knowledge_publisher_full.py`.
+  Разбор 284 опубликован (`knowledge/2026/09/2026-09-28-nemotron-uskoril-diarizatsiyu-zvonkov-v-sto-raz-353.md`).
+  Грабля 42.
+- **Выпуск пришёл двумя сообщениями:** `split_message` мерил длину с тегами и URL (5478), Telegram считает видимый
+  текст (3821 в UTF-16) при лимите 4096. `bot/digest_schedule.py`: `telegram_len`, `split_message(..., html=)`;
+  `bot/telegram_bot.py` передаёт `html=parse_mode == "HTML"` в обоих местах отправки. Markdown — как раньше.
+  Тесты в `tests/test_bot_split.py`. Выпуск 29.09 теперь режется в 1 сообщение. Грабля 43.
+
+**Коммиты**
+- `db35892` fix(tz4-i4.1): retry knowledge md once on invalid LLM JSON
+- `a11692a` docs(tz4-i4.1): add strict JSON mode debt to STATE
+- `e860e73` docs(tz4-i4.1): strict JSON mode debt is per-task opt-in
+- `031a883` fix(tz4-i4.1): split HTML digests by visible length like Telegram
+
+**Новые зависимости** — нет.
+
+**Расхождения со спекой** — нет.
+
+**Что НЕ сделано / отложено**
+- Строгий JSON-режим провайдера (`response_format`) — в долгах `STATE.md`; по решению владельца выборочно по задачам.
+- Аварийная повторная отправка простым текстом (если Telegram не принял HTML) шлёт теги как текст — на пограничном
+  выпуске может упереться в лимит. Редкий путь, не трогался.
+- Запуск по крону вместо постоянных контейнеров — обсуждён, не делается: контейнеры в простое ~255 МБ и ~0% CPU,
+  основная память — VM Docker Desktop; постоянно нужны бот (команды), алерты и подписки анализатора.
+
+**Побочные находки**
+- Код бота запечён в образ (томов `./bot` нет, в отличие от analyzer/API): после правок в `bot/` —
+  `docker compose up -d --build --force-recreate --no-deps bot`, простой `restart` не подхватывает.
+- `ModelSpec.supports_json_schema` в `llm_core/providers.py` объявлен, но не используется.
+
+**Приёмка:** pytest 274 passed, 12 skipped · mypy `Success: no issues found in 70 source files`.
+Владелец принял И4.1 01.10.2026.
+
+**Команды приёмки**
+```
+docker compose run --rm --no-deps analyzer python -m pytest -q --ignore=tests/collector
+docker compose run --rm --no-deps analyzer python -m mypy
+```
