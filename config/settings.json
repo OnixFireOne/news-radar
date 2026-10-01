@@ -38,7 +38,7 @@
   "_comment_template": "Active digest template. Options: classic | spoiler | ai_value",
   "categories": {
     "articles": {"enabled": true, "sources": ["rss", "hackernews"], "analyzer": "ai_value", "hooks": [],
-                 "select": "quotas", "template": "ai_value", "extras": ["knowledge"]},
+                 "select": "quotas", "template": "ai_value", "extras": ["candidates", "knowledge"]},
     "crypto": {"enabled": false, "sources": ["telegram"], "analyzer": "crypto", "hooks": ["embeddings", "alerts", "trends", "subscriptions"],
                "select": "tiers", "template": "spoiler", "extras": []}
   },
@@ -75,7 +75,9 @@
         "crypto": {"emoji": "₿", "label": "Крипто-тренд"},
         "_default": {"emoji": "🔹", "label": ""}
       },
-      "quotas": {"practical": 4, "tools_research": 2, "hype": 1},
+      "quotas": {"practical": 4, "tools_research": 2, "hype": 0},
+      "tie_break": "oldest",
+      "candidates_list": {"enabled": true, "min_score": 6},
       "carryover_days": 7,
       "min_value_score": 7,
       "max_items": 7,

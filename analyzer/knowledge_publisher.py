@@ -344,7 +344,8 @@ async def generate_doc(llm: LLMClient, row: Mapping[str, Any], cfg: Mapping[str,
 
 async def publish_selected(
     llm: LLMClient, rows: Sequence[Mapping[str, Any]], cfg: Mapping[str, Any],
-    publisher: KnowledgeTarget | None, db_path: str,
+    publisher: KnowledgeTarget | None, db_path: str, *,
+    extra_files: Sequence[tuple[str, str]] = (), delivered: list[str] | None = None,
 ) -> dict[str, str]:
     """Generate md once per article and publish it to every target in knowledge.targets.
 
@@ -425,12 +426,25 @@ async def publish_selected(
                 logger.warning("Knowledge processing failed for message %s", row.get("id"))
 
     await asyncio.gather(*(publish_one(i, row) for i, row in enumerate(rows, 1)))
-    if staged:
-        files = [(path, content) for _, _, path, content, _ in staged]
-        message = f"docs(knowledge): add {len(files)} article summaries"
+    for path, content in extra_files:
+        for target in direct_targets:
+            try:
+                if await target.publish(path, content, "docs(knowledge): add candidates list"):
+                    if delivered is not None and path not in delivered:
+                        delivered.append(path)
+            except Exception:
+                logger.warning("Knowledge extra file publish failed: %s", path)
+    if staged or extra_files:
+        files = [(path, content) for _, _, path, content, _ in staged] + list(extra_files)
+        message = (f"docs(knowledge): add {len(staged)} article summaries" if staged
+                   else "docs(knowledge): add candidates list")
         batch_ok = False
         for target in batch_targets:
             batch_ok = await target.commit_files(files, message) or batch_ok
+        if batch_ok and delivered is not None:
+            for path, _ in extra_files:
+                if path not in delivered:
+                    delivered.append(path)
         for index, row, path, _, direct_ok in staged:
             try:
                 if batch_ok or direct_ok:

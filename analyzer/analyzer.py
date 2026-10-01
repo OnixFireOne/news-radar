@@ -790,7 +790,9 @@ class NewsAnalyzer:
         row_limit = 100
         if carryover_days > 0 and hours is None:
             pool_since = datetime.utcnow() - timedelta(days=carryover_days)
-            order_by = "a.value_score DESC, m.collected_at DESC, a.temperature DESC"
+            order_by = ("a.value_score DESC, m.collected_at ASC, a.temperature DESC"
+                        if template_cfg.get("tie_break") == "oldest" else
+                        "a.value_score DESC, m.collected_at DESC, a.temperature DESC")
             row_limit = 500
 
         try:
@@ -854,6 +856,8 @@ class NewsAnalyzer:
             template_cfg=template_cfg, digest_max=digest_max, min_temp=min_temp,
             since=since, force=force, return_raw=return_raw, params=cat.params,
         )
+        digest_ctx.artifacts.update({"pool": [dict(row) for row in rows_dicts],
+                                     "digest_name": digest_name, "category_name": cat.name})
         selected = SELECTORS.get(spec.select)(rows_dicts, digest_ctx)
         alerts_count, trends_count, high_count = digest_ctx.artifacts["tier_counts"]
 

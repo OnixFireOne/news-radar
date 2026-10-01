@@ -89,6 +89,7 @@ def _ai_value_render(draft: Any, selected: list[Row], ctx: DigestContext) -> tup
     return render_digest(
         value_json, "ai_value", ctx.template_cfg, source_map=ctx.artifacts["source_map"],
         md_map=ctx.artifacts.get("md_map", {}),
+        candidates_link=ctx.artifacts.get("candidates_link"),
     )
 
 

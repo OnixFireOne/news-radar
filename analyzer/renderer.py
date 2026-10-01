@@ -108,7 +108,7 @@ def _render_spoiler(data: dict, item_emoji: str = "🔹", show_summary: bool = T
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
-def render_digest(llm_output, template: str, template_cfg: dict | None = None, source_map: dict | None = None, md_map: dict | None = None) -> tuple[str, str]:
+def render_digest(llm_output, template: str, template_cfg: dict | None = None, source_map: dict | None = None, md_map: dict | None = None, *, candidates_link: dict | None = None) -> tuple[str, str]:
     """
     Route LLM output through the correct template renderer.
 
@@ -131,7 +131,7 @@ def render_digest(llm_output, template: str, template_cfg: dict | None = None, s
             show_summary = cfg.get("show_summary", True)
             return _render_spoiler(llm_output, item_emoji=item_emoji, show_summary=show_summary, source_map=source_map)
         elif template == "ai_value":
-            return _render_ai_value(llm_output, cfg, source_map, md_map)
+            return _render_ai_value(llm_output, cfg, source_map, md_map, candidates_link)
         else:
             # Default: classic
             if not isinstance(llm_output, str):
@@ -142,7 +142,8 @@ def render_digest(llm_output, template: str, template_cfg: dict | None = None, s
         return "", ""
 
 
-def _render_ai_value(data: dict, cfg: dict, source_map: dict | None, md_map: dict | None) -> tuple[str, str]:
+def _render_ai_value(data: dict, cfg: dict, source_map: dict | None, md_map: dict | None,
+                     candidates_link: dict | None = None) -> tuple[str, str]:
     blocks = []
     types = cfg.get("types", {})
     for item in data.get("items", []):
@@ -171,4 +172,9 @@ def _render_ai_value(data: dict, cfg: dict, source_map: dict | None, md_map: dic
         return "", ""
     date = _html_esc(str(data.get("date_label") or ""))
     header = "🤖 <b>AI-радар" + (f" — {date}" if date else "") + "</b>"
+    if candidates_link:
+        escaped_url = _html_esc(str(candidates_link["url"])).replace('"', "&quot;")
+        selected = _html_esc(str(candidates_link["selected"]))
+        total = _html_esc(str(candidates_link["total"]))
+        blocks.append(f'📋 <a href="{escaped_url}">Все кандидаты выпуска</a>: выбрано {selected} из {total}')
     return "\n\n".join([header, *blocks]), "HTML"

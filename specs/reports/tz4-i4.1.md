@@ -618,3 +618,28 @@ pytest 245 passed, 10 skipped · mypy `Success: no issues found in 66 source fil
 docker compose run --rm --no-deps analyzer python -m pytest -q --ignore=tests/collector
 docker compose run --rm --no-deps analyzer python -m mypy
 ```
+
+### После приёмки: порог 7, без «Новости дня», очередь по порядку, список кандидатов (01.10, Codex + Claude Code)
+
+Решения владельца 01.10: порог выпуска `articles` 7 (`c402135`); квота `hype` 0 — «Новость дня» не нужна, место
+занимает лучшая статья практики/инструментов/мнений; при равной оценке — более старые (компромисс: оценка важнее
+возраста); список всех кандидатов выпуска для проверки выбора ИИ — ссылкой последней строкой выпуска, ничего не
+помечает. Цифры на 01.10: статей ≥ 7 приходит ~30 в день, уходит 7, в очереди 87 — порядок решает, какие пропадут,
+разгрести очередь он не может; рычаги — `max_items` или порог 8.
+
+- Код — Codex по брифу `~/.codex-bridge/briefs/news-radar/tz4-i4.1-candidates.md`, диф проверен: `value_funnel.py`
+  (`rank_candidates`, `explain_selection`, `tie_break` в `select_with_quotas`; дефолтный порядок не изменился),
+  `analyzer.py` (SQL-порядок при `oldest`, пул в `artifacts`), `pipeline/extras.py` (экстра `candidates`),
+  `knowledge_publisher.py` (`extra_files`/`delivered` — тем же коммитом), `renderer.py` (только ветка `ai_value`),
+  `writers.py`, конфиг в обоих местах, `tests/test_digest_candidates.py` (11 тестов), `mypy.ini`.
+- Правки оркестратора: типизация в тесте (mypy `--strict`), оценка в таблице без `.0`.
+- Сухой прогон на живой базе 01.10 (без LLM и публикации): «выбрано 7 из 87», 197 строк (7 в выпуске, 80 не
+  вместилось, 110 ниже порога).
+- pytest 285 passed, 12 skipped · mypy `Success: no issues found in 71 source files`. Новых зависимостей нет.
+  Расхождений со спекой нет (р.3.3 порядок внутри пула не задаёт).
+
+**Не сделано / побочные находки**
+- Заголовок в списке — первая строка текста: у dev.to это первый абзац (поля заголовка в `messages` нет).
+- У части RSS-статей резюме не на русском (статья про нарезку видео Kling — на тайском); в RSS просочилась
+  реклама-подборка «Recommended Tools — Binance, Ledger…» (`is_ad` не выставлен). В долги.
+- Живой выпуск со ссылкой — завтра 09:10; проверить, что файл в GitHub открывается.
