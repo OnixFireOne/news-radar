@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import time
+from dataclasses import replace
 from collections.abc import Mapping
 from typing import Any
 
@@ -39,7 +40,7 @@ from analyzer.llm_local import thinking_payload
 from llm_core.catalog import load_catalog, resolve_active
 from llm_core.client_messages import LLMEmptyResponseError
 from llm_core.router import ProviderRouter
-from llm_core.transport import LLMResponse
+from llm_core.transport import JsonSchemaTool, LLMResponse
 from llm_core.config import LLMCoreConfig, auth_headers
 from llm_core.usage import UsageRecord, UsageTracker
 
@@ -147,6 +148,7 @@ class LLMClient:
         self.model: str = model or default_model
         self._router = router
         self._task = task
+        self.strict_json_tasks: frozenset[str] = frozenset()
         self.is_legacy = router is None
         if router is not None:
             self.base_url = router.primary().profile.base_url
@@ -299,20 +301,47 @@ class LLMClient:
         max_tokens: int = -1,  # без лимита — модель сама решает
         disable_thinking: bool | None = None,
         task: str | None = None,
+        schema: JsonSchemaTool | None = None,
     ) -> dict[str, Any]:
         """
         Request expecting a JSON response.
         Automatically parses and validates the JSON.
         Handles cases where the model wraps JSON in markdown code blocks.
         """
-        raw = await self.complete(
-            user_prompt=user_prompt,
-            system_prompt=system_prompt,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            disable_thinking=disable_thinking,
-            task=task,
-        )
+        resolved_task = task or self._task
+        use_tool = schema is not None and self._router is not None and resolved_task in self.strict_json_tasks
+        logger.info("json path=%s task=%s", "tool" if use_tool else "text", resolved_task)
+        if use_tool:
+            assert schema is not None and self._router is not None
+            messages: list[ChatMessage] = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": user_prompt})
+            no_think = self.disable_thinking if disable_thinking is None else disable_thinking
+            extra = thinking_payload(self._router.primary().profile.chat_template_kwargs, no_think)
+            try:
+                response = await self._router.complete(
+                    resolved_task, messages, temperature=temperature,
+                    max_tokens=None if max_tokens == -1 else max_tokens,
+                    extra_payload=extra or None, tool=replace(schema, strict=True),
+                )
+            except LLMEmptyResponseError as exc:
+                self._record_catalog_usage(exc.response, task)
+                logger.warning("LLM empty response: provider=%s stop_reason=%s tokens=%s",
+                               exc.response.provider, exc.stop_reason,
+                               exc.usage.total_tokens if exc.usage is not None else "n/a")
+                raw = ""
+            else:
+                self._record_catalog_usage(response, task)
+                if isinstance(response.structured, dict):
+                    return response.structured
+                raw = response.content
+        else:
+            raw = await self.complete(
+                user_prompt=user_prompt, system_prompt=system_prompt,
+                temperature=temperature, max_tokens=max_tokens,
+                disable_thinking=disable_thinking, task=task,
+            )
 
         # Strip markdown code fences if model added them
         raw = raw.strip()

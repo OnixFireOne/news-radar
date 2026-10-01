@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from llm_core.catalog import CatalogError, ProviderProfile, compute_cost
@@ -15,6 +15,27 @@ class JsonSchemaTool:
     name: str
     description: str
     schema: dict[str, object]
+    strict: bool = False
+
+
+def strict_schema(schema: dict[str, object]) -> dict[str, object]:
+    """Copy a JSON schema and close every object with fully required properties."""
+    def visit(value: object) -> object:
+        if isinstance(value, dict):
+            result = {key: visit(item) for key, item in value.items()}
+            if result.get("type") == "object":
+                properties = result.get("properties")
+                if isinstance(properties, dict):
+                    result["required"] = list(properties)
+                result["additionalProperties"] = False
+            return result
+        if isinstance(value, list):
+            return [visit(item) for item in value]
+        return value
+
+    copied = visit(schema)
+    assert isinstance(copied, dict)
+    return copied
 
 
 @dataclass(frozen=True)
@@ -59,7 +80,9 @@ class ChatCompletionsTransport:
         result = await self._client.chat_completion(
             messages=req.messages, model=req.model, temperature=req.temperature,
             max_tokens=req.max_tokens, extra_payload=extra,
-            tool=req.tool,
+            tool=(replace(req.tool, schema=strict_schema(req.tool.schema))
+                  if req.tool is not None and req.tool.strict and self._profile.strict_tools
+                  else replace(req.tool, strict=False) if req.tool is not None else None),
         )
         usage = result.usage
         raw = result.raw_usage

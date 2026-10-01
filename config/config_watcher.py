@@ -100,6 +100,7 @@ DEFAULT_CONFIG = {
     # Legacy mode only (LLM_PROVIDERS empty); in catalog mode the active profile's
     # gpu_lock/chat_template_kwargs decide.
     "llm_local_mode": True,
+    "llm_strict_json_tasks": [],
     # ТЗ #4 И2: poll-mode collectors (collectors/poll_runner.py), each off by
     # default — prod's collector topology doesn't change until switched on.
     "sources": {

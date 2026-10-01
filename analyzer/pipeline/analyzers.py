@@ -54,7 +54,12 @@ async def ai_value(rows: list[Row], ctx: AnalyzeContext) -> list[AnalysisResult]
     # Resolve the factory through analyzer.py so existing patches keep working.
     from analyzer import analyzer as analyzer_module
 
-    classifier = analyzer_module.LLMValueClassifier(router, task="classify", concurrency=ctx.concurrency)
+    # strict is passed only when enabled, so the default call stays exactly as before.
+    if "classify" in ctx.analyzer.llm.strict_json_tasks:
+        classifier = analyzer_module.LLMValueClassifier(
+            router, task="classify", concurrency=ctx.concurrency, strict=True)
+    else:
+        classifier = analyzer_module.LLMValueClassifier(router, task="classify", concurrency=ctx.concurrency)
     items = [ValueItem(id=str(row["id"]), text=row["text"], source=row["source_name"])
              for row, result in results if result and result.get("__needs_value")]
     outcomes = await classifier.classify(items)

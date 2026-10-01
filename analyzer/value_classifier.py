@@ -70,7 +70,7 @@ class CallStats:
     error: str | None
 
 
-def _tool() -> JsonSchemaTool:
+def _tool(strict: bool = False) -> JsonSchemaTool:
     item: dict[str, object] = {
         "type": "object", "required": ["id", "temperature", "content_type", "value_score",
                                         "has_outcome", "takeaway", "topic", "summary", "keywords", "is_ad"],
@@ -87,11 +87,19 @@ def _tool() -> JsonSchemaTool:
             "is_ad": {"type": "boolean"},
         },
     }
+    if strict:
+        for name in ("temperature", "value_score"):
+            field = item["properties"]
+            assert isinstance(field, dict)
+            score = field[name]
+            assert isinstance(score, dict)
+            score.pop("minimum")
+            score.pop("maximum")
     return JsonSchemaTool("submit_verdicts", "Submit one verdict per article", {
         "type": "object", "required": ["items"], "properties": {
             "items": {"type": "array", "items": item},
         },
-    })
+    }, strict=strict)
 
 
 def _score(value: object) -> int:
@@ -153,7 +161,7 @@ def _safe_id(value: str) -> str:
 class LLMValueClassifier:
     def __init__(self, router: ProviderRouter, *, model: str | None = None, batch_size: int = 5,
                  structured: Literal["tool", "text"] = "tool", task: str = "classify",
-                 max_chars: int = 6000, concurrency: int = 1) -> None:
+                 max_chars: int = 6000, concurrency: int = 1, strict: bool = False) -> None:
         if batch_size < 1 or max_chars < 1 or concurrency < 1:
             raise ValueError("batch_size, max_chars and concurrency must be positive")
         self.router = router
@@ -163,6 +171,7 @@ class LLMValueClassifier:
         self.task = task
         self.max_chars = max_chars
         self.concurrency = concurrency
+        self.strict = strict
         self.calls: list[CallStats] = []
 
     async def classify(self, items: Sequence[ValueItem]) -> list[ClassifyOutcome]:
@@ -190,7 +199,7 @@ class LLMValueClassifier:
         path: Path = "none"
         try:
             response = await self.router.complete(self.task, messages, model=self.model,
-                                                  tool=_tool() if self.structured == "tool" else None)
+                                                  tool=_tool(self.strict) if self.structured == "tool" else None)
             if self.structured == "tool" and response.structured is not None:
                 path = "tool"
                 parsed = response.structured

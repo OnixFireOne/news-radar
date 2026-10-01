@@ -41,6 +41,7 @@ class ProviderProfile:
     extra_headers: Mapping[str, str] = field(default_factory=dict)
     gpu_lock: bool = False
     chat_template_kwargs: bool = False
+    strict_tools: bool = False
     max_concurrency: int | None = None
     # Per-model request quirks merged into the payload; a None value removes the key
     # (e.g. {"gpt-6-luna": {"temperature": None, "reasoning_effort": "none"}}).
@@ -122,7 +123,7 @@ def _validate(name: str, raw: object) -> ProviderProfile:
     if strings["protocol"] == "messages" and ints["max_tokens"] is None:
         _fail(name, "max_tokens", "is required for messages")
     bools: dict[str, bool] = {}
-    for key in ("gpu_lock", "chat_template_kwargs"):
+    for key in ("gpu_lock", "chat_template_kwargs", "strict_tools"):
         value = obj.get(key, False)
         if not isinstance(value, bool):
             _fail(name, key, "must be a boolean")
@@ -176,7 +177,8 @@ def _validate(name: str, raw: object) -> ProviderProfile:
         models_path=optional_strings["models_path"], max_tokens=ints["max_tokens"],
         max_concurrency=ints["max_concurrency"], input_overhead=ints["input_overhead"] or 0,
         price_table="TODO(unverified)" if unverified_prices else prices, extra_headers=headers, gpu_lock=bools["gpu_lock"],
-        chat_template_kwargs=bools["chat_template_kwargs"], model_params=model_params,
+        chat_template_kwargs=bools["chat_template_kwargs"], strict_tools=bools["strict_tools"],
+        model_params=model_params,
     )
 
 

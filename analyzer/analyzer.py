@@ -672,9 +672,12 @@ class NewsAnalyzer:
         defaults: dict[str, Any] = {
             "categories": {}, "digests": [], "analysis_profile": "crypto",
             "digest_template": "classic", "llm_concurrency": 3,
+            "llm_strict_json_tasks": [],
         }
-        return {key: self.cfg.get(key, value) if self.cfg else value
-                for key, value in defaults.items()}
+        cfg = {key: self.cfg.get(key, value) if self.cfg else value
+               for key, value in defaults.items()}
+        self.llm.strict_json_tasks = frozenset(cfg["llm_strict_json_tasks"])
+        return cfg
 
     @staticmethod
     def _source_filter(sources: Sequence[str]) -> tuple[str, tuple[str, ...]]:
@@ -740,6 +743,7 @@ class NewsAnalyzer:
                            return_raw: bool = False, *, _since: datetime | None = None,
                            _run_id: str | None = None) -> str | None:
         """Select and render one category, preserving the legacy pipeline order."""
+        self._pipeline_config()
         self._last_digest_id: int | None = None
         spec = cat
         template_name = cat.template

@@ -190,9 +190,12 @@ class LLMCoreClient:
             for key in [key for key, value in extra_payload.items() if value is None]:
                 del payload[key]
         if tool is not None:
-            payload["tools"] = [{"type": "function", "function": {
+            function_def: dict[str, object] = {
                 "name": tool.name, "description": tool.description, "parameters": tool.schema,
-            }}]
+            }
+            if tool.strict:
+                function_def["strict"] = True
+            payload["tools"] = [{"type": "function", "function": function_def}]
             payload["tool_choice"] = {"type": "function", "function": {"name": tool.name}}
 
         try:
