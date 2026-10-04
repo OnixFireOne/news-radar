@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from analyzer.prompts import (AI_VALUE_MESSAGE_PROMPT, AI_VALUE_MESSAGE_PROMPT_V4, AI_VALUE_PROMPT_VERSION,
-                              AI_VALUE_PROMPTS)
+from analyzer.prompts import (AI_VALUE_LANGUAGE_RULE, AI_VALUE_MESSAGE_PROMPT, AI_VALUE_MESSAGE_PROMPT_V3_1,
+                              AI_VALUE_MESSAGE_PROMPT_V4, AI_VALUE_PROMPT_VERSION, AI_VALUE_PROMPTS)
 from analyzer.value_classifier import ClassifyOutcome, LLMValueClassifier, ValueItem, ValueVerdict
 from config.config_watcher import DEFAULT_CONFIG
 from llm_core import ActiveProvider, LLMResponse, ProviderProfile, ProviderRouter
@@ -30,19 +30,25 @@ def test_v4_shares_output_format_and_ad_rules_with_v3() -> None:
     tail = AI_VALUE_MESSAGE_PROMPT[AI_VALUE_MESSAGE_PROMPT.index("Return only a JSON object"):]
     assert AI_VALUE_MESSAGE_PROMPT_V4.endswith(tail)
     assert "always written in Russian" in AI_VALUE_MESSAGE_PROMPT_V4
-    assert set(AI_VALUE_PROMPTS) == {"ai_value-v3", "ai_value-v4"}
+    assert set(AI_VALUE_PROMPTS) == {"ai_value-v3", "ai_value-v3.1", "ai_value-v4"}
 
 
-def test_config_default_keeps_v3() -> None:
+def test_v3_1_is_v3_plus_language_line() -> None:
+    assert AI_VALUE_MESSAGE_PROMPT_V3_1 == AI_VALUE_MESSAGE_PROMPT + AI_VALUE_LANGUAGE_RULE
+    assert "always in Russian" in AI_VALUE_LANGUAGE_RULE
+
+
+def test_config_default_keeps_v3_and_settings_use_v3_1() -> None:
     with open("config/settings.json", encoding="utf-8") as fh:
         settings = json.load(fh)
     assert DEFAULT_CONFIG["ai_value_prompt_version"] == AI_VALUE_PROMPT_VERSION == "ai_value-v3"
-    assert settings["ai_value_prompt_version"] == "ai_value-v3"
+    assert settings["ai_value_prompt_version"] == "ai_value-v3.1"
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("version, expected", [(None, AI_VALUE_MESSAGE_PROMPT),
                                                ("ai_value-v3", AI_VALUE_MESSAGE_PROMPT),
+                                               ("ai_value-v3.1", AI_VALUE_MESSAGE_PROMPT_V3_1),
                                                ("ai_value-v4", AI_VALUE_MESSAGE_PROMPT_V4)])
 async def test_classifier_sends_selected_prompt(version: str | None, expected: str) -> None:
     r = router()

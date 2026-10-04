@@ -290,8 +290,19 @@ the article.
 
 """ + AI_VALUE_MESSAGE_PROMPT[AI_VALUE_MESSAGE_PROMPT.index("Return only a JSON object"):]
 
+# v3.1 (И4.2): v3 scoring unchanged; only forces Russian takeaway/summary (v3 left ~15% in the
+# article's language, e.g. Thai).
+# The rule goes last: one Thai article in a batch otherwise pulled the whole batch into Thai.
+AI_VALUE_LANGUAGE_RULE = """
+
+Language: takeaway and summary are always in Russian for every item, even when the article,
+or any other article in the batch, is written in Thai, Arabic, English or any other language.
+Never switch to the language of the article."""
+AI_VALUE_MESSAGE_PROMPT_V3_1 = AI_VALUE_MESSAGE_PROMPT + AI_VALUE_LANGUAGE_RULE
+
 AI_VALUE_PROMPTS = {
     AI_VALUE_PROMPT_VERSION: AI_VALUE_MESSAGE_PROMPT,
+    "ai_value-v3.1": AI_VALUE_MESSAGE_PROMPT_V3_1,
     "ai_value-v4": AI_VALUE_MESSAGE_PROMPT_V4,
 }
 
