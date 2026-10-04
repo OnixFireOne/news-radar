@@ -123,3 +123,50 @@ def test_usage_lists_models_per_task(tmp_path: Path) -> None:
         assert '• digest (claude-opus-5-5, gpt-6-sol): 2 выз.' in text
     finally:
         conn.close()
+
+
+def test_carryover_queue_line(tmp_path: Path) -> None:
+    path = str(tmp_path / 'queue.db')
+    init_db(path)
+    conn = get_db(path)
+    cfg: dict[str, Any] = {
+        'digests': [{'name': 'articles', 'categories': ['articles']}],
+        'categories': {'articles': {'sources': ['rss'], 'analyzer': 'ai_value', 'hooks': [],
+                                    'select': 'quotas', 'template': 'ai_value', 'extras': []}},
+        'digest_templates': {'ai_value': {'min_value_score': 7, 'carryover_days': 7}},
+    }
+    try:
+        conn.execute("INSERT INTO sources (id, type, name) VALUES (1, 'rss', 'r')")
+        conn.executemany('INSERT INTO digests (id, name, category, run_id, content_md, period_start, period_end, created_at) '
+                         'VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+            (1, 'articles', 'articles', 'a', 'x', '2026-10-02 06:00:00', '2026-10-03 06:00:00', '2026-10-03 06:00:00'),
+            (2, 'articles', 'articles', 'b', 'x', '2026-10-03 06:00:00', '2026-10-04 06:00:00', '2026-10-04 06:00:00'),
+        ])
+        # (id, collected_at, in_digest, is_ad, score) — digest 2 is at 2026-10-04 06:00, pool = 7 days back.
+        rows = [
+            (1, '2026-10-03 12:00:00', 0, 0, 8),   # waiting, score 8
+            (2, '2026-10-01 12:00:00', 0, 0, 7),   # waiting, score 7
+            (3, '2026-09-27 12:00:00', 0, 0, 9),   # waiting, leaves within 24 h
+            (4, '2026-09-26 12:00:00', 0, 0, 7),   # expired during the window, never selected
+            (5, '2026-09-25 12:00:00', 0, 0, 8),   # expired before the window: not counted
+            (6, '2026-10-03 12:00:00', 1, 0, 9),   # already in a digest
+            (7, '2026-10-03 12:00:00', 0, 1, 9),   # ad
+            (8, '2026-10-03 12:00:00', 0, 0, 6),   # below threshold
+        ]
+        conn.executemany('INSERT INTO messages (id, source_id, external_id, text, collected_at, analyzed, is_ad, in_digest) '
+                         'VALUES (?, 1, ?, ?, ?, 1, ?, ?)',
+                         [(i, str(i), 't', at, ad, used) for i, at, used, ad, _ in rows])
+        conn.executemany('INSERT INTO analysis (message_id, value_score) VALUES (?, ?)',
+                         [(i, score) for i, *_, score in rows])
+        stats = latest_digest_stats(conn, 'articles', cfg)
+        assert stats.queue == {9: 1, 8: 1, 7: 1}
+        assert (stats.queue_expiring, stats.queue_expired) == (1, 1)
+        text = format_digest_stats(stats)
+        assert 'Очередь выпуска: 3 (9: 1 · 8: 1 · 7: 1) · выпадет за сутки: 1 · выпало без выпуска: 1' in text
+        assert 'ждут оценки' in text
+
+        no_pool = {**cfg, 'digest_templates': {'ai_value': {'min_value_score': 7}}}
+        stats = latest_digest_stats(conn, 'articles', no_pool)
+        assert stats.queue is None and 'Очередь выпуска' not in format_digest_stats(stats)
+    finally:
+        conn.close()

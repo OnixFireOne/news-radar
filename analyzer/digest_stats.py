@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import sqlite3
 from typing import Any, Mapping, Sequence
 from zoneinfo import ZoneInfo
@@ -40,6 +40,10 @@ class DigestStats:
     total_cost_usd: float = 0.0
     total_unknown_cost: bool = False
     total_since: datetime | None = None
+    # Carry-over pool (quota digests with carryover_days > 0); None when no source has a pool.
+    queue: dict[int, int] | None = None  # waiting articles per integer score
+    queue_expiring: int = 0  # leave the pool within 24 h after the digest
+    queue_expired: int = 0  # left the pool during the window without ever being selected
 
 
 def _utc(value: str) -> datetime:
@@ -51,7 +55,7 @@ def compute_digest_stats(
     conn: sqlite3.Connection, name: str, since: datetime, until: datetime,
     categories: Sequence[str], sources: Sequence[str], *,
     part_ids: Sequence[int] = (), thresholds: Mapping[str, float] | None = None,
-    membership_known: bool = True,
+    membership_known: bool = True, carryover_days: Mapping[str, float] | None = None,
 ) -> DigestStats:
     """Count the collected cohort in [since, until); selection uses exact part IDs.
 
@@ -98,6 +102,28 @@ def compute_digest_stats(
     usage = tuple(TaskUsage(str(r[0]), int(r[1]), int(r[2]), int(r[3]), float(r[4]), bool(r[5]),
                             tuple(sorted(str(r[6]).split(','))) if r[6] else ())
                   for r in usage_rows)
+    queue: dict[int, int] | None = None
+    expiring = expired = 0
+    for source, days in (carryover_days or {}).items():
+        if days <= 0 or not thresholds or source not in thresholds:
+            continue
+        queue = queue if queue is not None else {}
+        # State at the digest (until): unpublished, not ads, at or above the threshold.
+        pool = ("FROM messages m JOIN sources s ON s.id=m.source_id JOIN analysis a ON a.message_id=m.id "
+                "WHERE s.type=? AND m.analyzed=1 AND m.in_digest=0 AND COALESCE(m.is_ad, 0)=0 "
+                "AND a.value_score>=? AND julianday(m.collected_at)>=julianday(?) "
+                "AND julianday(m.collected_at)<julianday(?)")
+        horizon = until - timedelta(days=days)
+        for score, number in conn.execute(
+                f"SELECT CAST(a.value_score AS INTEGER), COUNT(DISTINCT m.id) {pool} GROUP BY 1",
+                (source, thresholds[source], horizon.isoformat(), until.isoformat())):
+            queue[int(score)] = queue.get(int(score), 0) + int(number)
+        expiring += int(conn.execute(f"SELECT COUNT(DISTINCT m.id) {pool}", (
+            source, thresholds[source], horizon.isoformat(), (horizon + timedelta(days=1)).isoformat(),
+        )).fetchone()[0])
+        expired += int(conn.execute(f"SELECT COUNT(DISTINCT m.id) {pool}", (
+            source, thresholds[source], (since - timedelta(days=days)).isoformat(), horizon.isoformat(),
+        )).fetchone()[0])
     total_row = conn.execute(
         "SELECT COALESCE(SUM(cost_usd), 0), MAX(cost_usd IS NULL), MIN(created_at) FROM llm_usage"
     ).fetchone()
@@ -105,7 +131,8 @@ def compute_digest_stats(
                        passed if thresholds else None, selected if membership_known else None,
                        knowledge if membership_known else None, usage,
                        float(total_row[0]), bool(total_row[1]),
-                       _utc(str(total_row[2]).replace(" ", "T")) if total_row[2] else None)
+                       _utc(str(total_row[2]).replace(" ", "T")) if total_row[2] else None,
+                       queue, expiring, expired)
 
 
 def latest_digest_stats(conn: sqlite3.Connection, name: str | None, cfg: Mapping[str, Any],
@@ -135,14 +162,16 @@ def latest_digest_stats(conn: sqlite3.Connection, name: str | None, cfg: Mapping
     categories = [cat for cat in load_categories(cfg) if cat.name in spec.categories]
     sources = tuple(dict.fromkeys(source for cat in categories for source in cat.sources))
     thresholds: dict[str, float] = {}
+    carryover: dict[str, float] = {}
     for cat in categories:
         if cat.select == 'quotas':
             template = {**cfg.get('digest_templates', {}).get(cat.template, {}), **cat.params}
             for source in cat.sources:
                 thresholds[source] = _number(template.get('min_value_score'), 5)
+                carryover[source] = _number(template.get('carryover_days'), 0)
     return compute_digest_stats(conn, spec.name, since, until, [cat.name for cat in categories], sources,
                                 part_ids=[int(p['id']) for p in parts], thresholds=thresholds,
-                                membership_known=bool(latest['run_id']))
+                                membership_known=bool(latest['run_id']), carryover_days=carryover)
 
 
 def format_digest_stats(stats: DigestStats) -> str:
@@ -174,9 +203,14 @@ def format_digest_stats(stats: DigestStats) -> str:
         f'📊 Дайджест «{stats.name[:80]}» · {stamp:%d.%m %H:%M} МСК (за {hours:.1f} ч)',
         '',
         f'📥 Собрано: {sum(stats.collected.values())} ({sources[:200]})',
-        f'🔍 Разобрано {stats.analyzed} · в очереди {stats.pending} · реклама {stats.ads}',
+        f'🔍 Разобрано {stats.analyzed} · ждут оценки {stats.pending} · реклама {stats.ads}',
         f'✅ Прошло порог {count(stats.passed)} → в выпуске {count(stats.selected)} · '
         f'md-разборов {count(stats.knowledge)}',
+        *([f'🗂 Очередь выпуска: {sum(stats.queue.values())}'
+           + (f' ({" · ".join(f"{k}: {v}" for k, v in sorted(stats.queue.items(), reverse=True))})'
+              if stats.queue else '')
+           + f' · выпадет за сутки: {stats.queue_expiring} · выпало без выпуска: {stats.queue_expired}']
+          if stats.queue is not None else []),
         '',
         '🤖 LLM' + (':' if task_lines else ': нет вызовов'),
         *task_lines,
