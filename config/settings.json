@@ -37,7 +37,7 @@
   ],
   "_comment_template": "Active digest template. Options: classic | spoiler | ai_value",
   "categories": {
-    "articles": {"enabled": true, "sources": ["rss", "hackernews"], "analyzer": "ai_value", "hooks": [],
+    "articles": {"enabled": true, "sources": ["rss", "hackernews", "devto"], "analyzer": "ai_value", "hooks": [],
                  "select": "quotas", "template": "ai_value", "extras": ["candidates", "knowledge"]},
     "crypto": {"enabled": false, "sources": ["telegram"], "analyzer": "crypto", "hooks": ["embeddings", "alerts", "trends", "subscriptions"],
                "select": "tiers", "template": "spoiler", "extras": []}
@@ -158,6 +158,17 @@
       "queries": ["llm", "ai agents"],
       "min_points": 30,
       "hits_per_page": 50
+    },
+    "devto": {
+      "enabled": false,
+      "tags": ["ai"],
+      "top_days": 3,
+      "min_reactions": 10,
+      "min_age_hours": 24,
+      "skip_ai_disclosure": ["fully_autonomous"],
+      "poll_minutes": 60,
+      "per_page": 100,
+      "max_details_per_cycle": 30
     }
   }
 }

@@ -1,8 +1,8 @@
 """
-poll_runner — orchestrates poll-mode collectors (rss, hackernews; github and
+poll_runner — orchestrates poll-mode collectors (rss, hackernews, devto; github and
 reddit join in a later iteration).
 
-Reads sources.rss / sources.hackernews from settings.json, starts every
+Reads sources.rss / sources.hackernews / sources.devto from settings.json, starts every
 enabled collector's listen() loop concurrently, and persists each yielded
 RawMessage the same way collectors/telegram.py does: upsert the source row,
 then INSERT OR IGNORE the message. URL-based dedup is enforced by the
@@ -26,6 +26,7 @@ from typing import Any, Callable, Literal
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from collectors.base import BaseCollector, RawMessage
+from collectors.devto import DevtoCollector
 from collectors.fulltext_fetcher import DEFAULT_USER_AGENT, FullTextFetcher
 from collectors.hackernews import HackerNewsCollector
 from collectors.rss import RssCollector
@@ -154,6 +155,26 @@ def build_collectors(sources_cfg: dict[str, Any], db_path: str | None = None) ->
     else:
         logger.info("Hacker News collector disabled (sources.hackernews.enabled=false)")
 
+    devto_cfg = sources_cfg.get("devto", {})
+    if devto_cfg.get("enabled"):
+        collectors.append(
+            DevtoCollector(
+                tags=devto_cfg.get("tags", ["ai"]),
+                top_days=devto_cfg.get("top_days", 3),
+                min_reactions=devto_cfg.get("min_reactions", 10),
+                min_age_hours=devto_cfg.get("min_age_hours", 24),
+                max_age_hours=max_age_hours,
+                skip_ai_disclosure=devto_cfg.get("skip_ai_disclosure", ["fully_autonomous"]),
+                poll_minutes=devto_cfg.get("poll_minutes", 60),
+                per_page=devto_cfg.get("per_page", 100),
+                max_details_per_cycle=devto_cfg.get("max_details_per_cycle", 30),
+                is_known_url=is_known_url,
+            )
+        )
+        logger.info("DEV Community collector enabled: %s", devto_cfg.get("tags", ["ai"]))
+    else:
+        logger.info("DEV Community collector disabled (sources.devto.enabled=false)")
+
     return collectors
 
 
@@ -170,7 +191,7 @@ async def main() -> None:
     collectors = build_collectors(cfg.get("sources", {}), db_path=db_path)
 
     if not collectors:
-        logger.info("No poll collectors enabled (sources.rss/hackernews both off) — idling.")
+        logger.info("No poll collectors enabled (sources.rss/hackernews/devto all off) — idling.")
         while True:
             await asyncio.sleep(3600)
 

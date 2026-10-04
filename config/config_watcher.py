@@ -138,6 +138,18 @@ DEFAULT_CONFIG = {
             # ТЗ #4 И2.1: page size for the Algolia search_by_date request.
             "hits_per_page": 50,
         },
+        # Reader reactions screen unmoderated dev.to posts (TZ #4 I4.2).
+        "devto": {
+            "enabled": False,
+            "tags": ["ai"],
+            "top_days": 3,
+            "min_reactions": 10,
+            "min_age_hours": 24,
+            "skip_ai_disclosure": ["fully_autonomous"],
+            "poll_minutes": 60,
+            "per_page": 100,
+            "max_details_per_cycle": 30,
+        },
     },
 }
 
