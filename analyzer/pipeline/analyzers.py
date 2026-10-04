@@ -10,6 +10,7 @@ from analyzer.pipeline.context import AnalysisResult, AnalyzeContext, Row
 from analyzer.pipeline.registry import ANALYZERS
 from analyzer.llm_client import get_usage_tracker
 from llm_core.usage import UsageRecord
+from analyzer.prompts import AI_VALUE_PROMPT_VERSION
 from analyzer.value_classifier import ValueItem
 from analyzer.value_funnel import verdict_to_row
 
@@ -54,12 +55,15 @@ async def ai_value(rows: list[Row], ctx: AnalyzeContext) -> list[AnalysisResult]
     # Resolve the factory through analyzer.py so existing patches keep working.
     from analyzer import analyzer as analyzer_module
 
-    # strict is passed only when enabled, so the default call stays exactly as before.
+    # strict and prompt_version are passed only when set, so the default call stays exactly as before.
+    options: dict[str, Any] = {}
     if "classify" in ctx.analyzer.llm.strict_json_tasks:
-        classifier = analyzer_module.LLMValueClassifier(
-            router, task="classify", concurrency=ctx.concurrency, strict=True)
-    else:
-        classifier = analyzer_module.LLMValueClassifier(router, task="classify", concurrency=ctx.concurrency)
+        options["strict"] = True
+    prompt_version = ctx.cfg.get("ai_value_prompt_version")
+    if prompt_version and prompt_version != AI_VALUE_PROMPT_VERSION:
+        options["prompt_version"] = prompt_version
+    classifier = analyzer_module.LLMValueClassifier(router, task="classify", concurrency=ctx.concurrency,
+                                                    **options)
     items = [ValueItem(id=str(row["id"]), text=row["text"], source=row["source_name"])
              for row, result in results if result and result.get("__needs_value")]
     outcomes = await classifier.classify(items)

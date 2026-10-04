@@ -17,7 +17,7 @@ from typing import Literal, Protocol, cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from analyzer.prompts import AI_VALUE_PROMPT_VERSION
+from analyzer.prompts import AI_VALUE_PROMPT_VERSION, AI_VALUE_PROMPTS
 from analyzer.jev_classifier import JevValueClassifier
 from analyzer.value_classifier import LLMValueClassifier, ValueClassifier, ValueItem
 from llm_core.catalog import load_catalog, resolve_active
@@ -32,6 +32,7 @@ UNFETCHABLE = frozenset({"g22", "g32"})
 
 class Args(Protocol):
     impl: str
+    prompt: str
     provider: str
     model: str
     batch_size: int
@@ -97,7 +98,8 @@ def build_classifier(args: Args) -> LLMValueClassifier | JevValueClassifier:
     if args.structured not in ("tool", "text"):
         raise ValueError("structured must be tool or text")
     return LLMValueClassifier(router, model=args.model, batch_size=args.batch_size,
-                              structured=cast(Literal["tool", "text"], args.structured))
+                              structured=cast(Literal["tool", "text"], args.structured),
+                              prompt_version=args.prompt)
 
 
 def percentile(values: list[float], fraction: float) -> float | None:
@@ -175,7 +177,7 @@ async def evaluate(args: Args) -> dict[str, object]:
         "date_utc": datetime.now(timezone.utc).isoformat(), "provider": args.provider,
         "impl": args.impl,
         "candidates": args.candidates.name,
-        "model": args.model, "prompt_version": AI_VALUE_PROMPT_VERSION,
+        "model": args.model, "prompt_version": args.prompt,
         "batch_size": args.batch_size if args.impl == "llm" else 1,
         "structured": args.structured if args.impl == "llm" else "jev",
         "threshold": args.threshold, "accuracy": accuracy,
@@ -205,6 +207,7 @@ def main() -> None:
     parser.add_argument("--decisions-path", default="/alpha/decisions")
     parser.add_argument("--key-env", default="LLM_KEY_OPENROUTER")
     parser.add_argument("--batch-size", type=int, default=5)
+    parser.add_argument("--prompt", choices=sorted(AI_VALUE_PROMPTS), default=AI_VALUE_PROMPT_VERSION)
     parser.add_argument("--structured", choices=("tool", "text"), default="tool")
     parser.add_argument("--threshold", type=int, default=5)
     parser.add_argument("--limit", type=int)
@@ -232,7 +235,7 @@ def main() -> None:
     accuracy = result["accuracy"]
     latency_median, latency_p95 = result["latency_median"], result["latency_p95"]
     hype_violations = cast(list[str], result["hype_ge_8"])
-    row = (f"| {stamp} | {args.provider} | {args.model} | {AI_VALUE_PROMPT_VERSION} | {args.batch_size if args.impl == 'llm' else 1} | "
+    row = (f"| {stamp} | {args.provider} | {args.model} | {args.prompt} | {args.batch_size if args.impl == 'llm' else 1} | "
            f"{args.structured if args.impl == 'llm' else 'jev'} | {accuracy} | {len(hype_violations)} | {result['broken']} | "
            f"{result['cost_usd']} | {latency_median} / {latency_p95} | missing cost: "
            f"{result['calls_without_cost']} calls; candidates: {args.candidates.name} |\n")

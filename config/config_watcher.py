@@ -101,6 +101,8 @@ DEFAULT_CONFIG = {
     # gpu_lock/chat_template_kwargs decide.
     "llm_local_mode": True,
     "llm_strict_json_tasks": [],
+    # ТЗ #4 И4.2: value classifier prompt; "ai_value-v4" scores evidence and novelty.
+    "ai_value_prompt_version": "ai_value-v3",
     # ТЗ #4 И2: poll-mode collectors (collectors/poll_runner.py), each off by
     # default — prod's collector topology doesn't change until switched on.
     "sources": {

@@ -89,6 +89,7 @@ services:
       - ./llm_core:/app/llm_core
       - ./collectors:/app/collectors
       - ./tests:/app/tests
+      - ./scripts:/app/scripts   # manual one-off scripts (rescore_sample.py)
       - ./bot:/app/bot:ro
       - ./pytest.ini:/app/pytest.ini
       - ./mypy.ini:/app/mypy.ini

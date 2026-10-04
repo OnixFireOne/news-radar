@@ -10,7 +10,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal, Protocol, cast
 
-from analyzer.prompts import AI_VALUE_MESSAGE_PROMPT
+from analyzer.prompts import AI_VALUE_MESSAGE_PROMPT, AI_VALUE_PROMPTS
 from llm_core.client import ChatMessage
 from llm_core.client_messages import LLMEmptyResponseError
 from llm_core.router import ProviderRouter
@@ -161,9 +161,13 @@ def _safe_id(value: str) -> str:
 class LLMValueClassifier:
     def __init__(self, router: ProviderRouter, *, model: str | None = None, batch_size: int = 5,
                  structured: Literal["tool", "text"] = "tool", task: str = "classify",
-                 max_chars: int = 6000, concurrency: int = 1, strict: bool = False) -> None:
+                 max_chars: int = 6000, concurrency: int = 1, strict: bool = False,
+                 prompt_version: str | None = None) -> None:
         if batch_size < 1 or max_chars < 1 or concurrency < 1:
             raise ValueError("batch_size, max_chars and concurrency must be positive")
+        if prompt_version is not None and prompt_version not in AI_VALUE_PROMPTS:
+            raise ValueError(f"unknown prompt version {prompt_version!r}; known: {sorted(AI_VALUE_PROMPTS)}")
+        self.prompt = AI_VALUE_PROMPTS[prompt_version] if prompt_version else AI_VALUE_MESSAGE_PROMPT
         self.router = router
         self.model = model
         self.batch_size = batch_size
@@ -190,7 +194,7 @@ class LLMValueClassifier:
         frames = [f'<<<ARTICLE id="{_safe_id(item.id)}">>>\nSource: {_escape(item.source)}\n'
                   f'{_escape(item.text[:self.max_chars])}\n<<<END ARTICLE>>>' for item in batch]
         messages: list[ChatMessage] = [
-            {"role": "system", "content": AI_VALUE_MESSAGE_PROMPT},
+            {"role": "system", "content": self.prompt},
             {"role": "user", "content": "\n\n".join(frames)},
         ]
         started = time.monotonic()

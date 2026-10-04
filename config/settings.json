@@ -127,6 +127,7 @@
   "_comment_llm_local_mode": "legacy mode only (LLM_PROVIDERS empty); in catalog mode the active profile's gpu_lock/chat_template_kwargs decide",
   "llm_local_mode": true,
   "llm_strict_json_tasks": ["knowledge", "digest", "classify"],
+  "ai_value_prompt_version": "ai_value-v3",
   "_comment_sources": "ТЗ #4 И2: poll-mode collectors (collectors/poll_runner.py). Both off by default.",
   "sources": {
     "max_age_hours": 72,

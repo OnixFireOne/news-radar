@@ -672,7 +672,7 @@ class NewsAnalyzer:
         defaults: dict[str, Any] = {
             "categories": {}, "digests": [], "analysis_profile": "crypto",
             "digest_template": "classic", "llm_concurrency": 3,
-            "llm_strict_json_tasks": [],
+            "llm_strict_json_tasks": [], "ai_value_prompt_version": "ai_value-v3",
         }
         cfg = {key: self.cfg.get(key, value) if self.cfg else value
                for key, value in defaults.items()}
