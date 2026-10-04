@@ -148,8 +148,7 @@
         "https://deepmind.google/blog/rss.xml",
         "https://huggingface.co/blog/feed.xml",
         "https://simonwillison.net/atom/everything/",
-        "https://habr.com/ru/rss/hubs/artificial_intelligence/articles/",
-        "https://dev.to/feed/tag/ai"
+        "https://habr.com/ru/rss/hubs/artificial_intelligence/articles/"
       ]
     },
     "hackernews": {
@@ -160,7 +159,7 @@
       "hits_per_page": 50
     },
     "devto": {
-      "enabled": false,
+      "enabled": true,
       "tags": ["ai"],
       "top_days": 3,
       "min_reactions": 10,
