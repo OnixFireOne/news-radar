@@ -1,4 +1,5 @@
 {
+  "digest_stats": {"enabled": true},
   "_comment": "Edit this file to change settings. Changes apply within 3 seconds (no restart needed).",
   "_comment_thinking": "llm_thinking_mode controls reasoning for MESSAGE ANALYSIS (not digest — digest always uses full thinking). Options: 'full' = best quality, ~15-20s/msg; 'off' = fastest, ~2s/msg but temperature scores are less reliable. Middle ground: start llama-server with --reasoning-budget 500 (caps thinking tokens) and set this to 'full'.",
   "llm_thinking_mode": "full",
@@ -8,7 +9,6 @@
   "analyze_interval_minutes": 30,
   "analyze_max_pending": 10,
   "digest_interval_hours": 3,
-  "llm_model": "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf",
   "trend_window_hours": 2,
   "trend_min_sources": 3,
   "trend_min_temperature": 6.0,
@@ -35,9 +35,58 @@
     "liquidat",
     "crash"
   ],
-  "_comment_template": "Active digest template. Options: classic | spoiler",
-  "digest_template": "spoiler",
+  "_comment_template": "Active digest template. Options: classic | spoiler | ai_value",
+  "categories": {
+    "articles": {"enabled": true, "sources": ["rss", "hackernews", "devto"], "analyzer": "ai_value", "hooks": [],
+                 "select": "quotas", "template": "ai_value", "extras": ["candidates", "knowledge"]},
+    "crypto": {"enabled": false, "sources": ["telegram"], "analyzer": "crypto", "hooks": ["embeddings", "alerts", "trends", "subscriptions"],
+               "select": "tiers", "template": "spoiler", "extras": []}
+  },
+  "digests": [
+    {"name": "articles", "enabled": true, "categories": ["articles"], "at": ["09:10"], "tz": "Europe/Moscow"},
+    {"name": "crypto", "enabled": false, "categories": ["crypto"], "at": ["12:00", "20:00"], "tz": "Europe/Moscow"}
+  ],
+  "digest_template": "ai_value",
+  "knowledge": {
+    "enabled": true,
+    "repo": "OnixFireOne/news-radar",
+    "branch": "main",
+    "dir": "knowledge",
+    "min_value_score": 6,
+    "max_input_chars": 40000,
+    "format": "full",
+    "split_over_chars": 150000,
+    "targets": ["github"],
+    "batch_commit": true
+  },
   "digest_templates": {
+    "ai_value": {
+      "show_md_link": true,
+      "title_max_words": 10,
+      "summary_max_sentences": 4,
+      "text_max_chars": 1500,
+      "types": {
+        "practical_case": {"emoji": "💡", "label": "Кейс"},
+        "tutorial": {"emoji": "📚", "label": "Туториал"},
+        "tool_release": {"emoji": "🛠", "label": "Инструмент"},
+        "research": {"emoji": "🔬", "label": "Research"},
+        "opinion": {"emoji": "💬", "label": "Мнение"},
+        "hype_news": {"emoji": "📰", "label": "Новость дня"},
+        "crypto": {"emoji": "₿", "label": "Крипто-тренд"},
+        "_default": {"emoji": "🔹", "label": ""}
+      },
+      "quotas": {"practical": 4, "tools_research": 2, "hype": 0},
+      "tie_break": "oldest",
+      "candidates_list": {"enabled": true, "min_score": 6},
+      "carryover_days": 7,
+      "min_value_score": 7,
+      "max_items": 7,
+      "cross_dedup": false,
+      "ongoing_trends": false,
+      "emotional_balance": false,
+      "lookback_digests": 0,
+      "llm_merge": true
+    },
     "classic": {
       "max_items": 7,
       "min_temperature": 5.0,
@@ -75,33 +124,50 @@
   "hot_trend_min_sources": 5,
   "llm_concurrency": 3,
   "trend_messages_threshold": 20,
-  "_comment_llm_local_mode": "true = current local-GPU behavior (LLMLock, chat_template_kwargs). false = cloud proxy (ТЗ #4)",
+  "_comment_llm_local_mode": "legacy mode only (LLM_PROVIDERS empty); in catalog mode the active profile's gpu_lock/chat_template_kwargs decide",
   "llm_local_mode": true,
+  "llm_strict_json_tasks": ["knowledge", "digest", "classify"],
+  "ai_value_prompt_version": "ai_value-v3.1",
   "_comment_sources": "ТЗ #4 И2: poll-mode collectors (collectors/poll_runner.py). Both off by default.",
   "sources": {
     "max_age_hours": 72,
     "fulltext": {
-      "max_per_cycle": 20,
-      "max_per_feed": 5
+      "mode": "always",
+      "max_per_cycle": 60,
+      "max_per_feed": 15,
+      "include_comments": false
+    },
+    "telegram": {
+      "enabled": false
     },
     "rss": {
-      "enabled": false,
+      "enabled": true,
       "poll_minutes": 60,
       "feeds": [
         "https://openai.com/news/rss.xml",
         "https://deepmind.google/blog/rss.xml",
         "https://huggingface.co/blog/feed.xml",
         "https://simonwillison.net/atom/everything/",
-        "https://habr.com/ru/rss/hubs/artificial_intelligence/articles/",
-        "https://dev.to/feed/tag/ai"
+        "https://habr.com/ru/rss/hubs/artificial_intelligence/articles/"
       ]
     },
     "hackernews": {
-      "enabled": false,
+      "enabled": true,
       "poll_minutes": 60,
       "queries": ["llm", "ai agents"],
       "min_points": 30,
       "hits_per_page": 50
+    },
+    "devto": {
+      "enabled": true,
+      "tags": ["ai"],
+      "top_days": 3,
+      "min_reactions": 10,
+      "min_age_hours": 24,
+      "skip_ai_disclosure": ["fully_autonomous"],
+      "poll_minutes": 60,
+      "per_page": 100,
+      "max_details_per_cycle": 30
     }
   }
 }

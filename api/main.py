@@ -36,6 +36,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from analyzer.digest_stats import latest_digest_stats, format_digest_stats
+from analyzer.usage_store import install_usage_sink
+
 from api.models import (
     MessageResponse,
     AnalysisResponse,
@@ -55,10 +58,13 @@ import httpx
 from database.schema import get_db, init_db
 from analyzer.chroma_client import ChromaClient
 from analyzer.embedder import get_embedder
-from analyzer.llm_client import LLMClient
+from analyzer.llm_client import build_llm_client
 from analyzer.analyzer import NewsAnalyzer
+from analyzer.pipeline.categories import UnknownDigestError, resolve_digest
 
 logger = logging.getLogger(__name__)
+# httpx logs every request URL at INFO; keep URLs with tokens out of the logs.
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 # Shared ChromaDB client and embedder (initialized once at startup)
 # The embedder loads BGE-m3 lazily on first /search call
@@ -94,19 +100,8 @@ DB_PATH = os.environ.get("DATABASE_PATH", "/app/data/news.db")
 async def startup():
     """Initialize database on startup."""
     init_db(DB_PATH)
+    install_usage_sink(DB_PATH)
     logger.info("News Radar API started")
-
-
-@app.get("/settings")
-async def get_settings():
-    """Return current runtime settings from settings.json (for bots and agents to check mode)."""
-    from config.config_watcher import ConfigWatcher
-    cfg = ConfigWatcher()
-    return {
-        "route_via_openclaw": cfg.get("route_via_openclaw", False),
-        "analyze_interval_minutes": cfg.get("analyze_interval_minutes", 15),
-        "analyze_max_pending": cfg.get("analyze_max_pending", 10),
-    }
 
 
 # ──────────────────────────────────────────────
@@ -250,32 +245,80 @@ async def get_topics(
 # ──────────────────────────────────────────────
 
 @app.post("/digest/raw")
-async def get_raw_digest(hours: Optional[int] = Query(None, ge=1, le=48), force: bool = Query(False)):
+async def get_raw_digest(hours: Optional[int] = Query(None, ge=1, le=48), force: bool = Query(False), name: Optional[str] = Query(None)):
     """Generate and return raw digest messages text without pushing via webhook."""
     from config.config_watcher import ConfigWatcher
-    llm = LLMClient(timeout=300)
-    analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm, cfg=ConfigWatcher())
+    llm = build_llm_client(timeout=300)
+    analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm, cfg=ConfigWatcher(str(CONFIG_PATH)))
     
+    if analyzer.cfg and analyzer.cfg.get("digests", []):
+        try:
+            parts = await analyzer.run_digest(name, hours, force, return_raw=True)
+        except UnknownDigestError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if not parts:
+            raise HTTPException(status_code=400, detail="No suitable news for digest")
+        return {"raw_text": parts[0].result,
+                "parts": [{"category": part.category, "raw_text": part.result} for part in parts]}
     result = await analyzer.generate_digest(hours=hours, force=force, return_raw=True)
     if not result:
         raise HTTPException(status_code=400, detail="No suitable news for digest")
     return {"raw_text": result}
 
+def _digest_failure(analyzer: NewsAnalyzer) -> HTTPException:
+    """Tell an empty window (400) from a failed LLM/DB step (502)."""
+    raw = getattr(analyzer, "digest_failures", None)
+    failures = set(raw) if isinstance(raw, list) else set()
+    if failures - {"no_news"}:
+        kinds = ", ".join(sorted(failures - {"no_news"}))
+        return HTTPException(status_code=502, detail=f"Digest generation failed ({kinds} error), see analyzer logs")
+    return HTTPException(status_code=400, detail="No new analyzed news for digest")
+
+
 @app.post("/digest/generate")
-async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force: bool = Query(False)):
+async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force: bool = Query(False), name: Optional[str] = Query(None)):
     """Manually trigger AI digest generation for the last N hours.
     
     Use ?force=true to bypass the in_digest filter (re-generate even if all msgs were used).
     """
     from config.config_watcher import ConfigWatcher
-    llm = LLMClient(timeout=300)
-    analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm, cfg=ConfigWatcher())
+    llm = build_llm_client(timeout=300)
+    analyzer = NewsAnalyzer(db_path=DB_PATH, llm_client=llm, cfg=ConfigWatcher(str(CONFIG_PATH)))
 
+    if analyzer.cfg and analyzer.cfg.get("digests", []):
+        try:
+            spec = resolve_digest({"digests": analyzer.cfg.get("digests", [])}, name)
+            parts = await analyzer.run_digest(name, hours, force)
+        except UnknownDigestError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        if not parts:
+            raise _digest_failure(analyzer)
+        conn = get_db(DB_PATH)
+        try:
+            responses = []
+            for part in parts:
+                if part.digest_id is not None:
+                    row = conn.execute("SELECT * FROM digests WHERE id=?", (part.digest_id,)).fetchone()
+                    responses.append(DigestResponse(**dict(row)).model_dump())
+            if not responses:
+                return {"status": "dispatched", "name": spec.name if spec else name, "parts": []}
+            result = {**responses[0], "parts": responses}
+            if analyzer.cfg.get("digest_stats", {}).get("enabled", False):
+                try:
+                    cfg = {key: analyzer.cfg.get(key, default) for key, default in (
+                        ("digests", []), ("categories", {}), ("digest_templates", {}))}
+                    result["stats"] = format_digest_stats(latest_digest_stats(
+                        conn, spec.name if spec else name, cfg, digest_id=responses[-1]["id"]))
+                except Exception:
+                    logger.warning("Digest statistics unavailable", exc_info=True)
+            return result
+        finally:
+            conn.close()
     result = await analyzer.generate_digest(hours=hours, force=force)
     if result == "dispatched":
         return {"status": "dispatched"}
     elif not result:
-        raise HTTPException(status_code=400, detail="Could not generate digest (no news or LLM error)")
+        raise _digest_failure(analyzer)
 
     conn = get_db(DB_PATH)
     try:
@@ -284,22 +327,40 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
         conn.close()
 
     return DigestResponse(
+        name=row["name"], category=row["category"],
         id=row["id"],
         content_md=row["content_md"],
         parse_mode=row["parse_mode"] if row["parse_mode"] else "Markdown",
         period_start=datetime.fromisoformat(row["period_start"]),
         period_end=datetime.fromisoformat(row["period_end"]),
         created_at=datetime.fromisoformat(row["created_at"]),
-    )
+    ).model_dump(exclude_none=True)
 
 
-@app.get("/digest/latest", response_model=DigestResponse)
-async def get_latest_digest():
+@app.get("/digest/stats")
+async def get_digest_stats(name: Optional[str] = Query(None)):
+    from config.config_watcher import ConfigWatcher
+    watcher = ConfigWatcher(str(CONFIG_PATH))
+    cfg = {key: watcher.get(key, default) for key, default in (
+        ("digests", []), ("categories", {}), ("digest_templates", {}))}
+    conn = get_db(DB_PATH)
+    try:
+        return {"text": format_digest_stats(latest_digest_stats(conn, name, cfg))}
+    except (UnknownDigestError, LookupError) as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    finally:
+        conn.close()
+
+
+@app.get("/digest/latest", response_model=DigestResponse, response_model_exclude_none=True)
+async def get_latest_digest(name: Optional[str] = Query(None)):
     """Get the most recently generated digest."""
     conn = get_db(DB_PATH)
     try:
         row = conn.execute(
-            "SELECT * FROM digests ORDER BY created_at DESC LIMIT 1"
+            "SELECT * FROM digests" + (" WHERE name = ?" if name is not None else "")
+            + (" ORDER BY created_at DESC, id DESC LIMIT 1" if name is not None
+               else " ORDER BY created_at DESC LIMIT 1"), (name,) if name is not None else ()
         ).fetchone()
     finally:
         conn.close()
@@ -308,6 +369,7 @@ async def get_latest_digest():
         raise HTTPException(status_code=404, detail="No digests generated yet")
 
     return DigestResponse(
+        name=row["name"], category=row["category"],
         id=row["id"],
         content_md=row["content_md"],
         parse_mode=row["parse_mode"] if row["parse_mode"] else "Markdown",
@@ -317,19 +379,23 @@ async def get_latest_digest():
     )
 
 
-@app.get("/digest", response_model=list[DigestResponse])
-async def get_digests(limit: int = Query(10, ge=1, le=50)):
+@app.get("/digest", response_model=list[DigestResponse], response_model_exclude_none=True)
+async def get_digests(limit: int = Query(10, ge=1, le=50), name: Optional[str] = Query(None)):
     """List recent digests."""
     conn = get_db(DB_PATH)
     try:
         rows = conn.execute(
-            "SELECT * FROM digests ORDER BY created_at DESC LIMIT ?", (limit,)
+            "SELECT * FROM digests" + (" WHERE name = ?" if name is not None else "")
+            + (" ORDER BY created_at DESC, id DESC LIMIT ?" if name is not None
+               else " ORDER BY created_at DESC LIMIT ?"),
+            (name, limit) if name is not None else (limit,)
         ).fetchall()
     finally:
         conn.close()
 
     return [
         DigestResponse(
+            name=row["name"], category=row["category"],
             id=row["id"],
             content_md=row["content_md"],
             parse_mode=row["parse_mode"] if row["parse_mode"] else "Markdown",
@@ -441,6 +507,8 @@ _SETTINGS_SCHEMA: dict[str, type] = {
     "load_history_limit":      int,
     "analyze_interval_minutes": int,
     "digest_interval_hours":   int,
+    "categories":              dict,
+    "digests":                 list,
     "trend_window_hours":      int,
     "trend_min_sources":       int,
     "trend_min_temperature":   float,

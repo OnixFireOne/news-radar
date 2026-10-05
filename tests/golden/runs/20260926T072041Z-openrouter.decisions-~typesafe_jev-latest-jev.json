@@ -1,0 +1,1274 @@
+{
+  "date_utc": "2026-09-26T07:20:41.434176+00:00",
+  "provider": "openrouter.decisions",
+  "impl": "jev",
+  "model": "~typesafe/jev-latest",
+  "prompt_version": "ai_value-v2",
+  "batch_size": 1,
+  "structured": "jev",
+  "threshold": 5,
+  "accuracy": 0.7222222222222222,
+  "accuracy_without_unfetchable": 0.7647058823529411,
+  "unfetchable": [
+    "g22",
+    "g32"
+  ],
+  "evaluated": 36,
+  "confusion": {
+    "valuable/not_valuable": 8,
+    "not_valuable/not_valuable": 16,
+    "valuable/valuable": 10,
+    "not_valuable/valuable": 2
+  },
+  "hype_ge_8": [],
+  "mismatches": [
+    "g01",
+    "g11",
+    "g14",
+    "g22",
+    "g24",
+    "g27",
+    "g28",
+    "g29",
+    "g32",
+    "g34"
+  ],
+  "broken": 0,
+  "paths": {
+    "decisions": 36
+  },
+  "tokens_in": 55938,
+  "tokens_out": 6980,
+  "cost_usd": 0.0023493960000000006,
+  "calls_without_cost": 0,
+  "cost_sources": {
+    "provider": 36
+  },
+  "latency_median": 0.492871996999952,
+  "latency_p95": 0.808902724999939,
+  "adversarial": [
+    {
+      "gid": "g20",
+      "label": "шум",
+      "score": 2,
+      "type": "opinion",
+      "takeaway": ""
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "score": 2,
+      "type": "tool_release",
+      "takeaway": ""
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "score": 7,
+      "type": "practical_case",
+      "takeaway": ""
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "score": 5,
+      "type": "practical_case",
+      "takeaway": ""
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "score": 1,
+      "type": "tutorial",
+      "takeaway": ""
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "score": 1,
+      "type": "tutorial",
+      "takeaway": ""
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "score": 2,
+      "type": "hype_news",
+      "takeaway": ""
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "score": 1,
+      "type": "hype_news",
+      "takeaway": ""
+    }
+  ],
+  "items": [
+    {
+      "gid": "g01",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 4,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "models",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.48,
+        "content_type": 0.57
+      }
+    },
+    {
+      "gid": "g02",
+      "label": "хайп",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.8,
+        "content_type": 0.53
+      }
+    },
+    {
+      "gid": "g03",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "agents",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.77,
+        "content_type": 0.87
+      }
+    },
+    {
+      "gid": "g04",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "tool_release",
+        "value_score": 8,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "agents",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.71,
+        "content_type": 1.0
+      }
+    },
+    {
+      "gid": "g05",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "opinion",
+        "value_score": 2,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.66,
+        "content_type": 0.98
+      }
+    },
+    {
+      "gid": "g06",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "tool_release",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": true
+      },
+      "confidences": {
+        "value_score": 0.72,
+        "content_type": 0.98
+      }
+    },
+    {
+      "gid": "g07",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "research",
+        "value_score": 6,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "agents",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.5,
+        "content_type": 1.0
+      }
+    },
+    {
+      "gid": "g08",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "tutorial",
+        "value_score": 8,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "models",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.45,
+        "content_type": 0.71
+      }
+    },
+    {
+      "gid": "g09",
+      "label": "хайп",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "opinion",
+        "value_score": 3,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "agents",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.71,
+        "content_type": 0.57
+      }
+    },
+    {
+      "gid": "g10",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 6,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "llm_ops",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.0,
+        "content_type": 0.63
+      }
+    },
+    {
+      "gid": "g11",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "opinion",
+        "value_score": 4,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "models",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.74,
+        "content_type": 0.82
+      }
+    },
+    {
+      "gid": "g12",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "tool_release",
+        "value_score": 5,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "models",
+        "summary": "",
+        "keywords": [],
+        "is_ad": true
+      },
+      "confidences": {
+        "value_score": 0.48,
+        "content_type": 0.96
+      }
+    },
+    {
+      "gid": "g13",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "opinion",
+        "value_score": 4,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.75,
+        "content_type": 0.82
+      }
+    },
+    {
+      "gid": "g14",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 3,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "agents",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.53,
+        "content_type": 0.49
+      }
+    },
+    {
+      "gid": "g15",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 9,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "models",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.79,
+        "content_type": 0.98
+      }
+    },
+    {
+      "gid": "g16",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "hype_news",
+        "value_score": 1,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": true
+      },
+      "confidences": {
+        "value_score": 0.99,
+        "content_type": 0.93
+      }
+    },
+    {
+      "gid": "g17",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 5,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "models",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.34,
+        "content_type": 0.45
+      }
+    },
+    {
+      "gid": "g18",
+      "label": "хайп",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "models",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.63,
+        "content_type": 0.82
+      }
+    },
+    {
+      "gid": "g19",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 7,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "models",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.88,
+        "content_type": 0.96
+      }
+    },
+    {
+      "gid": "g20",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "opinion",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "agents",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.66,
+        "content_type": 0.44
+      }
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "tool_release",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.73,
+        "content_type": 0.76
+      }
+    },
+    {
+      "gid": "g22",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "tool_release",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "agents",
+        "summary": "",
+        "keywords": [],
+        "is_ad": true
+      },
+      "confidences": {
+        "value_score": 0.76,
+        "content_type": 0.92
+      }
+    },
+    {
+      "gid": "g23",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 6,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "models",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.62,
+        "content_type": 0.95
+      }
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 7,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "integrations",
+        "summary": "",
+        "keywords": [],
+        "is_ad": true
+      },
+      "confidences": {
+        "value_score": 0.12,
+        "content_type": 0.35
+      }
+    },
+    {
+      "gid": "g25",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "tutorial",
+        "value_score": 1,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.99,
+        "content_type": 0.49
+      }
+    },
+    {
+      "gid": "g26",
+      "label": "хайп",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "agents",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.75,
+        "content_type": 1.0
+      }
+    },
+    {
+      "gid": "g27",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "hype_news",
+        "value_score": 3,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "integrations",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.71,
+        "content_type": 0.75
+      }
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 5,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "agents",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.0,
+        "content_type": 0.78
+      }
+    },
+    {
+      "gid": "g29",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "opinion",
+        "value_score": 4,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "agents",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.76,
+        "content_type": 0.87
+      }
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "tutorial",
+        "value_score": 1,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.96,
+        "content_type": 0.97
+      }
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "tutorial",
+        "value_score": 1,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.93,
+        "content_type": 0.26
+      }
+    },
+    {
+      "gid": "g32",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "models",
+        "summary": "",
+        "keywords": [],
+        "is_ad": true
+      },
+      "confidences": {
+        "value_score": 0.79,
+        "content_type": 0.74
+      }
+    },
+    {
+      "gid": "g33",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 7,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "infra",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.54,
+        "content_type": 1.0
+      }
+    },
+    {
+      "gid": "g34",
+      "label": "ценно",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 2,
+        "has_outcome": true,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.5,
+        "content_type": 0.98
+      }
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": false
+      },
+      "confidences": {
+        "value_score": 0.76,
+        "content_type": 0.41
+      }
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "path": "decisions",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "hype_news",
+        "value_score": 1,
+        "has_outcome": false,
+        "takeaway": "",
+        "topic": "other",
+        "summary": "",
+        "keywords": [],
+        "is_ad": true
+      },
+      "confidences": {
+        "value_score": 0.99,
+        "content_type": 0.68
+      }
+    }
+  ],
+  "calls": [
+    {
+      "latency_seconds": 0.8553562259999126,
+      "prompt_tokens": 1641,
+      "completion_tokens": 195,
+      "cost_usd": 6.8922e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.808902724999939,
+      "prompt_tokens": 985,
+      "completion_tokens": 194,
+      "cost_usd": 4.137e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.79795444399997,
+      "prompt_tokens": 1828,
+      "completion_tokens": 194,
+      "cost_usd": 7.6776e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.7460046649999867,
+      "prompt_tokens": 2505,
+      "completion_tokens": 193,
+      "cost_usd": 0.00010521,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.7205658240000048,
+      "prompt_tokens": 1345,
+      "completion_tokens": 193,
+      "cost_usd": 5.649e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.49551911200001086,
+      "prompt_tokens": 1827,
+      "completion_tokens": 193,
+      "cost_usd": 7.6734e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.5439327489999641,
+      "prompt_tokens": 1601,
+      "completion_tokens": 192,
+      "cost_usd": 6.7242e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.5101533270000118,
+      "prompt_tokens": 2376,
+      "completion_tokens": 192,
+      "cost_usd": 9.9792e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4709896919999892,
+      "prompt_tokens": 2261,
+      "completion_tokens": 193,
+      "cost_usd": 9.4962e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.443542635999961,
+      "prompt_tokens": 1189,
+      "completion_tokens": 197,
+      "cost_usd": 4.9938e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4701997009999559,
+      "prompt_tokens": 1619,
+      "completion_tokens": 193,
+      "cost_usd": 6.7998e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.47542249599996467,
+      "prompt_tokens": 2275,
+      "completion_tokens": 193,
+      "cost_usd": 9.555e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.5093821499999649,
+      "prompt_tokens": 1337,
+      "completion_tokens": 193,
+      "cost_usd": 5.6154e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4956059889999551,
+      "prompt_tokens": 1222,
+      "completion_tokens": 195,
+      "cost_usd": 5.1324e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.508261171000072,
+      "prompt_tokens": 1318,
+      "completion_tokens": 195,
+      "cost_usd": 5.5356e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4911016239999526,
+      "prompt_tokens": 2249,
+      "completion_tokens": 194,
+      "cost_usd": 9.4458e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4922732449999785,
+      "prompt_tokens": 1108,
+      "completion_tokens": 195,
+      "cost_usd": 4.6536e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.5073333599999614,
+      "prompt_tokens": 1761,
+      "completion_tokens": 194,
+      "cost_usd": 7.3962e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.5098525529999733,
+      "prompt_tokens": 2790,
+      "completion_tokens": 195,
+      "cost_usd": 0.00011718,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4251907760000222,
+      "prompt_tokens": 1051,
+      "completion_tokens": 193,
+      "cost_usd": 4.4142e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.46550872100010565,
+      "prompt_tokens": 1457,
+      "completion_tokens": 193,
+      "cost_usd": 6.1194e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.5231534799999054,
+      "prompt_tokens": 981,
+      "completion_tokens": 193,
+      "cost_usd": 4.1202e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 1.513360734999992,
+      "prompt_tokens": 1399,
+      "completion_tokens": 195,
+      "cost_usd": 5.8758e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.5837493760000143,
+      "prompt_tokens": 2518,
+      "completion_tokens": 197,
+      "cost_usd": 0.000105756,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.5131276759999537,
+      "prompt_tokens": 1193,
+      "completion_tokens": 192,
+      "cost_usd": 5.0106e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.442995695000036,
+      "prompt_tokens": 1190,
+      "completion_tokens": 194,
+      "cost_usd": 4.998e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4934707489999255,
+      "prompt_tokens": 1239,
+      "completion_tokens": 196,
+      "cost_usd": 5.2038e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4697561790000009,
+      "prompt_tokens": 2344,
+      "completion_tokens": 195,
+      "cost_usd": 9.8448e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.45081652700002905,
+      "prompt_tokens": 1617,
+      "completion_tokens": 193,
+      "cost_usd": 6.7914e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.43418408799993813,
+      "prompt_tokens": 955,
+      "completion_tokens": 192,
+      "cost_usd": 4.011e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4390513609999971,
+      "prompt_tokens": 1334,
+      "completion_tokens": 192,
+      "cost_usd": 5.6028e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4229987200000096,
+      "prompt_tokens": 979,
+      "completion_tokens": 194,
+      "cost_usd": 4.1118e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.48131738699999005,
+      "prompt_tokens": 1268,
+      "completion_tokens": 195,
+      "cost_usd": 5.3256e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4688042340000038,
+      "prompt_tokens": 1210,
+      "completion_tokens": 195,
+      "cost_usd": 5.082e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.4687660050000204,
+      "prompt_tokens": 984,
+      "completion_tokens": 194,
+      "cost_usd": 4.1328e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    },
+    {
+      "latency_seconds": 0.44730045099993276,
+      "prompt_tokens": 982,
+      "completion_tokens": 194,
+      "cost_usd": 4.1244e-05,
+      "cost_source": "provider",
+      "provider": "https://openrouter.ai/api",
+      "model": "typesafe/jev-1.13-20260917",
+      "path": "decisions",
+      "error": null
+    }
+  ],
+  "confidence_accuracy": {
+    "ge_0_8": {
+      "count": 7,
+      "accuracy": 1.0
+    },
+    "lt_0_8": {
+      "count": 29,
+      "accuracy": 0.6551724137931034
+    }
+  },
+  "pass": false
+}

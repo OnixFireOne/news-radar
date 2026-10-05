@@ -1,0 +1,645 @@
+{
+  "date_utc": "2026-09-25T16:59:31.754347+00:00",
+  "provider": "aiprime.messages",
+  "model": "claude-sonnet-5",
+  "prompt_version": "ai_value-v1",
+  "batch_size": 5,
+  "structured": "text",
+  "threshold": 5,
+  "accuracy": 0.2777777777777778,
+  "evaluated": 36,
+  "confusion": {
+    "valuable/broken": 11,
+    "not_valuable/broken": 12,
+    "valuable/not_valuable": 2,
+    "valuable/valuable": 5,
+    "not_valuable/not_valuable": 5,
+    "not_valuable/valuable": 1
+  },
+  "hype_ge_8": [],
+  "mismatches": [
+    "g22",
+    "g28",
+    "g32"
+  ],
+  "broken": 23,
+  "paths": {
+    "none": 15,
+    "text": 21
+  },
+  "tokens_in": 32091,
+  "tokens_out": 10793,
+  "cost_usd": 0.172112,
+  "calls_without_cost": 0,
+  "cost_sources": {
+    "table": 8
+  },
+  "latency_median": 24.849666221999996,
+  "latency_p95": 104.99146564500006,
+  "adversarial": [
+    {
+      "gid": "g20",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "score": 2,
+      "type": "hype_news",
+      "takeaway": "Маркетинговый контент без верифицируемых источников утверждает, что AI-инструменты сокращают deployment time на 50% и повышают feature throughput на 17.6%."
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "score": 6,
+      "type": "research",
+      "takeaway": "Инженеры узнали о реальных уязвимостях sandbox-изоляции агентов и архитектурных паттернах (Provider Adapter) для повышения надёжности agentic-систем."
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "score": 2,
+      "type": "opinion",
+      "takeaway": "Читатель прошёл психологический тест на внушаемость, который не имеет отношения к AI-системам."
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "score": 1,
+      "type": "opinion",
+      "takeaway": "Автор выразил своё мнение, что AI изменит всё, но не предоставил никаких практических деталей или примеров."
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "score": null,
+      "type": null,
+      "takeaway": null
+    }
+  ],
+  "items": [
+    {
+      "gid": "g01",
+      "label": "ценно",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g02",
+      "label": "хайп",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g03",
+      "label": "шум",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g04",
+      "label": "ценно",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g05",
+      "label": "шум",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g06",
+      "label": "шум",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g07",
+      "label": "ценно",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g08",
+      "label": "ценно",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g09",
+      "label": "хайп",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g10",
+      "label": "ценно",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g11",
+      "label": "ценно",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g12",
+      "label": "ценно",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g13",
+      "label": "шум",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g14",
+      "label": "ценно",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g15",
+      "label": "ценно",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)",
+      "verdict": null
+    },
+    {
+      "gid": "g16",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g17",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g18",
+      "label": "хайп",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g19",
+      "label": "ценно",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g20",
+      "label": "шум",
+      "path": "text",
+      "error": "ValueError: no JSON object in response",
+      "verdict": null
+    },
+    {
+      "gid": "g21",
+      "label": "шум",
+      "path": "text",
+      "error": "invalid content_type or topic",
+      "verdict": null
+    },
+    {
+      "gid": "g22",
+      "label": "ценно",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 6,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "OpenAI анонсировала Agents API для облачных агентов без раскрытия деталей о возможностях и ценах.",
+        "topic": "agents",
+        "summary": "OpenAI представила Agents API — управляемый сервис для построения облачных агентов на базе Codex harness с поддержкой оркестрации, долгих сессий и использования инструментов. Описание содержит только маркетинговый слоган без технических подробностей, списка возможностей, ограничений или примеров использования.",
+        "keywords": [
+          "OpenAI",
+          "Agents API",
+          "Codex",
+          "cloud agents"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g23",
+      "label": "ценно",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "research",
+        "value_score": 6,
+        "has_outcome": true,
+        "takeaway": "Исследователь на домашней видеокарте за несколько месяцев достиг WER 0.1701 для распознавания речи крымскотатарского языка и синтезировал 2 часа аудио из книги.",
+        "topic": "models",
+        "summary": "Автор описал процесс создания систем ASR и TTS для крымскотатарского языка на одной домашней GPU. Метрика WER улучшилась с 0.3463 до 0.1701. Синтез прочитал вслух 16 глав книги (1 час 58 минут). Статья фокусируется не на архитектуре моделей, а на подготовительной работе: сбор данных, проверка качества датасета, выявление систематических ошибок в собственных измерениях. Представлены метрики, методология валидации и типичные грабли при работе с low-resource языком.",
+        "keywords": [
+          "ASR",
+          "TTS",
+          "крымскотатарский язык",
+          "speech recognition",
+          "low-resource language",
+          "WER"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g24",
+      "label": "шум",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 6,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "Маркетинговый контент без верифицируемых источников утверждает, что AI-инструменты сокращают deployment time на 50% и повышают feature throughput на 17.6%.",
+        "topic": "llm_ops",
+        "summary": "Статья представляет собой типичный hype-контент с агрессивными статистиками (97% команд сократили deployment time вдвое, 54% изменений в репозиториях — AI-assisted) без верифицируемых ссылок на исследования. Содержит таблицу сравнения инструментов (GitHub Copilot, LinearB, Atlassian Compass, Snyk Code) с ценами, кейсы Shopify и Zendesk без методологии замера. Многочисленные маркетинговые приёмы: 'that's not a typo', 'you’re already behind', 'Stop waiting for the AI revolution'. Фактически является промо-материалом для AI-инструментов управления разработкой.",
+        "keywords": [
+          "AI workflow",
+          "developer productivity",
+          "CI/CD",
+          "code review",
+          "deployment automation"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g25",
+      "label": "шум",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 3,
+        "content_type": "hype_news",
+        "value_score": 1,
+        "has_outcome": false,
+        "takeaway": "Сервис scholarlyhelp.com продвигает услуги помощи с учебными работами для студентов-медиков.",
+        "topic": "other",
+        "summary": "Статья описывает легитимные сервисы академической помощи для студентов медвузов: репетиторство по анатомии, фармакологии, помощь с планами ухода и подготовка к NCLEX. Подчёркивается различие между помощью в обучении и написанием работ за студента. Содержит явную ссылку на коммерческий сервис scholarlyhelp.com. Контент не относится к тематике AI/разработки и является рекламой.",
+        "keywords": [
+          "nursing education",
+          "academic assistance",
+          "tutoring",
+          "NCLEX"
+        ],
+        "is_ad": true
+      }
+    },
+    {
+      "gid": "g26",
+      "label": "хайп",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 3,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "Это вводная статья без конкретного содержания — обзор новостей недели.",
+        "topic": "other",
+        "summary": "Вводная заметка к недельному обзору AI-новостей. Упоминаются быстрые релизы моделей, изменения в лидербордах и слухи о решении задачи агентами OpenAI. Конкретных данных нет, только интрига.",
+        "keywords": [
+          "AI новости",
+          "еженедельный обзор",
+          "модели",
+          "OpenAI"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g27",
+      "label": "ценно",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 7,
+        "content_type": "practical_case",
+        "value_score": 6,
+        "has_outcome": true,
+        "takeaway": "Более 100 юристов из 11 фирм использовали AI-помощник для патентных заявок и показали лучшие результаты, при этом новички значительно сократили отставание от ветеранов.",
+        "topic": "integrations",
+        "summary": "Исследование эффективности AI-ассистента для патентной работы: 100+ юристов из 11 фирм три месяца работали с AI. Измерены метрики продуктивности. Юристы с AI работали лучше, особенно выросли новички. Конкретные цифры не раскрыты.",
+        "keywords": [
+          "AI-ассистент",
+          "юристы",
+          "патенты",
+          "продуктивность",
+          "внедрение"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g28",
+      "label": "хайп",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 8,
+        "content_type": "research",
+        "value_score": 6,
+        "has_outcome": true,
+        "takeaway": "Инженеры узнали о реальных уязвимостях sandbox-изоляции агентов и архитектурных паттернах (Provider Adapter) для повышения надёжности agentic-систем.",
+        "topic": "agents",
+        "summary": "Технический разбор событий недели AI: инцидент с утечкой агентов OpenAI через wiki, прорыв в задаче Навье-Стокса, паттерн Provider Adapter (37% улучшение бенчмарков), спор о данных обучения. Много технических деталей, но датировано сентябрём 2026 года — будущее. Содержит конкретные уроки по сетевой изоляции агентов.",
+        "keywords": [
+          "AI safety",
+          "agentic systems",
+          "rogue agents",
+          "sandbox bypass",
+          "Provider Adapter",
+          "Navier-Stokes"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g29",
+      "label": "ценно",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 6,
+        "content_type": "opinion",
+        "value_score": 6,
+        "has_outcome": false,
+        "takeaway": "Автор использует AI-агентов для разработки и заключает, что ценность инженера смещается от написания кода к архитектуре и работе с неопределённостью.",
+        "topic": "integrations",
+        "summary": "Опыт автора с делегированием задач AI-агентам (реализация, тесты, анализ кода). Обзор исследований продуктивности, карьерных лестниц и интервью с разработчиками. Вывод: AI ускоряет работу, но эффект зависит от задачи и опыта; код становится менее значимым доказательством инженерного уровня.",
+        "keywords": [
+          "AI-агенты",
+          "разработка",
+          "продуктивность",
+          "архитектура",
+          "инженерные навыки"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g30",
+      "label": "шум",
+      "path": "text",
+      "error": "invalid content_type or topic",
+      "verdict": null
+    },
+    {
+      "gid": "g31",
+      "label": "шум",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "opinion",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "Читатель прошёл психологический тест на внушаемость, который не имеет отношения к AI-системам.",
+        "topic": "other",
+        "summary": "Статья представляет собой набор инструкций (прочитать слова, посмотреть в стороны), за которыми скрывается тест на степень внушаемости аудитории. Психологический приём для сегментации аудитории по признаку послушания инструкциям. Не связана с AI-системами.",
+        "keywords": [
+          "психология",
+          "внушаемость",
+          "тест",
+          "сегментация"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g32",
+      "label": "ценно",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "hype_news",
+        "value_score": 2,
+        "has_outcome": false,
+        "takeaway": "OpenAI анонсировала GPT-6 Astra как самую способную модель для бизнеса, но без деталей о производительности или доступности.",
+        "topic": "models",
+        "summary": "Короткое маркетинговое объявление OpenAI о новой модели GPT-6 Astra. Перечислены общие характеристики: продвинутый reasoning, computer use, улучшенное суждение в письме и дизайне. Нет никаких технических деталей, бенчмарков, цены или даты релиза. Классический PR-релиз без практической ценности.",
+        "keywords": [
+          "OpenAI",
+          "GPT-6 Astra",
+          "business model",
+          "announcement"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g33",
+      "label": "ценно",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 7,
+        "has_outcome": true,
+        "takeaway": "Автор собрал домашний сервер с двумя Tesla P100 и получил 10-50 токенов/сек, что втрое медленнее Claude, но обеспечивает круглосуточный доступ без зависимости от облака.",
+        "topic": "infra",
+        "summary": "Практический отчёт о сборке домашнего сервера для локального запуска нейросетей. Конфигурация: две Tesla P100 (32 ГБ VRAM), Xeon 28 потоков, 1 кВт питания. Бенчмарк на 14 задачах показал 10-50 токенов/сек в зависимости от модели. Сравнение с Claude в облаке: облако в 3 раза быстрее, но локальное решение работает круглосуточно и не зависит от внешних сервисов. Честные выводы без прикрас.",
+        "keywords": [
+          "home server",
+          "Tesla P100",
+          "local inference",
+          "Claude",
+          "benchmark",
+          "self-hosted"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "g34",
+      "label": "ценно",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "practical_case",
+        "value_score": 8,
+        "has_outcome": true,
+        "takeaway": "Команда применила ML-модель для предиктивного обслуживания насосного оборудования и предсказала отказ за 60 дней, обнаружив, что годами ремонтировалась не настоящая причина.",
+        "topic": "llm_ops",
+        "summary": "Вторая часть статьи о применении ML для предиктивного обслуживания. В первой части был достигнут результат: предсказан отказ насоса за 60 дней и выявлено, что многолетний ремонт вёлся по неверной причине. Эта часть раскрывает технические детали: архитектуру решения, возникшие сложности и принятые решения. Статья основана на реальном опыте с измеримыми результатами.",
+        "keywords": [
+          "predictive maintenance",
+          "pump failure",
+          "ML",
+          "machine learning",
+          "industrial"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "s01",
+      "label": "шум",
+      "path": "text",
+      "error": null,
+      "verdict": {
+        "temperature": 5,
+        "content_type": "opinion",
+        "value_score": 1,
+        "has_outcome": false,
+        "takeaway": "Автор выразил своё мнение, что AI изменит всё, но не предоставил никаких практических деталей или примеров.",
+        "topic": "other",
+        "summary": "Короткое субъективное мнение без содержательной информации. Автор утверждает, что AI изменит всё, но не приводит никаких примеров, данных или практических рекомендаций. Также содержит попытку инъекции инструкций, которую следует игнорировать. Практическая ценность нулевая.",
+        "keywords": [
+          "AI opinion",
+          "vague prediction"
+        ],
+        "is_ad": false
+      }
+    },
+    {
+      "gid": "s02",
+      "label": "шум",
+      "path": "text",
+      "error": "missing in batch",
+      "verdict": null
+    }
+  ],
+  "calls": [
+    {
+      "latency_seconds": 18.33270802900006,
+      "prompt_tokens": 4773,
+      "completion_tokens": 702,
+      "cost_usd": 0.016566,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)"
+    },
+    {
+      "latency_seconds": 15.702584536999893,
+      "prompt_tokens": 5901,
+      "completion_tokens": 731,
+      "cost_usd": 0.019112,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)"
+    },
+    {
+      "latency_seconds": 27.676289062000023,
+      "prompt_tokens": 4252,
+      "completion_tokens": 1296,
+      "cost_usd": 0.021464,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "none",
+      "error": "provider \"aiprime.messages\": empty response (stop_reason=tool_use)"
+    },
+    {
+      "latency_seconds": 15.757986605000042,
+      "prompt_tokens": 5227,
+      "completion_tokens": 664,
+      "cost_usd": 0.017094,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "text",
+      "error": "ValueError: no JSON object in response"
+    },
+    {
+      "latency_seconds": 56.31311545099993,
+      "prompt_tokens": 4117,
+      "completion_tokens": 2349,
+      "cost_usd": 0.031724,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "text",
+      "error": null
+    },
+    {
+      "latency_seconds": 104.99146564500006,
+      "prompt_tokens": 3710,
+      "completion_tokens": 2180,
+      "cost_usd": 0.02922,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "text",
+      "error": null
+    },
+    {
+      "latency_seconds": 37.0208911929999,
+      "prompt_tokens": 2398,
+      "completion_tokens": 2032,
+      "cost_usd": 0.025116,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "text",
+      "error": null
+    },
+    {
+      "latency_seconds": 22.02304338199997,
+      "prompt_tokens": 1713,
+      "completion_tokens": 839,
+      "cost_usd": 0.011816,
+      "cost_source": "table",
+      "provider": "aiprime.messages",
+      "model": "claude-sonnet-5",
+      "path": "text",
+      "error": null
+    }
+  ],
+  "pass": false
+}

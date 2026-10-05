@@ -138,6 +138,8 @@ class HackerNewsCollector(BaseCollector):
             body = (hit.get("story_text") or "").strip()
             if external_url:
                 full_text = await self._fetcher.fetch(external_url, feed_key=query)
+                if self._fetcher.last_capped is True:
+                    continue
                 if full_text:
                     body = full_text
 

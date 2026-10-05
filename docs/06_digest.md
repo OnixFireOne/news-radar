@@ -145,3 +145,69 @@ def _log_dispatch(self, event_type, sent_to, status, payload_preview="", http_st
 ```
 
 Позволяет отследить: какой event куда ушёл, когда, с каким результатом.
+## Отбор с квотами `ai_value` (ТЗ #4, И3 шаг 5)
+
+При `digest_template: "ai_value"` четыре уровня (alerts / trends / high / fill) заменяет `analyzer/value_funnel.select_with_quotas` — скрипт без LLM, конфиг `digest_templates.ai_value`:
+
+- отсекается всё с `value_score < min_value_score` (5);
+- группы и квоты: `practical` = practical_case + tutorial (5), `tools_research` = tool_release + research (2), `hype` = hype_news (1), `crypto` (0 — крипта на паузе);
+- крипта проходит только при `temperature ≥ crypto_min_temperature` (8) или в горячем тренде — и всё равно в пределах квоты;
+- свободные слоты до `max_items` (8) добирают practical / tools_research / `opinion` (у opinion своей квоты нет); хайп и крипта сверх квоты — никогда;
+- сортировка внутри групп и итоговая — `value_score`, затем `temperature`.
+
+С И4 у `ai_value` свой промпт и рендер (ниже). В `settings.json` шаблон включён 27.09.
+
+## Template: ai_value (ТЗ #4, И4)
+
+Порядок в `generate_digest` после отбора по квотам:
+
+1. `DIGEST_PROMPT_AI_VALUE` → `complete_json(task="digest")`. Статьи — в разделителях `<<<ARTICLE N>>>` … `<<<END ARTICLE N>>>` (`knowledge_publisher.frame_article`, обрезка `text_max_chars`); ответ `{items: [{source_id, title, takeaway, summary}]}` на русском.
+2. База знаний: `knowledge_publisher.publish_selected` → `md_map` (source_id → blob URL в GitHub). Любой сбой — дайджест уходит без ссылки «разбор (md)».
+3. Пункты с неизвестным `source_id` выбрасываются; `content_type` берётся из БД, а не из ответа LLM.
+4. `render_digest(..., "ai_value", template_cfg, source_map, md_map)` → Telegram HTML: заголовок «🤖 AI-радар — 27 сентября», у пункта эмодзи и метка из `digest_templates.ai_value.types`, строка takeaway, `<blockquote expandable>` со сжатой идеей и ссылками «источник · разбор (md)».
+
+`source_map` для `ai_value` — `messages.url` (для Telegram — `post_url`).
+
+## База знаний: `analyzer/knowledge_publisher.py` (ТЗ #4, И4)
+
+- Для каждой отобранной статьи с `value_score ≥ knowledge.min_value_score` — отдельный вызов `KNOWLEDGE_MD_PROMPT_AI_VALUE` (`task="knowledge"`, в каталоге `openai.chat_completions` → gpt-6-luna с 30.09), вход до `knowledge.max_input_chars`.
+- md: фронтматтер по р.5 спеки + тело по `knowledge.format`: `brief` (дефолт кода) — `## Идея` / `## Вывод` (`KNOWLEDGE_MD_PROMPT_AI_VALUE`); `full` (в `settings.json` с 28.09) — структурированный пересказ `KNOWLEDGE_MD_PROMPT_FULL` (`knowledge-v2`): Коротко · Контекст · Главное · Как сделано · Результаты · Ограничения · Что взять себе · Читать оригинал, если…; пустые разделы пропускаются, без «Коротко» или хотя бы 3 пунктов «Главного» — генерация считается неудачной. Цифры округляются до значимых, версии/цены/настройки — точно.
+- **Статья целиком (30.09, `knowledge.split_over_chars` > 0, только `full`):** текст не режется по `max_input_chars`; статья длиннее порога (в `settings.json` 150000) делится по абзацам на части по ½ порога, каждая сжимается в заметки (`KNOWLEDGE_CHUNK_PROMPT`, `task="knowledge"`), разбор пишется по заметкам всех частей. `0` — прежняя обрезка. Путь `knowledge/YYYY/MM/YYYY-MM-DD-<slug>-<message_id>.md`, slug — транслит заголовка.
+- Площадки — список `knowledge.targets` (И4.1), md генерируется один раз и уходит на каждую по очереди:
+  - `local` — режим тестов: файл пишется в `./knowledge/` рабочей копии (том `./knowledge:/app/knowledge` у `analyzer` и `news-radar-api`), токен не нужен; существующий файл не перезаписывается. В GitHub попадает обычным коммитом владельца.
+  - `github` — прод: GitHub Contents API (`PUT /repos/{repo}/contents/{path}`), токен `GITHUB_TOKEN`; 422 «уже есть» считается успехом. Нет токена → площадка пропускается (INFO), остальные работают.
+  - `knowledge.batch_commit` (28.09, дефолт `false`, в `settings.json` — `true`): все новые md одного прогона — **одним коммитом** через Git Data API (ref → commit → tree с `base_tree` → commit → `PATCH` ref без force). Если ветку сдвинули между шагами (422), коммит пересобирается на новой голове, до 3 попыток. Сбой коммита → у статей нет `md_path` и ссылки «разбор (md)», следующий прогон попробует снова. Сообщение: `docs(knowledge): add N article summaries`.
+- Статья считается опубликованной, если её приняла хотя бы одна площадка. Путь пишется в `analysis.md_path`; если он уже есть — ни LLM, ни публикации, ссылка переиспользуется. Ссылка «разбор (md)» — всегда blob URL в `knowledge.repo` (для `local` — будущий, после коммита).
+- `knowledge.enabled: false` или нет ни одной рабочей площадки → публикации нет, строка `Knowledge ...` в логе. Токен в лог не пишется никогда.
+- `github`: каждый файл — отдельный коммит в ветку `knowledge.branch` (по умолчанию `main` этого репозитория): локальную `knowledge/` подтягивать `git pull`.
+
+## Именованные дайджесты (И4.1, шаг 2b)
+
+`digests` задаёт имя, `enabled`, упорядоченный список `categories`, времена `at` и часовой пояс `tz`.
+`run_digest(name)` вызывает `run_category` для каждой доступной категории и возвращает отдельные части
+`DigestPart(category, result, digest_id)`. Пустая категория пропускается; выключенная, неизвестная или
+недоступная без каталога провайдеров — пропускается с WARNING. Без имени выбирается первый включённый
+дайджест; неизвестное имя даёт ошибку. Если все дайджесты выключены, генерации нет.
+
+Окно начинается от последнего `digests.period_end` с тем же `name` (или от `hours`); для всех частей одного
+запуска начало окна фиксируется заранее. Верхнее ограничение глубины — прежние 24 часа.
+
+**Пул с переносом (29.09, `digest_templates.<шаблон>.carryover_days` > 0, только `select: quotas`):** вместо окна кандидаты — все разобранные, не реклама, `in_digest = 0`, опубликованные за последние N дней (в `settings.json` — 7); порядок `value_score ↓, collected_at ↓, temperature ↓`, до 500 строк, ограничение 24 часа не действует (в LLM уходят только отобранные). Причина: `collected_at` у RSS/HN — время публикации, окно «с прошлого выпуска» теряло статьи, собранные после выпуска. `?hours=` в ручном вызове по-прежнему задаёт явное окно.
+
+**Порядок очереди и список кандидатов (01.10):** `tie_break` — `"temperature"` по умолчанию (как выше) или `"oldest"` (в `settings.json`): при равной оценке выше более старая статья, в SQL `collected_at ↑`, так очередь идёт по порядку, а свежая статья с большей оценкой всё равно обходит старую. Экстра `candidates` (перед `knowledge` в `categories.articles.extras`, флаг `candidates_list.enabled`, `min_score` — нижняя граница строк) строит `knowledge/candidates/<дата>-<имя>.md`: все строки пула от `min_score` и выше с оценкой, типом, ссылкой, датой и статусом (`explain_selection` в `value_funnel.py`: в выпуске / не вместилось / ниже порога / тип отключён, плюс «последний день»). Файл уходит тем же коммитом, что разборы (`publish_selected(extra_files=…)`); после успешной доставки в конце выпуска строка «📋 Все кандидаты выпуска: выбрано N из M» (M — строк пула не ниже `min_value_score`). Список ничего не помечает в БД. Заголовок — первая строка текста статьи: у части RSS (dev.to) это первый абзац, а не заголовок — отдельного поля заголовка в `messages` нет.
+ История
+кросс-дедупа также ограничена именем. В БД каждая часть — отдельная строка с `name` и `category`.
+`in_digest` остаётся общим флагом записи; обычный повтор в другом дайджесте исключён (`force` сохраняет
+смысл явной повторной генерации). Связанные сообщения старых смешанных трендов отмечаются только
+внутри источников текущей категории. Глобальный сброс `in_digest=2 → 0` сохранён.
+Эмоциональный баланс в именованных дайджестах управляется флагом шаблона `emotional_balance`
+(дефолт `true`; у `ai_value` — `false`: крипто-ключевые слова алертов к статьям не относятся).
+
+API: `POST /digest/generate?name=articles` возвращает прежние поля первой части плюс `name`, `category`
+и массив `parts` со всеми сообщениями и их `parse_mode`. `POST /digest/raw?name=articles` возвращает
+`raw_text` первой части и `parts: [{category, raw_text}]`. Нет новостей — 400, неизвестное имя — 404.
+`GET /digest/latest?name=articles` и `GET /digest?name=articles` фильтруют сохранённые строки по имени.
+
+Пустые `categories: {}` / `digests: []` сохраняют старый путь через `resolve_legacy`; в БД
+`name`/`category` равны NULL. Совместимый `generate_digest()` при настроенных дайджестах запускает
+первый включённый и возвращает результат первой непустой части.

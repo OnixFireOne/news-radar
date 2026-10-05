@@ -15,6 +15,7 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = {
+    "digest_stats": {"enabled": False},
     "telegram_folder": "",
     "min_message_length": 30,
     "load_history_limit": 50,
@@ -24,8 +25,51 @@ DEFAULT_CONFIG = {
     "keywords_alert": [],
     "digest_max_items": 7,
     "digest_min_temperature": 5.0,
+    "categories": {},
+    "digests": [],
     "digest_template": "classic",
+    "knowledge": {
+        "enabled": False,
+        "repo": "OnixFireOne/news-radar",
+        "branch": "main",
+        "dir": "knowledge",
+        "min_value_score": 6,
+        "max_input_chars": 12000,
+        "targets": ["github"],  # "local" (md into ./knowledge, tests) | "github" (Contents API, prod)
+        "batch_commit": False,  # github: one commit per digest run instead of one per article
+        "format": "brief",  # "brief" (Идея/Вывод) | "full" (structured retelling, knowledge-v2)
+        # full format: 0 = cut the article at max_input_chars (old behaviour); >0 = send the whole article,
+        # and split longer ones into parts condensed to notes first, so the end of an article is never lost.
+        "split_over_chars": 0,
+    },
     "digest_templates": {
+        "ai_value": {
+            "show_md_link": True,
+            "title_max_words": 10,
+            "summary_max_sentences": 4,
+            "text_max_chars": 1500,
+            "types": {
+                "practical_case": {"emoji": "💡", "label": "Кейс"},
+                "tutorial": {"emoji": "📚", "label": "Туториал"},
+                "tool_release": {"emoji": "🛠", "label": "Инструмент"},
+                "research": {"emoji": "🔬", "label": "Research"},
+                "opinion": {"emoji": "💬", "label": "Мнение"},
+                "hype_news": {"emoji": "📰", "label": "Новость дня"},
+                "crypto": {"emoji": "₿", "label": "Крипто-тренд"},
+                "_default": {"emoji": "🔹", "label": ""},
+            },
+            "quotas": {"practical": 5, "tools_research": 2, "hype": 1},
+            "tie_break": "temperature",
+            "candidates_list": {"enabled": False, "min_score": 6},
+            "min_value_score": 5,
+            "carryover_days": 0,  # >0: unselected articles stay in the pool for N days (quota selection)
+            "max_items": 8,
+            "cross_dedup": False,
+            "ongoing_trends": False,
+            "emotional_balance": False,
+            "lookback_digests": 0,
+            "llm_merge": True,
+        },
         "classic": {
             "max_items": 7,
             "min_temperature": 5.0,
@@ -53,9 +97,12 @@ DEFAULT_CONFIG = {
     "trend_min_cluster_size": 2,
     "trend_min_temperature": 5.0,
     "trend_hdbscan_epsilon": 0.25,
-    # ТЗ #4 И1: True = preserve current local-GPU behavior (LLMLock, chat_template_kwargs).
-    # False = cloud proxy mode (see analyzer/llm_client.py set_local_mode()).
+    # Legacy mode only (LLM_PROVIDERS empty); in catalog mode the active profile's
+    # gpu_lock/chat_template_kwargs decide.
     "llm_local_mode": True,
+    "llm_strict_json_tasks": [],
+    # ТЗ #4 И4.2: value classifier prompt; "ai_value-v4" scores evidence and novelty.
+    "ai_value_prompt_version": "ai_value-v3",
     # ТЗ #4 И2: poll-mode collectors (collectors/poll_runner.py), each off by
     # default — prod's collector topology doesn't change until switched on.
     "sources": {
@@ -65,7 +112,12 @@ DEFAULT_CONFIG = {
         # ТЗ #4 И2.1: fetch budget for FullTextFetcher — max_per_cycle across all
         # feeds/queries, max_per_feed so one feed early in iteration order can't
         # eat the whole cycle's budget.
-        "fulltext": {"max_per_cycle": 20, "max_per_feed": 5},
+        "fulltext": {"mode": "short_only", "max_per_cycle": 20, "max_per_feed": 5,
+                     "include_comments": True},  # trafilatura default; settings.json turns comments off
+        # ТЗ #4 И3: Telegram is the crypto source, paused by config rather
+        # than removed. Default True so an existing settings.json without this
+        # key keeps prod collecting; read by collectors/telegram.py main().
+        "telegram": {"enabled": True},
         "rss": {
             "enabled": False,
             "poll_minutes": 60,
@@ -85,6 +137,18 @@ DEFAULT_CONFIG = {
             "min_points": 30,
             # ТЗ #4 И2.1: page size for the Algolia search_by_date request.
             "hits_per_page": 50,
+        },
+        # Reader reactions screen unmoderated dev.to posts (TZ #4 I4.2).
+        "devto": {
+            "enabled": False,
+            "tags": ["ai"],
+            "top_days": 3,
+            "min_reactions": 10,
+            "min_age_hours": 24,
+            "skip_ai_disclosure": ["fully_autonomous"],
+            "poll_minutes": 60,
+            "per_page": 100,
+            "max_details_per_cycle": 30,
         },
     },
 }

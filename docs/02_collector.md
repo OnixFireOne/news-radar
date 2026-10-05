@@ -8,6 +8,29 @@ Collector — это **Telethon userbot**, а не бот. Разница:
 
 При старте запрашивает SMS-код (`TelegramClient.start()`). Сессия сохраняется в `data/sessions/news_radar.session`.
 
+## Выключатель: `sources.telegram.enabled`
+
+ТЗ #4 И3 поставил крипту на паузу, не удаляя коллектор. `main()` читает
+`sources.telegram.enabled` из `settings.json` **до** чтения `TELEGRAM_*` из
+окружения — выключенному деплою credentials не нужны вовсе.
+
+```python
+if not _is_telegram_enabled(cfg.get("sources", {})):
+    logger.info("Telegram collector disabled (sources.telegram.enabled=false) — idling.")
+    while True:
+        await asyncio.sleep(3600)
+```
+
+Сервис **идлит, а не выходит**: у него `restart: unless-stopped`, и выход
+превратился бы в рестарт-луп. Тот же паттерн — в `collectors/poll_runner.py`,
+когда не включён ни один poll-коллектор.
+
+`sources.fulltext.include_comments` (30.09): передаётся в `trafilatura.extract`; `trafilatura` 2.2 по умолчанию включает комментарии читателей в текст статьи. В `settings.json` — `false`; ключ оставлен, чтобы позже разбирать комментарии.
+
+Отсутствие ключа означает «включён»: деплой со старым `settings.json`
+продолжает собирать как раньше. Возврат крипты — это правка одного значения
+в конфиге, без изменений кода и compose.
+
 ## Startup: три concurrent задачи
 
 ```python
@@ -88,3 +111,11 @@ cfg.on_change("telegram_folder", on_folder_change)
 ```
 
 При изменении `telegram_folder` в settings.json — collector пересматривает список каналов.
+## Полный текст статей: `sources.fulltext` (ТЗ #4, после И3 шаг 5)
+
+`FullTextFetcher` (trafilatura) общий для RSS и HN. Ключи:
+
+- `mode` — `"short_only"` (дефолт в коде): страница качается, только если чистый анонс < 500 символов; `"always"` (в `settings.json`): для каждой новой RSS-записи, берётся более длинный из «анонс / страница». Хабр отдаёт тизеры 300–1500 символов с «Читать далее» — порог 500 их не ловил. HN качает страницу всегда, независимо от режима.
+- `max_per_cycle` / `max_per_feed` — 60 / 15 в `settings.json` (дефолт 20 / 5). Задержка 2 с на домен и блок домена после 401/403 — без изменений.
+- **Упёрлись в лимит → запись откладывается**, а не сохраняется тизером: не выдаётся и не помечается увиденной, следующий цикл берёт её снова (окно `max_age_hours` действует). Признак — `fetcher.last_capped` (проверять `is True`). Раньше такая запись навсегда оставалась анонсом.
+- openai.com отвечает 403 на любого бота — там остаётся анонс.

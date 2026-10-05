@@ -16,23 +16,36 @@ import json
 import logging
 import os
 import sys
+import sqlite3
 import httpx
 from datetime import datetime, timedelta
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Optional, Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from analyzer.llm_client import LLMClient, is_llm_locked, LLMLock, set_local_mode
-from analyzer.prompts import (
-    SINGLE_MESSAGE_PROMPT, DIGEST_PROMPT, DIGEST_PROMPT_SPOILER,
-    DIGEST_SPOILER_MERGE_ON, DIGEST_SPOILER_MERGE_OFF,
-    SYSTEM_PROMPT,
-)
-from analyzer.renderer import render_digest
+from analyzer.prompts import SINGLE_MESSAGE_PROMPT, DIGEST_PROMPT, SYSTEM_PROMPT
+from analyzer.value_classifier import LLMValueClassifier as LLMValueClassifier  # re-export: bricks resolve it here so test patches apply
+
+from analyzer.knowledge_publisher import publish_selected as publish_selected  # re-export: see above
+from analyzer.pipeline.context import AnalyzeContext, DigestContext, CategorySpec
+from analyzer.pipeline.categories import (DigestPart, load_categories, resolve_digest,
+                                          warn_uncategorized_sources)
+from analyzer.pipeline.registry import ANALYZERS, EXTRAS, SELECTORS, WRITERS
+from analyzer.pipeline.legacy import resolve_legacy
+from analyzer.pipeline.store import store_results
+import analyzer.pipeline.analyzers  # Register analysis bricks.
+import analyzer.pipeline.hooks  # Register hooks.
+import analyzer.pipeline.selectors  # Register selectors.
+import analyzer.pipeline.extras  # Register extras.
+import analyzer.pipeline.writers  # Register writers.
 from analyzer.embedder import get_embedder
 from analyzer.chroma_client import ChromaClient
 from analyzer.trend_tracker import TrendTracker   # Phase 2: trend detection
+from uuid import uuid4
+from analyzer.usage_store import install_usage_sink, usage_category
 from database.schema import get_db, init_db
 from config.config_watcher import ConfigWatcher
 
@@ -67,9 +80,12 @@ class NewsAnalyzer:
         # Vector store for semantic search + dedup (Phase 1)
         self.chroma = ChromaClient()
         self.embedder = get_embedder()  # BGE-m3, loaded on first encode() call
+        # Why the last digest run produced nothing, per category: "no_news" | "llm" | "db".
+        # Lets the API tell an empty window from a failed generation.
+        self.digest_failures: list[str] = []
 
         # Phase 3: topic normalization table (reloaded hot from topics.json)
-        self._topics: dict = cfg.load_topics() if cfg else {}
+        self._topics: dict[str, Any] = cfg.load_topics() if cfg else {}
         if self._topics:
             logger.info(f"Loaded {len(self._topics)} topic aliases from topics.json")
 
@@ -78,7 +94,6 @@ class NewsAnalyzer:
         Process all unanalyzed messages.
         Returns the number of messages successfully analyzed.
         """
-        conn = get_db(self.db_path)
         count = 0
 
         # Don't start analyzing if the LLM is busy (e.g. generating a digest)
@@ -86,6 +101,7 @@ class NewsAnalyzer:
             logger.info("analyze_pending: LLM is locked (digest generation in progress). Pausing...")
             return 0
 
+        conn = get_db(self.db_path)
         try:
             # Load active subscriptions for real-time alerting
             active_subs = conn.execute("SELECT user_id, query FROM subscriptions WHERE active=1").fetchall()
@@ -94,172 +110,31 @@ class NewsAnalyzer:
             subs_list = []
 
         try:
+            cfg = self._pipeline_config()
+            specs = (load_categories(cfg, self.llm.router is not None) if cfg["categories"]
+                     else [resolve_legacy(cfg, self.llm.router is not None)])
             min_len = int(self.cfg.get("min_message_length", 30)) if self.cfg else 30
-            # PRIORITY QUEUE: sort by views and length instead of just time
-            rows = conn.execute("""
-                SELECT m.id, m.text, s.name as source_name, m.collected_at, m.views, m.forwards
-                FROM messages m
-                JOIN sources s ON m.source_id = s.id
-                WHERE m.analyzed = 0
-                  AND length(m.text) >= ?
-                ORDER BY COALESCE(m.views, 0) DESC, length(m.text) DESC, m.collected_at DESC
-                LIMIT ?
-            """, (min_len, self.batch_size,)).fetchall()
-
-            if not rows:
-                logger.debug("No pending messages to analyze")
-                return 0
-
-            # Convert to list of dicts for safe async access
-            pending_batch = [dict(r) for r in rows]
-
-            logger.info(f"Analyzing {len(pending_batch)} pending messages (Priority Queue)...")
-
-            # Semaphore for concurrent batching (LLM parallelism)
             concurrency = int(self.cfg.get("llm_concurrency", 3)) if self.cfg else 3
-            sem = asyncio.Semaphore(concurrency)
-
-            async def process_row(row: dict):
-                async with sem:
-                    # 0. Heuristic ad pre-filter (no LLM call needed)
-                    if self._is_heuristic_ad(row["text"]):
-                        logger.info(f"Message {row['id']} flagged as ad by heuristic filter — skipping LLM")
-                        return row, {"__heuristic_ad": True}
-
-                    # 1. Pre-flight Semantic Deduplication
-                    embedding = None
-                    try:
-                        # Encode using thread pool (BGE-m3 is CPU bound)
-                        loop = asyncio.get_running_loop()
-                        embedding = await loop.run_in_executor(None, self.embedder.encode, row["text"])
-                        
-                        if self.chroma.health_check():
-                            # Chroma search
-                            matches = self.chroma.search(query_embedding=embedding, limit=1)
-                            if matches:
-                                best = matches[0]
-                                if best.get("similarity", 0) > 0.90:
-                                    logger.info(f"Message {row['id']} is duplicate of {best['message_id']} (sim={best['similarity']}). Cloning AI response.")
-                                    cloned_result = {
-                                        "topic": best.get("topic", "general"),
-                                        "temperature": best.get("temperature", 5.0),
-                                        "summary": best.get("document", row["text"][:200])[:500],
-                                        "keywords": ["duplicate"],
-                                        "sentiment": "neutral",
-                                        "embedding": embedding
-                                    }
-                                    return row, cloned_result
-                    except Exception as e:
-                        logger.warning(f"Pre-flight deduplication failed for msg {row['id']}: {e}")
-
-                    # 2. Actual LLM Analysis (if not duplicate)
-                    try:
-                        result = await self._analyze_message(
-                            message_id=row["id"],
-                            text=row["text"],
-                            source_name=row["source_name"],
-                        )
-                        if result:
-                            result["embedding"] = embedding
-                        return row, result
-                    except Exception as e:
-                        logger.error(f"Analysis failed for msg {row['id']}: {e}")
-                        return row, None
-
-            # Execute all tasks concurrently and wait
-            tasks = [process_row(r) for r in pending_batch]
-            results = await asyncio.gather(*tasks)
-
-            # 3. Transactional Database Write Layer (Sequential)
-            for row, result in results:
+            for spec in specs:
+                source_filter, source_params = self._source_filter(spec.sources)
+                rows = conn.execute(f"""
+                    SELECT m.id, m.text, s.name as source_name, m.collected_at, m.views, m.forwards
+                    FROM messages m JOIN sources s ON m.source_id = s.id
+                    WHERE m.analyzed = 0 AND length(m.text) >= ? {source_filter}
+                    ORDER BY COALESCE(m.views, 0) DESC, length(m.text) DESC, m.collected_at DESC
+                    LIMIT ?
+                """, (min_len, *source_params, self.batch_size)).fetchall()
+                if not rows:
+                    continue
+                pending_batch = [dict(r) for r in rows]
+                ctx = AnalyzeContext(self, conn, cfg, subs_list, concurrency, spec.params,
+                                      embeddings="embeddings" in spec.hooks, category=spec.name)
+                category_token = usage_category.set(spec.name)
                 try:
-                    # Handle heuristic-detected ads first (no LLM result, just mark and skip)
-                    if result and result.get("__heuristic_ad"):
-                        conn.execute("UPDATE messages SET analyzed=1, is_ad=1 WHERE id=?", (row["id"],))
-                        conn.commit()
-                        count += 1
-                        continue
-
-                    if result and result.get("summary"):
-                        # Normalize 
-                        raw_topic = result.get("topic", "general")
-                        normalized_topic = self._normalize_topic(raw_topic)
-
-                        # Extract LLM-detected is_ad flag
-                        is_ad_llm = 1 if result.get("is_ad") else 0
-                        if is_ad_llm:
-                            logger.info(f"Message {row['id']} flagged as ad by LLM")
-
-                        conn.execute("""
-                            INSERT INTO analysis
-                                (message_id, temperature, topic, summary, keywords, sentiment)
-                            VALUES (?, ?, ?, ?, ?, ?)
-                        """, (
-                            row["id"],
-                            result.get("temperature", 5.0),
-                            normalized_topic,
-                            result.get("summary", ""),
-                            json.dumps(result.get("keywords", []), ensure_ascii=False),
-                            result.get("sentiment", "neutral"),
-                        ))
-
-                        # Use pre-computed embedding if available, otherwise compute sync
-                        emb = result.get("embedding")
-                        if emb is None:
-                            emb = self.embedder.encode(row["text"])
-
-                        # Add to Chroma
-                        self.chroma.add_message(
-                            message_id=row["id"],
-                            embedding=emb,
-                            text=row["text"],
-                            source_name=row["source_name"],
-                            timestamp=row.get("collected_at", datetime.utcnow().isoformat()),
-                            temperature=result.get("temperature", 5.0),
-                            topic=normalized_topic,
-                        )
-
-                        # Commit message (persist is_ad flag alongside analyzed=1)
-                        conn.execute(
-                            "UPDATE messages SET analyzed=1, chroma_synced=1, is_ad=? WHERE id=?",
-                            (is_ad_llm, row["id"])
-                        )
-                        conn.commit()
-                        count += 1
-
-                        # Alerts and Subs — skip for ad-flagged messages
-                        if not is_ad_llm:
-                            temp = float(result.get("temperature", 5.0))
-                            min_alert_temp = float(self.cfg.get("breaking_alert_min_temp", 10) if self.cfg else 10)
-                            if temp >= min_alert_temp and self.cfg and self.cfg.get("instant_alerts_temperature", True):
-                                asyncio.create_task(
-                                    self._send_instant_alert(row["id"], row["source_name"], temp, raw_topic, result.get("summary", ""), row["text"])
-                                )
-
-                            if subs_list:
-                                text_lower = row["text"].lower()
-                                summary_lower = result.get("summary", "").lower()
-                                for sub in subs_list:
-                                    if sub["q_lower"] in text_lower or sub["q_lower"] in summary_lower:
-                                        asyncio.create_task(
-                                            self._route_event("subscription_match", {
-                                                "user_id": sub["user_id"],
-                                                "query": sub["query"],
-                                                "summary": result.get("summary", ""),
-                                                "source": row["source_name"],
-                                                "text": row["text"][:300]
-                                            })
-                                        )
-                    else:
-                        logger.warning(f"Message {row['id']}: Empty result, will retry.")
-                        conn.rollback()
-
-                except Exception as e:
-                    logger.error(f"Failed DB write for message {row['id']}: {e}")
-                    try:
-                        conn.rollback()
-                    except Exception:
-                        pass
+                    results = await ANALYZERS.get(spec.analyzer)(pending_batch, ctx)
+                finally:
+                    usage_category.reset(category_token)
+                count += store_results(results, ctx, spec.hooks, spec.analyzer == "ai_value")
 
         finally:
             conn.close()
@@ -267,7 +142,57 @@ class NewsAnalyzer:
         logger.info(f"Analyzed {count} messages")
         return count
 
-    async def _send_instant_alert(self, msg_id: int, source: str, temp: float, topic: str, summary: str, text: str):
+    async def _preflight(
+        self, row: dict[str, Any], conn: sqlite3.Connection, ai_value: bool, embeddings: bool = True,
+    ) -> tuple[dict[str, Any] | None, list[float] | None]:
+        # 0. Heuristic ad pre-filter (no LLM call needed)
+        if self._is_heuristic_ad(row["text"]):
+            logger.info(f"Message {row['id']} flagged as ad by heuristic filter — skipping LLM")
+            return {"__heuristic_ad": True}, None
+        if not embeddings:
+            return None, None
+
+        # 1. Pre-flight Semantic Deduplication
+        embedding: list[float] | None = None
+        try:
+            # Encode using thread pool (BGE-m3 is CPU bound)
+            loop = asyncio.get_running_loop()
+            embedding = await loop.run_in_executor(None, self.embedder.encode, row["text"])
+
+            if self.chroma.health_check():
+                # Chroma search
+                matches = self.chroma.search(query_embedding=embedding, limit=1)
+                if matches:
+                    best = matches[0]
+                    if best.get("similarity", 0) > 0.90:
+                        logger.info(f"Message {row['id']} is duplicate of {best['message_id']} (sim={best['similarity']}). Cloning AI response.")
+                        if ai_value:
+                            original = conn.execute(
+                                "SELECT a.*, m.is_ad FROM analysis a "
+                                "JOIN messages m ON m.id=a.message_id WHERE a.message_id=?",
+                                (best["message_id"],),
+                            ).fetchone()
+                            if original is not None and all(original[key] is not None for key in
+                                    ("content_type", "value_score", "has_outcome", "takeaway")):
+                                cloned_value: dict[str, Any] = dict(original)
+                                cloned_value["embedding"] = embedding
+                                return cloned_value, embedding
+                            return None, embedding
+                        cloned_result: dict[str, Any] = {
+                            "topic": best.get("topic", "general"),
+                            "temperature": best.get("temperature", 5.0),
+                            "summary": best.get("document", row["text"][:200])[:500],
+                            "keywords": ["duplicate"],
+                            "sentiment": "neutral",
+                            "embedding": embedding
+                        }
+                        return cloned_result, embedding
+        except Exception as e:
+            logger.warning(f"Pre-flight deduplication failed for msg {row['id']}: {e}")
+
+        return None, embedding
+
+    async def _send_instant_alert(self, msg_id: int, source: str, temp: float, topic: str, summary: str, text: str) -> None:
         """Dispatch a breaking news alert — via OpenClaw if configured, else direct Telegram."""
         # Try to build a direct post link from the DB
         source_url = f"https://t.me/{source}"
@@ -295,7 +220,7 @@ class NewsAnalyzer:
             "summary": summary,
         })
 
-    async def _route_event(self, event_type: str, data: dict):
+    async def _route_event(self, event_type: str, data: dict[str, Any]) -> None:
         """
         Route an event to OpenClaw via OpenAI-compatible completion endpoint.
 
@@ -391,7 +316,7 @@ class NewsAnalyzer:
         except Exception as e:
             logger.warning(f"dispatch_log write failed: {e}")
 
-    async def _enrich_alert_for_telegram(self, event_type: str, data: dict) -> dict:
+    async def _enrich_alert_for_telegram(self, event_type: str, data: dict[str, Any]) -> dict[str, Any]:
         """
         LLM enrichment step before rendering the alert template.
 
@@ -457,7 +382,7 @@ class NewsAnalyzer:
 
         return data  # graceful fallback: raw data, no headline
 
-    async def _fallback_telegram(self, event_type: str, data: dict):
+    async def _fallback_telegram(self, event_type: str, data: dict[str, Any]) -> None:
         """Send event directly to Telegram using structured HTML templates.
 
         For breaking_alert and hot_trend: calls _enrich_alert_for_telegram first
@@ -595,7 +520,7 @@ class NewsAnalyzer:
 
     async def _store_embedding(
         self,
-        conn,              # already-open SQLite connection from the caller
+        conn: sqlite3.Connection,  # already-open SQLite connection from the caller
         message_id: int,
         text: str,
         source_name: str,
@@ -645,7 +570,7 @@ class NewsAnalyzer:
         message_id: int,
         text: str,
         source_name: str,
-    ) -> dict | None:
+    ) -> dict[str, Any] | None:
         """Send a single message to the LLM for analysis.
 
         Thinking mode is read hot from settings.json (llm_thinking_mode):
@@ -735,7 +660,7 @@ class NewsAnalyzer:
         if not ad_cfg.get("use_heuristic", True):
             return False
 
-        keywords: list = ad_cfg.get("heuristic_keywords", [])
+        keywords: list[str] = ad_cfg.get("heuristic_keywords", [])
         if not keywords:
             return False
 
@@ -743,38 +668,94 @@ class NewsAnalyzer:
         return any(kw.lower() in text_lower for kw in keywords)
 
 
+    def _pipeline_config(self) -> dict[str, Any]:
+        defaults: dict[str, Any] = {
+            "categories": {}, "digests": [], "analysis_profile": "crypto",
+            "digest_template": "classic", "llm_concurrency": 3,
+            "llm_strict_json_tasks": [], "ai_value_prompt_version": "ai_value-v3",
+        }
+        cfg = {key: self.cfg.get(key, value) if self.cfg else value
+               for key, value in defaults.items()}
+        self.llm.strict_json_tasks = frozenset(cfg["llm_strict_json_tasks"])
+        return cfg
+
+    @staticmethod
+    def _source_filter(sources: Sequence[str]) -> tuple[str, tuple[str, ...]]:
+        if not sources:
+            return "", ()
+        return "AND s.type IN (" + ",".join("?" for _ in sources) + ")", tuple(sources)
+
+    def _digest_since(self, hours: int | None, name: str | None) -> datetime:
+        if hours is not None:
+            return datetime.utcnow() - timedelta(hours=hours)
+        conn = get_db(self.db_path)
+        try:
+            where = " WHERE name = ?" if name is not None else ""
+            row = conn.execute(
+                "SELECT period_end FROM digests" + where + (" ORDER BY created_at DESC, id DESC LIMIT 1" if name is not None
+                 else " ORDER BY created_at DESC LIMIT 1"),
+                (name,) if name is not None else (),
+            ).fetchone()
+            return datetime.fromisoformat(row["period_end"]) if row else datetime.utcnow() - timedelta(hours=12)
+        except (sqlite3.Error, ValueError, TypeError):
+            return datetime.utcnow() - timedelta(hours=12)
+        finally:
+            conn.close()
+
     async def generate_digest(self, hours: int | None = None, force: bool = False, return_raw: bool = False) -> str | None:
-        """
-        Generate a digest using a 4-tier priority queue.
+        cfg = self._pipeline_config()
+        self.digest_failures = []
+        if cfg["digests"]:
+            parts = await self.run_digest(None, hours, force, return_raw)
+            return parts[0].result if parts else None
+        return await self.run_category(
+            resolve_legacy(cfg, self.llm.router is not None, warn_on_fallback=False),
+            None, hours, force, return_raw,
+        )
 
-        Priority tiers:
-          1. ALERTS  — hack/scam or temperature >= 9  (always first)
-          2. TRENDS  — messages belonging to hot trends (unique_sources >= threshold)
-          3. HIGH    — temperature >= digest_min_temperature + 2, diverse sources
-          4. FILL    — best remaining message per topic for diversity
+    async def run_digest(self, name: str | None, hours: int | None = None,
+                         force: bool = False, return_raw: bool = False) -> list[DigestPart]:
+        cfg = self._pipeline_config()
+        digest = resolve_digest(cfg, name)
+        self.digest_failures = []
+        if not cfg["digests"]:
+            result = await self.generate_digest(hours, force, return_raw)
+            return [DigestPart("crypto", result, self._last_digest_id)] if result else []
+        if digest is None or not digest.enabled:
+            return []
+        categories = {cat.name: cat for cat in load_categories(cfg, self.llm.router is not None)}
+        # Freeze the window before the first category writes its snapshot.
+        since = self._digest_since(hours, digest.name)
+        parts: list[DigestPart] = []
+        run_id = uuid4().hex
+        for category_name in dict.fromkeys(digest.categories):
+            cat = categories.get(category_name)
+            if cat is None:
+                logger.warning("Digest %s: category %s disabled, missing or unavailable", digest.name, category_name)
+                continue
+            result = await self.run_category(cat, digest.name, hours, force, return_raw, _since=since, _run_id=run_id)
+            if result:
+                parts.append(DigestPart(cat.name, result, self._last_digest_id))
+        return parts
 
-        Rules (from settings.json digest_rules, hot-reloaded):
-          max_per_topic       — cap per unique topic
-          always_include_alerts — inserts alerts regardless of cap
-          dedup_threshold     — cosine similarity threshold for semantic dedup
-          digest_max_items    — total cap
-
-        force=True: bypass in_digest filter (for manual /digest new command).
-        """
-        # ── Load template config (hot-reload) ──
-        template_name = "classic"
-        template_cfg  = {}
-        rules         = {}
-        if self.cfg:
-            rules         = self.cfg.get("digest_rules", {})
-            template_name = self.cfg.get("digest_template", "classic")
-            templates_all = self.cfg.get("digest_templates", {})
-            template_cfg  = templates_all.get(template_name, {})
+    async def run_category(self, cat: CategorySpec, digest_name: str | None,
+                           hours: int | None = None, force: bool = False,
+                           return_raw: bool = False, *, _since: datetime | None = None,
+                           _run_id: str | None = None) -> str | None:
+        """Select and render one category, preserving the legacy pipeline order."""
+        self._pipeline_config()
+        self._last_digest_id: int | None = None
+        spec = cat
+        template_name = cat.template
+        rules = self.cfg.get("digest_rules", {}) if self.cfg else {}
+        templates_all = self.cfg.get("digest_templates", {}) if self.cfg else {}
+        template_cfg: dict[str, Any] = {**templates_all.get(template_name, {}), **cat.params}
+        source_filter, source_params = self._source_filter(cat.sources)
 
         # Per-template settings (fall back to global keys)
         digest_max = template_cfg.get(
             "max_items",
-            self.cfg.get("digest_max_items", 7) if self.cfg else 7
+            8 if template_name == "ai_value" else (self.cfg.get("digest_max_items", 7) if self.cfg else 7)
         )
         min_temp = template_cfg.get(
             "min_temperature",
@@ -793,17 +774,7 @@ class NewsAnalyzer:
         except Exception as e:
             logger.error(f"Failed to reset pending digests: {e}")
 
-        if hours is not None:
-            since = datetime.utcnow() - timedelta(hours=hours)
-        else:
-            try:
-                last_row = conn.execute("SELECT period_end FROM digests ORDER BY created_at DESC LIMIT 1").fetchone()
-                if last_row:
-                    since = datetime.fromisoformat(last_row["period_end"])
-                else:
-                    since = datetime.utcnow() - timedelta(hours=12)
-            except Exception:
-                since = datetime.utcnow() - timedelta(hours=12)
+        since = _since if _since is not None else self._digest_since(hours, digest_name)
 
         # Safety cap: never look back more than 24h to avoid LLM context overflow
         max_lookback = datetime.utcnow() - timedelta(hours=24)
@@ -813,16 +784,38 @@ class NewsAnalyzer:
 
         in_digest_filter = "" if force else "AND m.in_digest = 0"
 
+        # Carry-over pool (quota selection only): every article not yet in a digest and published within
+        # carryover_days competes, instead of "since the previous digest". collected_at of RSS/HN is the
+        # publication time, so the window alone lost articles collected after the digest they predate.
+        # Only the top-ranked handful reaches the LLM, so the 24h context cap does not apply here.
+        carryover_days = float(template_cfg.get("carryover_days", 0) or 0) if spec.select == "quotas" else 0.0
+        pool_since = since
+        order_by = "a.temperature DESC"
+        row_limit = 100
+        if carryover_days > 0 and hours is None:
+            pool_since = datetime.utcnow() - timedelta(days=carryover_days)
+            order_by = ("a.value_score DESC, m.collected_at ASC, a.temperature DESC"
+                        if template_cfg.get("tie_break") == "oldest" else
+                        "a.value_score DESC, m.collected_at DESC, a.temperature DESC")
+            row_limit = 500
+
         try:
             rows = conn.execute(f"""
                 SELECT
                     m.id,
                     m.external_id,
                     m.text,
+                    m.url,
+                    m.collected_at,
+                    s.type AS source_type,
+                    a.takeaway,
+                    a.md_path,
                     s.name  AS source_name,
                     a.temperature,
                     a.topic,
                     a.summary,
+                    a.content_type,
+                    a.value_score,
                     -- is this message part of a hot trend?
                     EXISTS (
                         SELECT 1 FROM trend_messages tm
@@ -839,80 +832,46 @@ class NewsAnalyzer:
                   AND m.analyzed = 1
                   AND (m.is_ad = 0 OR m.is_ad IS NULL)
                   {in_digest_filter}
+                  {source_filter}
                   AND a.temperature IS NOT NULL
-                ORDER BY a.temperature DESC
-                LIMIT 100
-            """, (trend_src_min, since.isoformat())).fetchall()
+                ORDER BY {order_by}
+                LIMIT {row_limit}
+            """, (trend_src_min, pool_since.isoformat(), *source_params)).fetchall()
         finally:
             conn.close()
 
         if not rows:
             logger.warning("No analyzed messages available for digest")
+            self.digest_failures.append("no_news")
             return None
 
         # ── Semantic dedup via ChromaDB FIRST ──
         rows_dicts = [dict(r) for r in rows]
-        if dedup_threshold < 1.0:
+        # Without the embeddings hook the category never loads BGE-m3, so no semantic dedup.
+        use_embeddings = "embeddings" in cat.hooks
+        if dedup_threshold < 1.0 and use_embeddings:
             rows_dicts = self._dedup_by_similarity(rows_dicts, threshold=dedup_threshold)
 
-        # ── Build priority tiers ──
-        alerts, trends_tier, high_tier, fill_tier = [], [], [], []
-        for row in rows_dicts:
-            topic = row["topic"] or "general"
-            temp  = float(row["temperature"] or 5.0)
-            is_alert = self._is_alert_topic(topic) or temp >= 9.0 or bool(row.get("was_alerted"))
-
-            if is_alert and include_alerts:
-                alerts.append(row)
-            elif row["in_hot_trend"]:
-                trends_tier.append(row)
-            elif temp >= min_temp + 2:
-                high_tier.append(row)
-            elif temp >= min_temp:
-                fill_tier.append(row)
-
-        # ── Apply per-topic cap + collect candidates in priority order ──
-        topic_counts: dict[str, int] = {}
-        selected: list[dict] = []
-
-        def try_add(item: dict, force: bool = False) -> bool:
-            topic = item["topic"] or "general"
-            count = topic_counts.get(topic, 0)
-            if force or count < max_per_topic:
-                selected.append(item)
-                topic_counts[topic] = count + 1
-                return True
-            return False
-
-        oversample_multiplier = 1
-
-        # Alerts bypass cap
-        for item in alerts:
-            if len(selected) >= digest_max * oversample_multiplier:
-                break
-            try_add(item, force=True)
-
-        for item in trends_tier + high_tier:
-            if len(selected) >= digest_max * oversample_multiplier:
-                break
-            try_add(item)
-
-        # Diversity fill: one best per remaining topic
-        seen_topics = set(topic_counts.keys())
-        for item in fill_tier:
-            if len(selected) >= digest_max * oversample_multiplier:
-                break
-            topic = item["topic"] or "general"
-            if topic not in seen_topics:
-                try_add(item)
-                seen_topics.add(topic)
+        digest_ctx = DigestContext(
+            analyzer=self, cfg={"digest_template": template_name,
+                                "knowledge": self.cfg.get("knowledge", {}) if self.cfg else {},
+                                "llm_concurrency": self.cfg.get("llm_concurrency", 3) if self.cfg else 3},
+            rules=rules, template_name=template_name,
+            template_cfg=template_cfg, digest_max=digest_max, min_temp=min_temp,
+            since=since, force=force, return_raw=return_raw, params=cat.params,
+        )
+        digest_ctx.artifacts.update({"pool": [dict(row) for row in rows_dicts],
+                                     "digest_name": digest_name, "category_name": cat.name})
+        selected = SELECTORS.get(spec.select)(rows_dicts, digest_ctx)
+        alerts_count, trends_count, high_count = digest_ctx.artifacts["tier_counts"]
 
         if not selected:
             logger.warning("Digest priority queue produced 0 candidates")
+            self.digest_failures.append("no_news")
             return None
 
         # ── Cross-digest dedup: driven by template flags ──
-        use_cross_dedup    = template_cfg.get("cross_dedup", True)
+        use_cross_dedup    = template_cfg.get("cross_dedup", True) and use_embeddings
         use_ongoing_trends = template_cfg.get("ongoing_trends", True)
         lookback_digests   = template_cfg.get("lookback_digests", 2)
 
@@ -920,25 +879,28 @@ class NewsAnalyzer:
         if use_cross_dedup and use_ongoing_trends and lookback_digests > 0:
             cross_dedup_threshold = rules.get("cross_dedup_threshold", 0.75)
             selected, ongoing_trends = self._dedup_against_previous_digests(
-                selected, lookback=lookback_digests, threshold=cross_dedup_threshold
+                selected, lookback=lookback_digests, threshold=cross_dedup_threshold,
+                digest_name=digest_name,
             )
         elif use_cross_dedup and lookback_digests > 0:
             # Dedup but don't pass ongoing trends to the LLM
             cross_dedup_threshold = rules.get("cross_dedup_threshold", 0.75)
             selected, _ = self._dedup_against_previous_digests(
-                selected, lookback=lookback_digests, threshold=cross_dedup_threshold
+                selected, lookback=lookback_digests, threshold=cross_dedup_threshold,
+                digest_name=digest_name,
             )
 
         logger.info(
-            f"Digest: {len(alerts)} alerts, {len(trends_tier)} trend msgs, "
-            f"{len(high_tier)} high-temp → {len(selected)} selected after dedup"
+            f"Digest: {alerts_count} alerts, {trends_count} trend msgs, "
+            f"{high_count} high-temp → {len(selected)} selected after dedup"
         )
 
         # ── Emotional balance: if previous digest started with negative alerts,
         # push negative items past position 2 so digest opens with neutral/positive news ──
         negative_keywords = [kw.lower() for kw in (self.cfg.get("keywords_alert", []) if self.cfg else [])]
-        if negative_keywords:
-            def _is_negative(item: dict) -> bool:
+        # Named digests opt out per template (articles have no alert keywords worth balancing).
+        if negative_keywords and (digest_name is None or template_cfg.get("emotional_balance", True)):
+            def _is_negative(item: dict[str, Any]) -> bool:
                 text = ((item.get("topic") or "") + " " + (item.get("text") or "")).lower()
                 return any(kw in text for kw in negative_keywords)
 
@@ -946,12 +908,13 @@ class NewsAnalyzer:
             prev_was_negative = False
             try:
                 conn2 = get_db(self.db_path)
-                prev_top = conn2.execute("""
+                prev_top = conn2.execute(f"""
                     SELECT a.topic, m.text FROM messages m
+                    JOIN sources s ON s.id = m.source_id
                     LEFT JOIN analysis a ON a.message_id = m.id
-                    WHERE m.in_digest = 1
+                    WHERE m.in_digest = 1 {source_filter}
                     ORDER BY m.id DESC LIMIT 2
-                """).fetchall()
+                """, source_params).fetchall()
                 conn2.close()
                 prev_was_negative = any(_is_negative(dict(r)) for r in prev_top)
             except Exception:
@@ -970,7 +933,7 @@ class NewsAnalyzer:
 
         # ── Build LLM prompt ──
         # Build post URLs for source linking in the digest
-        def post_url(row: dict) -> str:
+        def post_url(row: dict[str, Any]) -> str:
             ext_id = str(row.get("external_id", "") or "")
             src = str(row.get("source_name", "") or "")
             if not src:
@@ -990,6 +953,12 @@ class NewsAnalyzer:
         ])
         
         source_map = {str(i+1): post_url(dict(row)) for i, row in enumerate(selected)}
+
+        if template_name == "ai_value":
+            source_map = {
+                str(i): str(row.get("url") or (post_url(row) if row.get("source_type") == "telegram" else ""))
+                for i, row in enumerate(selected, 1)
+            }
 
         period = "последнее время"
 
@@ -1034,13 +1003,14 @@ class NewsAnalyzer:
                     placeholders = ",".join("?" * len(selected_ids))
                     conn.execute(f"""
                         UPDATE messages SET in_digest=2
-                        WHERE id IN (
+                        WHERE id IN (SELECT m.id FROM messages m JOIN sources s ON s.id=m.source_id
+                                     WHERE 1=1 {source_filter}) AND id IN (
                             SELECT tm2.message_id
                             FROM trend_messages tm1
                             JOIN trend_messages tm2 ON tm1.trend_id = tm2.trend_id
                             WHERE tm1.message_id IN ({placeholders})
                         )
-                    """, selected_ids)
+                    """, [*source_params, *selected_ids])
                 conn.commit()
                 conn.close()
             except Exception as e:
@@ -1091,63 +1061,52 @@ class NewsAnalyzer:
         if not agent_succeeded:
             if route_enabled:
                 logger.error("Agent digest push failed and legacy fallback is disabled when route_via_openclaw=true.")
+                self.digest_failures.append("llm")
                 return None
             # route_via_openclaw=false → use local LLM
             with LLMLock():
+                category_token = usage_category.set(cat.name)
                 try:
-                    if template_name == "spoiler":
-                        # Spoiler template: LLM returns JSON → renderer builds MarkdownV2
-                        title_max_words       = template_cfg.get("title_max_words", 8)
-                        summary_max_sentences = template_cfg.get("summary_max_sentences", 3)
-                        llm_merge             = template_cfg.get("llm_merge", True)
-
-                        if llm_merge:
-                            merge_step = DIGEST_SPOILER_MERGE_ON
-                        else:
-                            merge_step = DIGEST_SPOILER_MERGE_OFF.format(digest_max=digest_max)
-
-                        spoiler_prompt = DIGEST_PROMPT_SPOILER.format(
-                            period=period,
-                            count=len(selected),
-                            messages=messages_text,
-                            digest_max=digest_max,
-                            title_max_words=title_max_words,
-                            summary_max_sentences=summary_max_sentences,
-                            merge_step=merge_step,
-                        )
-                        llm_json = await self.llm.complete_json(
-                            user_prompt=spoiler_prompt,
-                            system_prompt=SYSTEM_PROMPT,
-                            temperature=0.3,
-                            # max_tokens не ограничен: с включённым thinking модель тратит
-                            # ~5000 токенов на reasoning — жёсткий лимит 4096 обрывал JSON
-                            disable_thinking=False,  # digest: always full thinking for quality
-                        )
-                        digest_content, parse_mode = render_digest(llm_json, "spoiler", template_cfg, source_map=source_map)
-                    else:
-                        # Classic template: LLM returns ready-made Markdown text
-                        raw_text = await self.llm.complete(
-                            user_prompt=prompt,
-                            system_prompt=SYSTEM_PROMPT,
-                            temperature=0.4,
-                            disable_thinking=False,  # digest: always full thinking for quality
-                        )
-                        digest_content, parse_mode = render_digest(raw_text, "classic", template_cfg)
+                    digest_ctx.artifacts.update({
+                        "source_map": source_map, "prompt": prompt, "period": period,
+                        "messages_text": messages_text,
+                    })
+                    writer = WRITERS.get(spec.template if spec.template in WRITERS.names() else "classic")
+                    draft = await writer.compose(selected, digest_ctx)
+                    # Extras (e.g. knowledge md) run after the draft, so a failed draft costs nothing extra,
+                    # and before the render, so the render can link their results.
+                    for extra_name in spec.extras:
+                        await EXTRAS.get(extra_name)(selected, digest_ctx)
+                    digest_content, parse_mode = writer.render(draft, selected, digest_ctx)
                 except Exception as e:
                     logger.error(f"Local LLM digest generation failed: {e}")
+                    self.digest_failures.append("llm")
                     return None
+                finally:
+                    usage_category.reset(category_token)
+            if not digest_content:
+                self.digest_failures.append("llm")
 
         # ── 3. Mark in DB ──
         try:
             conn = get_db(self.db_path)
             try:
                 if digest_content:
-                    conn.execute(
-                        "INSERT INTO digests (content_md, parse_mode, period_start, period_end) VALUES (?, ?, ?, ?)",
-                        (digest_content, parse_mode, since.isoformat(), datetime.utcnow().isoformat()),
+                    cursor = conn.execute(
+                        "INSERT INTO digests (content_md, parse_mode, period_start, period_end, name, category, run_id, created_at) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        (digest_content, parse_mode, since.isoformat(), datetime.utcnow().isoformat(),
+                         digest_name, cat.name if digest_name is not None else None,
+                         _run_id or uuid4().hex, datetime.utcnow().isoformat(sep=" ")),
                     )
+                    self._last_digest_id = cursor.lastrowid
 
                 selected_ids = [row["id"] for row in selected]
+                if self._last_digest_id is not None:
+                    conn.executemany(
+                        "INSERT OR IGNORE INTO digest_messages (digest_id, message_id) VALUES (?, ?)",
+                        [(self._last_digest_id, mid) for mid in selected_ids],
+                    )
                 conn.executemany(
                     "UPDATE messages SET in_digest=1 WHERE id=?",
                     [(mid,) for mid in selected_ids]
@@ -1157,13 +1116,14 @@ class NewsAnalyzer:
                     placeholders = ",".join("?" * len(selected_ids))
                     conn.execute(f"""
                         UPDATE messages SET in_digest=1
-                        WHERE id IN (
+                        WHERE id IN (SELECT m.id FROM messages m JOIN sources s ON s.id=m.source_id
+                                     WHERE 1=1 {source_filter}) AND id IN (
                             SELECT tm2.message_id
                             FROM trend_messages tm1
                             JOIN trend_messages tm2 ON tm1.trend_id = tm2.trend_id
                             WHERE tm1.message_id IN ({placeholders})
                         )
-                    """, selected_ids)
+                    """, [*source_params, *selected_ids])
 
                 conn.commit()
             finally:
@@ -1177,9 +1137,10 @@ class NewsAnalyzer:
 
         except Exception as e:
             logger.error(f"Failed to finalise digest DB state: {e}")
+            self.digest_failures.append("db")
             return None
 
-    def _dedup_by_similarity(self, candidates: list[dict], threshold: float) -> list[dict]:
+    def _dedup_by_similarity(self, candidates: list[dict[str, Any]], threshold: float) -> list[dict[str, Any]]:
         """
         Remove semantically near-duplicate messages using ChromaDB cosine similarity.
 
@@ -1189,7 +1150,7 @@ class NewsAnalyzer:
         """
         try:
             self.chroma._connect()
-            unique: list[dict] = []
+            unique: list[dict[str, Any]] = []
             kept_ids: set[str] = set()
 
             for msg in candidates:
@@ -1199,7 +1160,10 @@ class NewsAnalyzer:
 
                 # Find documents in ChromaDB that are similar to this one
                 vector = self.embedder.encode(msg["text"][:512])
-                result = self.chroma._collection.query(
+                collection = self.chroma._collection
+                if collection is None:
+                    return candidates
+                result = collection.query(
                     query_embeddings=[vector],
                     n_results=min(10, max(1, len(candidates))),
                     include=["distances"],
@@ -1230,8 +1194,9 @@ class NewsAnalyzer:
 
 
     def _dedup_against_previous_digests(
-        self, candidates: list[dict], lookback: int = 2, threshold: float = 0.75
-    ) -> tuple[list[dict], list[dict]]:
+        self, candidates: list[dict[str, Any]], lookback: int = 2, threshold: float = 0.75,
+        digest_name: str | None = None
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         """
         Semantic dedup against previous digests.
 
@@ -1248,7 +1213,9 @@ class NewsAnalyzer:
             # ── 1. Load summaries from last N digests ──
             conn = get_db(self.db_path)
             rows = conn.execute(
-                "SELECT content_md FROM digests ORDER BY id DESC LIMIT ?", (lookback,)
+                "SELECT content_md FROM digests" + (" WHERE name = ?" if digest_name is not None else "")
+                + " ORDER BY id DESC LIMIT ?",
+                (digest_name, lookback) if digest_name is not None else (lookback,)
             ).fetchall()
             conn.close()
 
@@ -1280,10 +1247,10 @@ class NewsAnalyzer:
             # ── 3. Filter candidates by semantic similarity ──
             import numpy as np
 
-            def cosine(a, b) -> float:
-                a, b = np.array(a), np.array(b)
-                denom = np.linalg.norm(a) * np.linalg.norm(b)
-                return float(np.dot(a, b) / denom) if denom > 0 else 0.0
+            def cosine(a: Sequence[float], b: Sequence[float]) -> float:
+                va, vb = np.array(a), np.array(b)
+                denom = np.linalg.norm(va) * np.linalg.norm(vb)
+                return float(np.dot(va, vb) / denom) if denom > 0 else 0.0
 
             filtered = []
             ongoing = []  # stories that match previous digest = ongoing trends
@@ -1318,6 +1285,31 @@ class NewsAnalyzer:
             return candidates, []
 
 
+    def _pending_count(self) -> int:
+        cfg = self._pipeline_config()
+        sources = tuple(source for cat in load_categories(cfg, self.llm.router is not None)
+                        for source in cat.sources) if cfg["categories"] else ()
+        if cfg["categories"] and not sources:
+            return 0
+        source_filter, source_params = self._source_filter(sources)
+        min_len = int(self.cfg.get("min_message_length", 30)) if self.cfg else 30
+        conn = get_db(self.db_path)
+        try:
+            return int(conn.execute(
+                "SELECT COUNT(*) FROM messages m JOIN sources s ON s.id=m.source_id "
+                "WHERE m.analyzed = 0 AND length(m.text) >= ? " + source_filter,
+                (min_len, *source_params),
+            ).fetchone()[0])
+        finally:
+            conn.close()
+
+    def _trend_sources(self) -> tuple[str, ...] | None:
+        cfg = self._pipeline_config()
+        if not cfg["categories"]:
+            return None
+        return tuple(dict.fromkeys(source for cat in load_categories(cfg, self.llm.router is not None)
+                                   if "trends" in cat.hooks for source in cat.sources))
+
     async def run_loop(self) -> None:
         """
         Main loop — runs things on different schedules:
@@ -1338,6 +1330,14 @@ class NewsAnalyzer:
             chroma_client=self.chroma,
             analyzer=self,
         )
+
+        cfg = self._pipeline_config()
+        if cfg["categories"]:
+            conn = get_db(self.db_path)
+            try:
+                warn_uncategorized_sources(conn, load_categories(cfg))
+            finally:
+                conn.close()
 
         logger.info(
             f"Analyzer loop started — "
@@ -1365,7 +1365,12 @@ class NewsAnalyzer:
                 trigger_reason = "threshold met" if threshold_met else "timer elapsed"
                 logger.info(f"Triggering TrendTracker run_cycle ({trigger_reason}). Analyzed since last run: {messages_analyzed_since_trend}")
                 try:
-                    await trend_tracker.run_cycle()
+                    source_types = self._trend_sources()
+                    trend_tracker.source_types = source_types
+                    if source_types == ():
+                        logger.debug("Trend cycle skipped: no enabled category has trends hook")
+                    else:
+                        await trend_tracker.run_cycle()
                     last_trend_run = now
                     messages_analyzed_since_trend = 0
                 except Exception as e:
@@ -1383,10 +1388,7 @@ class NewsAnalyzer:
                 max_pending = int((self.cfg.get("analyze_max_pending", 10)) if self.cfg else 10)
                 if max_pending > 0:
                     try:
-                        conn = get_db(self.db_path)
-                        min_len = int(self.cfg.get("min_message_length", 30)) if self.cfg else 30
-                        count = conn.execute("SELECT COUNT(*) FROM messages WHERE analyzed = 0 AND length(text) >= ?", (min_len,)).fetchone()[0]
-                        conn.close()
+                        count = self._pending_count()
                         if count >= max_pending:
                             logger.info(f"Threshold reached ({count} pending >= {max_pending}), waking up early")
                             break
@@ -1394,19 +1396,24 @@ class NewsAnalyzer:
                         logger.debug(f"Error checking pending count: {e}")
 
 
-async def main():
+async def main() -> None:
     """Docker entry point."""
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
+    # httpx logs every request URL at INFO; Telegram URLs carry the bot token.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     db_path = os.environ.get("DATABASE_PATH", "/app/data/news.db")
     interval = int(os.environ.get("ANALYZE_INTERVAL_MINUTES", "30"))
 
     init_db(db_path)
+    install_usage_sink(db_path)
 
-    llm = LLMClient(timeout=300)  # 5 min — covers digest with full thinking
+    from analyzer.llm_client import build_llm_client
+
+    llm = build_llm_client(timeout=300)  # 5 min — covers digest with full thinking
 
     logger.info(f"Checking LLM at {llm.base_url}...")
     if await llm.health_check():
@@ -1420,8 +1427,9 @@ async def main():
     # behaviors). Default True preserves current prod behavior. Hot-reload follows
     # the same cfg.on_change pattern used elsewhere (e.g. collectors/telegram.py) —
     # note this only takes effect if something in this process also runs cfg.watch().
-    set_local_mode(cfg.get("llm_local_mode", True))
-    cfg.on_change("llm_local_mode", set_local_mode)
+    if llm.is_legacy:
+        set_local_mode(cfg.get("llm_local_mode", True))
+        cfg.on_change("llm_local_mode", set_local_mode)
 
     analyzer = NewsAnalyzer(
         db_path=db_path,
@@ -1430,7 +1438,7 @@ async def main():
         cfg=cfg,
     )
 
-    await analyzer.run_loop()
+    await asyncio.gather(cfg.watch(), analyzer.run_loop())
 
 
 if __name__ == "__main__":

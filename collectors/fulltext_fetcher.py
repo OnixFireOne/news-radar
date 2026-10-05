@@ -45,8 +45,11 @@ class FullTextFetcher:
         per_domain_delay_seconds: float = 2.0,
         max_fetches_per_cycle: int = 20,
         max_fetches_per_feed: int = 5,
+        include_comments: bool = True,
     ) -> None:
         self.user_agent = user_agent
+        # Reader comments are not part of the article; off in settings.json, kept switchable for later analysis.
+        self._include_comments = include_comments
         self._timeout = timeout
         self._per_domain_delay = per_domain_delay_seconds
         self._max_per_cycle = max_fetches_per_cycle
@@ -55,6 +58,7 @@ class FullTextFetcher:
         self._fetches_this_cycle = 0
         self._fetches_this_feed: dict[str, int] = {}
         self._blocked_domains: set[str] = set()
+        self.last_capped: bool = False
 
     def new_cycle(self) -> None:
         """Call once at the start of each poll iteration to reset all per-cycle limits."""
@@ -69,15 +73,23 @@ class FullTextFetcher:
         per-feed fetch cap — it keeps one large feed from consuming the
         whole cycle's fetch budget before other feeds get a turn.
         """
+        self.last_capped = False
         domain = urlparse(url).netloc
 
         if domain in self._blocked_domains:
-            logger.info(f"Domain {domain} blocked for this cycle (earlier 401/403) — skipping {url}")
+            # The block itself is already logged once, at INFO, where it
+            # happens (see the 401/403 branch below). Logging again on every
+            # subsequent skipped entry floods the log on a domain with many
+            # entries in one cycle (e.g. dozens of openai.com URLs) for no
+            # new information — debug is enough here.
+            logger.debug(f"Domain {domain} still blocked for this cycle — skipping {url}")
             return None
         if self._fetches_this_cycle >= self._max_per_cycle:
+            self.last_capped = True
             logger.info(f"Full-text fetch cap reached ({self._max_per_cycle}/cycle) — skipping {url}")
             return None
         if self._fetches_this_feed.get(feed_key, 0) >= self._max_per_feed:
+            self.last_capped = True
             logger.info(f"Full-text fetch cap reached ({self._max_per_feed}/feed) for {feed_key} — skipping {url}")
             return None
 
@@ -105,7 +117,7 @@ class FullTextFetcher:
             logger.info(f"Full-text fetch failed for {url}: {e} — keeping snippet")
             return None
 
-        extracted: str | None = trafilatura.extract(html)
+        extracted: str | None = trafilatura.extract(html, include_comments=self._include_comments)
         if not extracted or len(extracted.strip()) < _MIN_EXTRACTED_CHARS:
             logger.info(f"Full-text extraction too short/empty for {url} — keeping snippet")
             return None

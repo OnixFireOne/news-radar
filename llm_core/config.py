@@ -19,3 +19,15 @@ class LLMCoreConfig:
     api_key: str
     timeout: float = 300.0
     default_headers: dict[str, str] = field(default_factory=dict)
+    auth_style: str = "bearer"
+
+
+def auth_headers(auth_style: str, api_key: str) -> dict[str, str]:
+    """Build authentication headers shared by both wire protocols."""
+    if auth_style == "bearer":
+        return {"Authorization": f"Bearer {api_key}"}
+    if auth_style == "x-api-key":
+        return {"x-api-key": api_key}
+    if auth_style == "none":
+        return {}
+    raise ValueError("Unknown LLM auth_style")

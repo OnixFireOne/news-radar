@@ -9,7 +9,7 @@ Commands:
   /digest  — most recent AI digest
   /help    — help
 
-Auto-sends a digest every DIGEST_INTERVAL_HOURS hours.
+Auto-sends named digests at configured local times.
 """
 
 import asyncio
@@ -17,11 +17,12 @@ import logging
 import os
 import sys
 from datetime import datetime, time
-from zoneinfo import ZoneInfo
+from urllib.parse import urlencode
+from bot.digest_schedule import schedule_slots, slot_key, split_message
 from pathlib import Path
 
 import httpx
-from telegram import Update, BotCommand
+from telegram import Update, BotCommand, Bot
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -32,6 +33,7 @@ logger = logging.getLogger(__name__)
 
 # Set of allowed Telegram user IDs (get yours from @userinfobot)
 ALLOWED_USERS: set[int] = set()
+ADMIN_USERS: set[int] = set()
 
 
 def is_allowed(user_id: int) -> bool:
@@ -101,13 +103,14 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "I monitor 57+ Telegram channels and analyze news with AI.\n\n"
         "Commands:\n"
         "/hot — trending topics right now\n"
-        "/digest — latest AI digest\n"
-        "/digest new — generate fresh digest now (like scheduled cron)\n"
+        "/digest [name] — latest AI digest\n"
+        "/digest new [name] [hours] [force] — generate fresh digest now (like scheduled cron)\n"
         "/track <topic> — subscribe to a topic\n"
         "/untrack <topic> — remove subscription\n"
         "/my_tracks — your active subscriptions\n"
         "/ask <question> — ask the AI agent\n"
         "/status — system statistics\n"
+        "/stats [name] — статистика дайджеста (только админы)\n"
         "/help — this message"
     )
 
@@ -175,11 +178,13 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("📝 Loading digest...")
 
-    digest = await fetch_api("/digest/latest")
-
-    args = [str(a).lower() for a in (ctx.args or [])]
-    force_new  = "new"   in args
-    force_flag = "force" in args
+    args = [str(a) for a in (ctx.args or [])]
+    force_new = any(token.lower() == "new" for token in args)
+    force_flag = any(token.lower() == "force" for token in args)
+    name = next((token for token in args if not token.isdigit()
+                 and token.lower() not in ("new", "force")), None)
+    name_query = urlencode({"name": name}) if name is not None else ""
+    digest = await fetch_api("/digest/latest" + ("?" + name_query if name_query else ""))
 
     # Parse optional hours: any integer token in args is treated as window size
     hours_param: int | None = None
@@ -221,6 +226,8 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                     url = f"{API_URL}/digest/generate?force={force_str}"
                     if hours_param:
                         url += f"&hours={hours_param}"
+                    if name_query:
+                        url += "&" + name_query
                     resp = await client.post(url)
                     if resp.status_code == 200:
                         digest = resp.json()
@@ -240,25 +247,46 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⏳ Data collected and dispatched to the agent. Please wait...")
         return
 
-    content = digest.get("content_md", "")
-    parse_mode = digest.get("parse_mode", "Markdown")
+    for part in digest.get("parts", [digest]):
+        parse_mode = part.get("parse_mode", "Markdown")
 
-    try:
-        await update.message.reply_text(
-            content,
-            parse_mode=parse_mode,
-            disable_web_page_preview=True,
-        )
-    except Exception as e:
-        logger.error(f"Digest send failed (parse_mode={parse_mode}): {e} — retrying as plain text")
-        # Strip HTML/Markdown tags so user sees readable plain text
-        import re
-        plain = re.sub(r"<[^>]+>", "", content)   # strip HTML tags
-        plain = plain.replace("*", "").replace("_", "").replace("`", "")  # strip MD
+        for content in split_message(part.get("content_md", ""), html=parse_mode == "HTML"):
+            try:
+                await update.message.reply_text(
+                    content,
+                    parse_mode=parse_mode,
+                    disable_web_page_preview=True,
+                )
+            except Exception as e:
+                logger.error(f"Digest send failed (parse_mode={parse_mode}): {e} — retrying as plain text")
+                # Strip HTML/Markdown tags so user sees readable plain text
+                import re
+                plain = re.sub(r"<[^>]+>", "", content)   # strip HTML tags
+                plain = plain.replace("*", "").replace("_", "").replace("`", "")  # strip MD
+                try:
+                    await update.message.reply_text(plain, disable_web_page_preview=True)
+                except Exception as e2:
+                    logger.error(f"Plain text fallback also failed: {e2}")
+
+    if digest.get("stats"):
+        await send_digest_stats(ctx.bot, digest["stats"])
+
+
+async def send_digest_stats(bot: Bot, text: str) -> None:
+    for user_id in sorted(ADMIN_USERS):
         try:
-            await update.message.reply_text(plain, disable_web_page_preview=True)
-        except Exception as e2:
-            logger.error(f"Plain text fallback also failed: {e2}")
+            await bot.send_message(chat_id=user_id, text=text, parse_mode=None)
+        except Exception:
+            logger.warning("Failed to send digest statistics to admin %s", user_id, exc_info=True)
+
+
+async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_user.id not in ADMIN_USERS:
+        return
+    name = ctx.args[0] if ctx.args else None
+    result = await fetch_api("/digest/stats" + ("?" + urlencode({"name": name}) if name else ""))
+    await update.message.reply_text(result["text"] if result else "Статистика недоступна: выпуск не найден.",
+                                    parse_mode=None)
 
 
 async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
@@ -269,8 +297,8 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "📡 News Radar — AI news aggregator\n\n"
         "Commands:\n"
         "/hot — trending topics right now\n"
-        "/digest — latest saved digest\n"
-        "/digest new — generate fresh digest (auto period)\n"
+        "/digest [name] — latest saved digest\n"
+        "/digest new [name] [hours] [force] — generate fresh digest (auto period)\n"
         "/digest new 6 — generate for last 6 hours\n"
         "/digest new 6 force — force-regenerate for last 6 hours\n"
         "/track <topic> — subscribe to a topic (e.g. /track SEC)\n"
@@ -278,6 +306,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "/my_tracks — your active subscriptions\n"
         "/ask <question> — ask the AI agent anything\n"
         "/status — system stats (channels, messages)\n"
+        "/stats [name] — статистика дайджеста (только админы)\n"
         "/help — this message"
     )
 
@@ -411,7 +440,7 @@ async def _notify_users(app: Application, text: str) -> None:
             logger.error(f"Failed to notify user {uid}: {e}")
 
 
-async def perform_scheduled_digest(app: Application) -> None:
+async def perform_scheduled_digest(app: Application, name: str | None = None) -> None:
     """Trigger digest generation automatically if legacy mode is active."""
     settings = await fetch_api("/settings") or {}
     use_agent = settings.get("route_via_openclaw", False)
@@ -423,7 +452,10 @@ async def perform_scheduled_digest(app: Application) -> None:
     logger.info("Triggering scheduled legacy digest generation...")
     try:
         async with httpx.AsyncClient(timeout=180) as client:
-            resp = await client.post(f"{API_URL}/digest/generate")
+            url = f"{API_URL}/digest/generate"
+            if name is not None:
+                url += "?" + urlencode({"name": name})
+            resp = await client.post(url)
 
         if resp.status_code != 200:
             err = resp.json().get("detail", resp.text[:200])
@@ -438,36 +470,75 @@ async def perform_scheduled_digest(app: Application) -> None:
         await _notify_users(app, f"⚠️ Scheduled digest failed — API connection error:\n{e}")
         return
 
-    content = digest.get("content_md", "")
-    parse_mode = digest.get("parse_mode", "Markdown")
+    for part in digest.get("parts", [digest]):
+        content = part.get("content_md", "")
+        parse_mode = part.get("parse_mode", "Markdown")
 
-    if not content:
-        logger.error("Scheduled digest: empty content returned")
-        await _notify_users(app, "⚠️ Scheduled digest generated but content is empty.")
+        if not content:
+            logger.error("Scheduled digest: empty content returned")
+            await _notify_users(app, "⚠️ Scheduled digest generated but content is empty.")
+            return
+
+        for chunk in split_message(content, html=parse_mode == "HTML"):
+            for user_id in list(ALLOWED_USERS):
+                try:
+                    await app.bot.send_message(
+                        chat_id=user_id,
+                        text=chunk,
+                        parse_mode=parse_mode,
+                        disable_web_page_preview=True,
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send digest to {user_id} (parse_mode={parse_mode}): {e}")
+                    # Fallback: send without formatting — never send error text to user
+                    try:
+                        await app.bot.send_message(
+                            chat_id=user_id,
+                            text=chunk,
+                            disable_web_page_preview=True,
+                        )
+                    except Exception as e2:
+                        logger.error(f"Fallback send also failed for {user_id}: {e2}")
+
+    if digest.get("stats"):
+        await send_digest_stats(app.bot, digest["stats"])
+
+
+# A digest slot missed while the host slept still runs on wake-up, once, if within this window
+# (a Mac can sleep all night and half the day; 20 h still ends before the next daily slot).
+DIGEST_MISFIRE_GRACE_SECONDS = 20 * 3600
+
+
+async def scheduled_digest_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await perform_scheduled_digest(ctx.application, ctx.job.data)
+
+
+async def refresh_digest_schedule(app: Application) -> None:
+    settings = await fetch_api("/settings")
+    if settings is None and "digest_slots" in app.bot_data:
         return
-
-    for user_id in list(ALLOWED_USERS):
-        try:
-            await app.bot.send_message(
-                chat_id=user_id,
-                text=content,
-                parse_mode=parse_mode,
-                disable_web_page_preview=True,
-            )
-        except Exception as e:
-            logger.error(f"Failed to send digest to {user_id} (parse_mode={parse_mode}): {e}")
-            # Fallback: send without formatting — never send error text to user
-            try:
-                await app.bot.send_message(
-                    chat_id=user_id,
-                    text=content,
-                    disable_web_page_preview=True,
-                )
-            except Exception as e2:
-                logger.error(f"Fallback send also failed for {user_id}: {e2}")
+    try:
+        slots = schedule_slots(settings or {})
+    except (ValueError, KeyError, TypeError) as exc:
+        logger.error("Invalid digest schedule; retaining previous jobs: %s", exc)
+        return
+    keys = frozenset(slot_key(name, slot) for name, slot in slots)
+    if app.bot_data.get("digest_slots") == keys:
+        return
+    for job in app.job_queue.jobs():
+        if job.name and job.name.startswith("digest:"):
+            job.schedule_removal()
+    for name, slot in slots:
+        app.job_queue.run_daily(scheduled_digest_job, time=slot, data=name,
+                                name=f"digest:{name if name is not None else 'legacy'}:{slot:%H:%M}",
+                                job_kwargs={"misfire_grace_time": DIGEST_MISFIRE_GRACE_SECONDS,
+                                            "coalesce": True})
+    app.bot_data["digest_slots"] = keys
+    logger.info("Digest schedule refreshed: %s", keys)
 
 
-
+async def refresh_digest_schedule_job(ctx: ContextTypes.DEFAULT_TYPE) -> None:
+    await refresh_digest_schedule(ctx.application)
 
 
 
@@ -477,11 +548,16 @@ def main():
         level=logging.INFO,
         format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
     )
+    # httpx logs every request URL at INFO; Telegram URLs carry the bot token.
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     token = os.environ["TELEGRAM_BOT_TOKEN"]
     interval_hours = int(os.environ.get("DIGEST_INTERVAL_HOURS", "3"))
 
     # Load allowed user IDs from env
+    for uid in os.environ.get("TELEGRAM_ADMIN_USERS", "").split(","):
+        if uid.strip():
+            ADMIN_USERS.add(int(uid.strip()))
     allowed_raw = os.environ.get("TELEGRAM_ALLOWED_USERS", "")
     for uid in allowed_raw.split(","):
         uid = uid.strip()
@@ -498,32 +574,20 @@ def main():
     app.add_handler(CommandHandler("hot", cmd_hot))
     app.add_handler(CommandHandler("digest", cmd_digest))
     app.add_handler(CommandHandler("help", cmd_help))
+    app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("track", cmd_track))
     app.add_handler(CommandHandler("untrack", cmd_untrack))
     app.add_handler(CommandHandler("my_tracks", cmd_my_tracks))
     app.add_handler(CommandHandler("ask", cmd_ask))
 
-    msk_tz = ZoneInfo("Europe/Moscow")
-
-    # Schedule auto-digest at 12:00 MSK and 20:00 MSK
-    async def _scheduled_digest_job(ctx):
-        await perform_scheduled_digest(app)
-
-    app.job_queue.run_daily(
-        callback=_scheduled_digest_job,
-        time=time(hour=12, minute=0, tzinfo=msk_tz)
-    )
-    app.job_queue.run_daily(
-        callback=_scheduled_digest_job,
-        time=time(hour=20, minute=0, tzinfo=msk_tz)
-    )
-
-
+    app.job_queue.run_repeating(refresh_digest_schedule_job, interval=60, first=60,
+                                name="refresh-digest-schedule")
 
     logger.info("News Radar Bot started")
 
     # Register commands in Telegram menu (shows up as / hint in the chat)
     async def set_commands(app):
+        await refresh_digest_schedule(app)
         await app.bot.set_my_commands([
             BotCommand("start",     "Запустить бота"),
             BotCommand("hot",       "Горячие тренды прямо сейчас"),
@@ -533,6 +597,7 @@ def main():
             BotCommand("my_tracks", "Мои активные подписки"),
             BotCommand("ask",       "Спросить агента: /ask что с BTC?"),
             BotCommand("status",    "Статистика системы"),
+            BotCommand("stats", "Статистика дайджеста (админы)"),
             BotCommand("help",      "Справка"),
         ])
         logger.info("Bot commands registered in Telegram menu")

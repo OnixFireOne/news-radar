@@ -9,8 +9,9 @@ LLMRetryExhaustedError (never fails silently).
 from __future__ import annotations
 
 import logging
+import json
 from dataclasses import dataclass
-from typing import Literal, TypedDict
+from typing import TYPE_CHECKING, Literal, TypedDict
 
 import httpx
 from tenacity import (
@@ -22,8 +23,10 @@ from tenacity import (
     wait_exponential,
 )
 
-from llm_core.config import LLMCoreConfig
+from llm_core.config import LLMCoreConfig, auth_headers
 from llm_core.mask import mask_secret
+if TYPE_CHECKING:
+    from llm_core.transport import JsonSchemaTool
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +47,12 @@ class _Usage(TypedDict, total=False):
 class _ChoiceMessage(TypedDict, total=False):
     role: str
     content: str | None
+    tool_calls: list[dict[str, object]]
 
 
 class _Choice(TypedDict, total=False):
     message: _ChoiceMessage
+    finish_reason: str | None
 
 
 class _ChatCompletionResponse(TypedDict, total=False):
@@ -68,6 +73,10 @@ class CompletionResult:
     content: str
     model: str
     usage: CompletionUsage | None
+    finish_reason: str | None = None
+    raw_usage: dict[str, object] | None = None
+    structured: dict[str, object] | None = None
+    tool_calls_seen: tuple[str, ...] = ()
 
 
 class LLMCoreError(Exception):
@@ -129,7 +138,7 @@ class LLMCoreClient:
                 resp = await client.post(
                     f"{self._cfg.base_url}/chat/completions",
                     headers={
-                        "Authorization": f"Bearer {self._cfg.api_key}",
+                        **auth_headers(self._cfg.auth_style, self._cfg.api_key),
                         "Content-Type": "application/json",
                         **self._cfg.default_headers,
                     },
@@ -158,6 +167,7 @@ class LLMCoreClient:
         temperature: float = 0.3,
         max_tokens: int | None = None,
         extra_payload: dict[str, object] | None = None,
+        tool: JsonSchemaTool | None = None,
     ) -> CompletionResult:
         """
         Send a chat-completions request and return the parsed result.
@@ -177,6 +187,16 @@ class LLMCoreClient:
             payload["max_tokens"] = max_tokens
         if extra_payload:
             payload.update(extra_payload)
+            for key in [key for key, value in extra_payload.items() if value is None]:
+                del payload[key]
+        if tool is not None:
+            function_def: dict[str, object] = {
+                "name": tool.name, "description": tool.description, "parameters": tool.schema,
+            }
+            if tool.strict:
+                function_def["strict"] = True
+            payload["tools"] = [{"type": "function", "function": function_def}]
+            payload["tool_choice"] = {"type": "function", "function": {"name": tool.name}}
 
         try:
             data = await self._post_chat_completion(payload)
@@ -190,10 +210,28 @@ class LLMCoreClient:
 
         choices = data.get("choices", [])
         content = ""
+        structured: dict[str, object] | None = None
+        names: list[str] = []
         if choices:
             msg = choices[0].get("message")
             if msg is not None:
                 content = msg.get("content") or ""
+                for call in msg.get("tool_calls", []):
+                    function = call.get("function")
+                    if not isinstance(function, dict):
+                        continue
+                    name = function.get("name")
+                    if not isinstance(name, str):
+                        continue
+                    names.append(name)
+                    arguments = function.get("arguments")
+                    if tool is not None and name == tool.name and isinstance(arguments, str):
+                        try:
+                            parsed: object = json.loads(arguments)
+                        except ValueError:
+                            continue
+                        if isinstance(parsed, dict) and all(isinstance(key, str) for key in parsed):
+                            structured = parsed
 
         usage_raw = data.get("usage")
         usage: CompletionUsage | None = None
@@ -208,4 +246,7 @@ class LLMCoreClient:
             content=content.strip(),
             model=data.get("model", model),
             usage=usage,
+            finish_reason=choices[0].get("finish_reason") if choices else None,
+            raw_usage=dict(usage_raw) if usage_raw is not None else None,
+            structured=structured, tool_calls_seen=tuple(names),
         )

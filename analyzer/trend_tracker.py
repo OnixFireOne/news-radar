@@ -39,7 +39,7 @@ import os
 import httpx
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Optional, TYPE_CHECKING
+from typing import Sequence, Optional, TYPE_CHECKING
 from typing import TypedDict
 from pydantic import BaseModel, ValidationError
 
@@ -212,7 +212,9 @@ class TrendTracker:
     HDBSCAN_EPSILON = 0.25       # cluster_selection_epsilon — tune if too few/many clusters
     DEAD_TREND_HOURS = 12        # mark old trends as dead even if not in current window
 
-    def __init__(self, db_path: str, llm_client, chroma_client, analyzer: Optional["NewsAnalyzer"] = None) -> None:
+    def __init__(self, db_path: str, llm_client, chroma_client, analyzer: Optional["NewsAnalyzer"] = None,
+                 source_types: Sequence[str] | None = None) -> None:
+        self.source_types = source_types
         self.db_path = db_path
         self.llm = llm_client
         self.chroma = chroma_client
@@ -310,7 +312,11 @@ class TrendTracker:
         conn = get_db(self.db_path)
         try:
             min_len = int(self.analyzer.cfg.get("min_message_length", 30)) if self.analyzer and self.analyzer.cfg else 30
-            rows = conn.execute("""
+            source_filter = ""
+            source_params = tuple(self.source_types or ())
+            if self.source_types is not None:
+                source_filter = "AND s.type IN (" + ",".join("?" for _ in source_params) + ")"
+            rows = conn.execute(f"""
                 SELECT
                     m.id,
                     m.external_id,
@@ -328,9 +334,10 @@ class TrendTracker:
                   AND m.analyzed = 1
                   AND m.chroma_synced = 1
                   AND length(m.text) >= ?
+                {source_filter}
                 ORDER BY m.collected_at DESC
                 LIMIT ?
-            """, (f"-{self.window_hours} hours", min_len, self.MAX_MESSAGES)).fetchall()
+            """, (f"-{self.window_hours} hours", min_len, *source_params, self.MAX_MESSAGES)).fetchall()
             messages: list[MessageRow] = []
             for r in rows:
                 d = dict(r)
@@ -576,6 +583,7 @@ class TrendTracker:
                 ),
                 temperature=0.1,
                 disable_thinking=False,  # cluster naming: always full thinking for accuracy
+                task="trend_name",
             )
             cluster.topic = result.get("topic", cluster.topic)[:100]  # cap length
             cluster.llm_summary = result.get("summary", "")[:500]

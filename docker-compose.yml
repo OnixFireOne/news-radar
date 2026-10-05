@@ -12,7 +12,7 @@ services:
     ports:
       - "8200:8000"
     volumes:
-      - ./data/chroma:/chroma/chroma   # persistent vector data
+      - ./data/chroma:/data   # persistent vector data (chroma >= 1.0 persists to /data)
     environment:
       - IS_PERSISTENT=TRUE
       - ANONYMIZED_TELEMETRY=FALSE
@@ -89,8 +89,11 @@ services:
       - ./llm_core:/app/llm_core
       - ./collectors:/app/collectors
       - ./tests:/app/tests
+      - ./scripts:/app/scripts   # manual one-off scripts (rescore_sample.py)
+      - ./bot:/app/bot:ro
       - ./pytest.ini:/app/pytest.ini
       - ./mypy.ini:/app/mypy.ini
+      - ./knowledge:/app/knowledge   # knowledge.targets "local": md for tests, committed by the owner
     restart: unless-stopped
     networks:
       - news-radar-network
@@ -119,6 +122,8 @@ services:
       - ./api:/app/api
       - ./analyzer:/app/analyzer
       - ./database:/app/database
+      - ./llm_core:/app/llm_core
+      - ./knowledge:/app/knowledge   # knowledge.targets "local": md for tests, committed by the owner
     restart: unless-stopped
     networks:
       - news-radar-network

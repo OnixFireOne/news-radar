@@ -108,7 +108,7 @@ def _render_spoiler(data: dict, item_emoji: str = "🔹", show_summary: bool = T
 
 # ── Public API ───────────────────────────────────────────────────────────────
 
-def render_digest(llm_output, template: str, template_cfg: dict | None = None, source_map: dict | None = None) -> tuple[str, str]:
+def render_digest(llm_output, template: str, template_cfg: dict | None = None, source_map: dict | None = None, md_map: dict | None = None, *, candidates_link: dict | None = None) -> tuple[str, str]:
     """
     Route LLM output through the correct template renderer.
 
@@ -130,6 +130,8 @@ def render_digest(llm_output, template: str, template_cfg: dict | None = None, s
             item_emoji   = cfg.get("item_emoji", "🔹")
             show_summary = cfg.get("show_summary", True)
             return _render_spoiler(llm_output, item_emoji=item_emoji, show_summary=show_summary, source_map=source_map)
+        elif template == "ai_value":
+            return _render_ai_value(llm_output, cfg, source_map, md_map, candidates_link)
         else:
             # Default: classic
             if not isinstance(llm_output, str):
@@ -138,3 +140,41 @@ def render_digest(llm_output, template: str, template_cfg: dict | None = None, s
     except Exception as e:
         logger.error(f"Renderer error (template={template}): {e}")
         return "", ""
+
+
+def _render_ai_value(data: dict, cfg: dict, source_map: dict | None, md_map: dict | None,
+                     candidates_link: dict | None = None) -> tuple[str, str]:
+    blocks = []
+    types = cfg.get("types", {})
+    for item in data.get("items", []):
+        title = _html_esc((item.get("title") or "").strip())
+        if not title:
+            continue
+        style = types.get(item.get("content_type"), types.get("_default", {"emoji": "🔹", "label": ""}))
+        label = _html_esc(style.get("label", ""))
+        heading = f"{label}: {title}" if label else title
+        takeaway = _html_esc((item.get("takeaway") or "").strip())
+        summary = _html_esc((item.get("summary") or "").strip())
+        source_id = str(item.get("source_id", ""))
+        links = []
+        for url, text in (
+            ((source_map or {}).get(source_id), "источник"),
+            ((md_map or {}).get(source_id) if cfg.get("show_md_link", True) else None, "разбор (md)"),
+        ):
+            if url:
+                escaped_url = _html_esc(str(url)).replace('"', "&quot;")
+                links.append(f'<a href="{escaped_url}">{text}</a>')
+        body = "\n".join(part for part in (summary, " · ".join(links)) if part)
+        blocks.append(f'{_html_esc(style.get("emoji", "🔹"))} <b>{heading}</b>\n'
+                      f'{takeaway}\n<blockquote expandable>{body}</blockquote>')
+    if not blocks:
+        logger.warning("AI value renderer: empty items list from LLM")
+        return "", ""
+    date = _html_esc(str(data.get("date_label") or ""))
+    header = "🤖 <b>AI-радар" + (f" — {date}" if date else "") + "</b>"
+    if candidates_link:
+        escaped_url = _html_esc(str(candidates_link["url"])).replace('"', "&quot;")
+        selected = _html_esc(str(candidates_link["selected"]))
+        total = _html_esc(str(candidates_link["total"]))
+        blocks.append(f'📋 <a href="{escaped_url}">Все кандидаты выпуска</a>: выбрано {selected} из {total}')
+    return "\n\n".join([header, *blocks]), "HTML"
