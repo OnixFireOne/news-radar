@@ -163,3 +163,24 @@ def load_topics(self) -> dict:
 `stats` в ответ генерации именованного дайджеста и автоматической доставкой админам.
 API читает актуальный конфиг при каждом запросе; перезапуск для флага не нужен.
 Постоянный учёт вызовов в `llm_usage` и ручная `/stats` не отключаются этим флагом.
+
+## Публикация на сайт (И4.3)
+
+`site` читается на каждом выпуске, объявлен в `DEFAULT_CONFIG` и `settings.json`:
+
+| Ключ | Дефолт кода | Назначение |
+|---|---|---|
+| `enabled` | `false` | Запись разборов и дайджеста на сайт; в settings `true` |
+| `live` | `false` | После успешного коммита Telegram-ссылки разборов ведут на сайт |
+| `repo` | `OnixFireOne/neuronavt` | Репозиторий сайта |
+| `branch` | `radar-preview` | Ветка предпросмотра |
+| `base_url` | `https://neuronavt.blog` | Публичные URL выпусков и разборов |
+| `posts_dir` | `blog/src/content/posts/_digests` | Каталог дайджест-постов |
+| `reviews_dir` | `blog/src/content/reviews` | Каталог разборов |
+| `digest_slug` | `{date}-ai-radar` | Имя поста с датой UTC `YYYY-MM-DD` |
+
+Extra `site` должен идти после `knowledge`. Площадка сайта не добавляется в `knowledge.targets`.
+При `enabled: true` список кандидатов переезжает внутрь поста, отдельного md и Telegram-ссылки списка нет.
+Env `NEURONAVT_GITHUB_TOKEN` описан в `.env.example`; его добавление требует пересоздания
+контейнера, hot reload применим только к JSON. Публикация на сайт пропускается без токена;
+сбой не мешает выпуску Telegram. Детали путей и fallback — `06_digest.md`.

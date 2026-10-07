@@ -19,6 +19,13 @@ def _table_text(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip().replace("\\", "\\\\").replace("|", "\\|")
 
 
+def candidate_title(row: Mapping[str, object]) -> str:
+    """Use the same first nonempty text line in both candidate publications."""
+    title = next((line.strip() for line in str(row.get("text") or "").splitlines() if line.strip()), "")
+    title = re.sub(r"\s+", " ", title)
+    return title[:119] + "…" if len(title) > 120 else title
+
+
 def build_candidates_markdown(
     pool: Sequence[Row], selected: Sequence[Row], template: Mapping[str, object],
     name: str, now: datetime,
@@ -60,9 +67,7 @@ def build_candidates_markdown(
         kind = str(row.get("content_type") or "")
         style = types.get(kind, {})
         label = style.get("label", kind) if isinstance(style, Mapping) else kind
-        title = next((line.strip() for line in str(row.get("text") or "").splitlines() if line.strip()), "")
-        title = re.sub(r"\s+", " ", title)
-        title = title[:119] + "…" if len(title) > 120 else title
+        title = candidate_title(row)
         title = _table_text(title).replace("[", "\\[").replace("]", "\\]")
         url = str(row.get("url") or "").strip().replace(")", "%29")
         url = re.sub(r"\s", "%20", url).replace("|", "%7C")
@@ -84,6 +89,10 @@ def build_candidates_markdown(
 @EXTRAS.register("candidates")
 async def candidates(selected: list[Row], ctx: DigestContext) -> None:
     try:
+        site_cfg = ctx.cfg.get("site", {})
+        # Once the site is live the list lives inside the site digest; in preview Telegram still links the file.
+        if site_cfg.get("enabled", False) and site_cfg.get("live", False):
+            return
         options = ctx.template_cfg.get("candidates_list", {})
         if not isinstance(options, Mapping) or not options.get("enabled", False):
             return
@@ -115,12 +124,20 @@ async def knowledge(selected: list[Row], ctx: DigestContext) -> None:
     try:
         knowledge_rows = [dict(row, url=source_map[str(i)]) for i, row in enumerate(selected, 1)]
         delivered: list[str] = []
+        ctx.artifacts["site_reviews"] = []
+        ctx.artifacts["site_existing_reviews"] = {}
+        ctx.artifacts["site_now"] = datetime.now(timezone.utc)
+        ctx.artifacts["site_github_published"] = set()
         md_map = await analyzer_module.publish_selected(
             ctx.analyzer.llm, knowledge_rows,
             {"knowledge": ctx.cfg.get("knowledge", {}),
-             "llm_concurrency": ctx.cfg.get("llm_concurrency", 3)},
+             "llm_concurrency": ctx.cfg.get("llm_concurrency", 3),
+             "site": ctx.cfg.get("site", {})},
             None, ctx.analyzer.db_path,
             extra_files=ctx.artifacts.get("extra_files", ()), delivered=delivered,
+            site_reviews=ctx.artifacts["site_reviews"],
+            site_existing=ctx.artifacts["site_existing_reviews"],
+            site_now=ctx.artifacts["site_now"], github_published=ctx.artifacts["site_github_published"],
         )
         meta = ctx.artifacts.get("candidates_meta")
         if meta and meta["path"] in delivered:
@@ -133,3 +150,63 @@ async def knowledge(selected: list[Row], ctx: DigestContext) -> None:
     except Exception:
         logger.warning("Knowledge unavailable: published=0 reused=0 failed=%s", len(selected))
     ctx.artifacts["md_map"] = md_map
+
+
+@EXTRAS.register("site")
+async def site(selected: list[Row], ctx: DigestContext) -> None:
+    """Commit the digest and its prepared reviews atomically; failure never blocks Telegram."""
+    import os
+    from analyzer.knowledge_publisher import (
+        GitHubPublisher, SiteReview, site_review_url, validate_site_frontmatter,
+    )
+    from analyzer.site_digest import build_digest_post
+    from database.schema import get_db
+
+    try:
+        cfg = ctx.cfg.get("site", {})
+        if not cfg.get("enabled", False):
+            return
+        token = os.getenv("NEURONAVT_GITHUB_TOKEN", "").strip()
+        if not token:
+            logger.info("Site skipped: NEURONAVT_GITHUB_TOKEN missing")
+            return
+        reviews: list[SiteReview] = []
+        for review in ctx.artifacts.get("site_reviews", []):
+            if validate_site_frontmatter(review.content):
+                reviews.append(review)
+            else:
+                logger.warning("Site review invalid for message %s", review.message_id)
+        slugs = dict(ctx.artifacts.get("site_existing_reviews", {}))
+        slugs.update({review.source_id: review.slug for review in reviews})
+        source_map = ctx.artifacts.get("source_map", {})
+        rows = [dict(row, url=source_map.get(str(i), row.get("url", "")))
+                for i, row in enumerate(selected, 1)]
+        now = ctx.artifacts.get("site_now", datetime.now(timezone.utc))
+        path, content, url = build_digest_post(
+            ctx.artifacts["draft"], rows, ctx.artifacts.get("pool", []), slugs, ctx.template_cfg, cfg, now,
+        )
+        publisher = GitHubPublisher(str(cfg.get("repo", "OnixFireOne/neuronavt")),
+                                    str(cfg.get("branch", "radar-preview")), token, batch=True)
+        files = [(review.path, review.content) for review in reviews] + [(path, content)]
+        if not await publisher.commit_files(files, f"feat(radar): AI radar digest {now:%Y-%m-%d} (+{len(reviews)} reviews)"):
+            logger.warning("Site digest commit failed")
+            return
+        ctx.artifacts["site_digest_url"] = url
+        md_map = ctx.artifacts.setdefault("md_map", {})
+        # Preserve successful GitHub knowledge paths in preview; site-only runs store their site path.
+        for review in reviews:
+            legacy_ok = review.source_id in ctx.artifacts.get("site_github_published", set(md_map))
+            if cfg.get("live", False) or not legacy_ok:
+                try:
+                    conn = get_db(ctx.analyzer.db_path)
+                    try:
+                        conn.execute("UPDATE analysis SET md_path=? WHERE message_id=?", (review.path, review.message_id))
+                        conn.commit()
+                    finally:
+                        conn.close()
+                except Exception:
+                    logger.warning("Site md_path update failed for message %s", review.message_id)
+        if cfg.get("live", False):
+            md_map.update({sid: site_review_url(slug, cfg) for sid, slug in slugs.items()})
+    except Exception:
+        logger.warning("Site publication unavailable")

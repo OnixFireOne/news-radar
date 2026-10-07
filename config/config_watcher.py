@@ -28,6 +28,16 @@ DEFAULT_CONFIG = {
     "categories": {},
     "digests": [],
     "digest_template": "classic",
+    "site": {
+        "enabled": False,
+        "live": False,
+        "repo": "OnixFireOne/neuronavt",
+        "branch": "radar-preview",
+        "base_url": "https://neuronavt.blog",
+        "posts_dir": "blog/src/content/posts/_digests",
+        "reviews_dir": "blog/src/content/reviews",
+        "digest_slug": "{date}-ai-radar",
+    },
     "knowledge": {
         "enabled": False,
         "repo": "OnixFireOne/news-radar",

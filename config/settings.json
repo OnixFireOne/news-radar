@@ -38,7 +38,7 @@
   "_comment_template": "Active digest template. Options: classic | spoiler | ai_value",
   "categories": {
     "articles": {"enabled": true, "sources": ["rss", "hackernews", "devto"], "analyzer": "ai_value", "hooks": [],
-                 "select": "quotas", "template": "ai_value", "extras": ["candidates", "knowledge"]},
+                 "select": "quotas", "template": "ai_value", "extras": ["candidates", "knowledge", "site"]},
     "crypto": {"enabled": false, "sources": ["telegram"], "analyzer": "crypto", "hooks": ["embeddings", "alerts", "trends", "subscriptions"],
                "select": "tiers", "template": "spoiler", "extras": []}
   },
@@ -47,6 +47,16 @@
     {"name": "crypto", "enabled": false, "categories": ["crypto"], "at": ["12:00", "20:00"], "tz": "Europe/Moscow"}
   ],
   "digest_template": "ai_value",
+  "site": {
+    "enabled": true,
+    "live": false,
+    "repo": "OnixFireOne/neuronavt",
+    "branch": "radar-preview",
+    "base_url": "https://neuronavt.blog",
+    "posts_dir": "blog/src/content/posts/_digests",
+    "reviews_dir": "blog/src/content/reviews",
+    "digest_slug": "{date}-ai-radar"
+  },
   "knowledge": {
     "enabled": true,
     "repo": "OnixFireOne/news-radar",

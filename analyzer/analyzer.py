@@ -1073,6 +1073,7 @@ class NewsAnalyzer:
                     })
                     writer = WRITERS.get(spec.template if spec.template in WRITERS.names() else "classic")
                     draft = await writer.compose(selected, digest_ctx)
+                    digest_ctx.artifacts["draft"] = draft
                     # Extras (e.g. knowledge md) run after the draft, so a failed draft costs nothing extra,
                     # and before the render, so the render can link their results.
                     for extra_name in spec.extras:

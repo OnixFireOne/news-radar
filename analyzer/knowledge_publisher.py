@@ -5,14 +5,14 @@ import base64
 import contextlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import logging
 import os
 from pathlib import Path
 import re
 from typing import Any, Protocol, cast
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 import httpx
 
@@ -39,6 +39,7 @@ class KnowledgeDoc:
     conclusion: str
     # knowledge.format "full": pre-rendered structured sections replace Идея/Вывод.
     body: str = ""
+    description: str = ""
 
 
 def build_markdown(doc: KnowledgeDoc) -> str:
@@ -52,6 +53,113 @@ def build_markdown(doc: KnowledgeDoc) -> str:
     if doc.body:
         return f"---\n{frontmatter}\n---\n\n{doc.body}\n"
     return f"---\n{frontmatter}\n---\n\n## Идея\n{doc.idea}\n\n## Вывод\n{doc.conclusion}\n"
+
+
+SITE_CONTENT_TYPES = frozenset((
+    "practical_case", "tutorial", "tool_release", "research", "opinion", "hype_news", "other",
+))
+
+
+@dataclass(frozen=True)
+class SiteReview:
+    path: str
+    content: str
+    slug: str
+    message_id: int
+    source_id: str
+
+
+def short_description(text: str) -> str:
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) <= 280:
+        return text
+    prefix = text[:281]
+    return prefix.rsplit(" ", 1)[0] if " " in prefix else text[:280]
+
+
+def http_url(value: object) -> str:
+    url = str(value or "").strip()
+    try:
+        if re.search(r"[\s\x00-\x1f\x7f\\]", url):
+            return ""
+        parsed = urlsplit(url)
+        if parsed.port is not None and not 0 <= parsed.port <= 65535:
+            return ""
+        return url if parsed.scheme.lower() in ("http", "https") and parsed.hostname else ""
+    except ValueError:
+        return ""
+
+
+def site_review_slug(path: str, site: Mapping[str, Any]) -> str:
+    directory = str(site.get("reviews_dir", "blog/src/content/reviews")).strip("/")
+    if path.startswith(directory + "/") and path.endswith(".md"):
+        slug = Path(path).stem
+        if re.fullmatch(r"[a-z0-9-]+", slug):
+            return slug
+    return ""
+
+
+def site_review_url(slug: str, site: Mapping[str, Any]) -> str:
+    return str(site.get("base_url", "https://neuronavt.blog")).rstrip("/") + f"/reviews/{slug}/"
+
+
+def site_digest_slug(site: Mapping[str, Any], now: datetime) -> str:
+    slug = str(site.get("digest_slug", "{date}-ai-radar")).format(date=now.strftime("%Y-%m-%d"))
+    if not re.fullmatch(r"[a-z0-9-]+", slug):
+        raise ValueError("Invalid digest slug")
+    return slug
+
+
+def neutralize_html(markdown: str) -> str:
+    """Escape '<' outside code so LLM text built from untrusted articles can never inject raw HTML into the site."""
+    parts = re.split(r"(```.*?```|`[^`\n]*`)", markdown, flags=re.S)
+    return "".join(part if part.startswith("`") else part.replace("<", "&lt;") for part in parts)
+
+
+def build_site_review(doc: KnowledgeDoc, digest_slug: str) -> str:
+    """JSON values are YAML-compatible; the timestamp must remain an unquoted YAML date."""
+    fields: dict[str, Any] = {
+        "title": doc.title, "description": short_description(doc.description or doc.idea),
+        "tags": doc.tags, "source_url": doc.source_url, "source_type": doc.source_type,
+        "content_type": doc.content_type if doc.content_type in SITE_CONTENT_TYPES else "other",
+        "value_score": doc.value_score, "digest": digest_slug,
+    }
+    stamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    frontmatter = "\n".join(f"{key}: {json.dumps(value, ensure_ascii=False)}" for key, value in fields.items())
+    body = doc.body or f"## Идея\n{doc.idea}\n\n## Вывод\n{doc.conclusion}"
+    body = neutralize_html(re.sub(r"(?m)^# [^\n]*\n?", "", body).strip())
+    return f"---\n{frontmatter}\npubDatetime: {stamp}\n---\n\n{body}\n"
+
+
+def validate_site_frontmatter(content: str) -> bool:
+    """Validate the restricted frontmatter emitted by build_site_review without a YAML dependency."""
+    try:
+        if not content.startswith("---\n"):
+            return False
+        if "\n---\n" not in content[4:]:
+            return False
+        header = content.split("\n---\n", 1)[0][4:]
+        fields: dict[str, Any] = {}
+        for line in header.splitlines():
+            key, value = line.split(": ", 1)
+            if key in fields:
+                return False
+            if key == "pubDatetime":
+                if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", value):
+                    return False
+                fields[key] = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            else:
+                fields[key] = json.loads(value)
+        for key in ("title", "description", "source_url", "source_type", "digest"):
+            if not isinstance(fields.get(key), str) or not fields[key].strip():
+                return False
+        score = fields.get("value_score")
+        return ("pubDatetime" in fields and fields.get("content_type") in SITE_CONTENT_TYPES
+                and isinstance(score, (int, float)) and not isinstance(score, bool) and 0 <= score <= 10
+                and bool(http_url(fields["source_url"])) and isinstance(fields.get("tags"), list)
+                and all(isinstance(tag, str) for tag in fields["tags"]))
+    except (ValueError, TypeError, KeyError):
+        return False
 
 
 _TRANSLIT = dict(zip(
@@ -339,6 +447,7 @@ async def generate_doc(llm: LLMClient, row: Mapping[str, Any], cfg: Mapping[str,
             date=date, content_type=str(row.get("content_type") or ""),
             value_score=float(row.get("value_score") or 0), topic=str(row.get("topic") or ""),
             tags=tags, idea=result["idea"].strip(), conclusion=result["conclusion"].strip(), body=body,
+            description=short_description(result["idea"]),
         )
     except Exception:
         logger.warning("Knowledge generation failed for message %s", row.get("id"))
@@ -349,31 +458,42 @@ async def publish_selected(
     llm: LLMClient, rows: Sequence[Mapping[str, Any]], cfg: Mapping[str, Any],
     publisher: KnowledgeTarget | None, db_path: str, *,
     extra_files: Sequence[tuple[str, str]] = (), delivered: list[str] | None = None,
+    site_reviews: list[SiteReview] | None = None, site_existing: dict[str, str] | None = None,
+    site_now: datetime | None = None, github_published: set[str] | None = None,
 ) -> dict[str, str]:
     """Generate md once per article and publish it to every target in knowledge.targets.
 
     An explicit ``publisher`` replaces the configured targets and is treated as GitHub.
     """
     knowledge = cfg.get("knowledge", {})
-    if not knowledge.get("enabled", False):
+    site = cfg.get("site", {})
+    stage_site = bool(site.get("enabled", False) and os.getenv("NEURONAVT_GITHUB_TOKEN", "").strip()
+                      and site_reviews is not None)
+    if not knowledge.get("enabled", False) and not stage_site:
         logger.info("Knowledge disabled: published=0 reused=0 failed=0")
         return {}
     repo = str(knowledge.get("repo", "OnixFireOne/news-radar"))
     branch = str(knowledge.get("branch", "main"))
     token = os.getenv("GITHUB_TOKEN", "").strip()
-    names = ["github"] if publisher is not None else [str(name) for name in knowledge.get("targets", ["github"])]
+    names = (["github"] if publisher is not None else
+             [str(name) for name in knowledge.get("targets", ["github"])])
+    if not knowledge.get("enabled", False):
+        names = []
     targets: list[KnowledgeTarget] = []
+    github_targets: list[KnowledgeTarget] = []
     for name in names:
         if name == "local":
             targets.append(LocalPublisher())
         elif name == "github" and token:
-            targets.append(publisher or GitHubPublisher(repo, branch, token,
-                                                      batch=bool(knowledge.get("batch_commit", False))))
+            github_target = publisher or GitHubPublisher(repo, branch, token,
+                                                         batch=bool(knowledge.get("batch_commit", False)))
+            targets.append(github_target)
+            github_targets.append(github_target)
         elif name == "github":
             logger.info("Knowledge target github skipped: GITHUB_TOKEN missing")
         else:
             logger.warning("Unknown knowledge target: %s", name)
-    if not targets:
+    if not targets and not stage_site:
         logger.info("Knowledge has no usable targets: published=0 reused=0 failed=0")
         return {}
     semaphore = asyncio.Semaphore(max(1, int(cfg.get("llm_concurrency", 3))))
@@ -383,8 +503,10 @@ async def publish_selected(
     batch_targets = [cast(GitHubPublisher, t) for t in targets if getattr(t, "batch", False) is True]
     direct_targets = [t for t in targets if t not in batch_targets]
     staged: list[tuple[int, Mapping[str, Any], str, str, bool]] = []
+    direct_github: set[int] = set()
+    publication_now = site_now or datetime.now(timezone.utc)
 
-    def store(index: int, row: Mapping[str, Any], path: str) -> None:
+    def store(index: int, row: Mapping[str, Any], path: str, github_ok: bool = False) -> None:
         conn = get_db(db_path)
         try:
             conn.execute("UPDATE analysis SET md_path=? WHERE message_id=?", (path, row["id"]))
@@ -392,6 +514,8 @@ async def publish_selected(
         finally:
             conn.close()
         counts["published"] += 1
+        if github_ok and github_published is not None:
+            github_published.add(str(index))
         links[str(index)] = blob_url(repo, branch, path)
 
     async def publish_one(index: int, row: Mapping[str, Any]) -> None:
@@ -407,21 +531,40 @@ async def publish_selected(
                 path = stored["md_path"] if stored else row.get("md_path")
                 if path:
                     counts["reused"] += 1
-                    links[str(index)] = blob_url(repo, branch, str(path))
+                    slug = site_review_slug(str(path), site)
+                    links[str(index)] = site_review_url(slug, site) if slug else blob_url(repo, branch, str(path))
+                    if slug and site_existing is not None:
+                        site_existing[str(index)] = slug
                     return
                 doc = await generate_doc(llm, row, knowledge)
                 if doc is None:
                     counts["failed"] += 1
+                    return
+                if stage_site and site_reviews is not None:
+                    try:
+                        site_path = build_path(doc, str(site.get("reviews_dir", "blog/src/content/reviews")))
+                        site_content = build_site_review(doc, site_digest_slug(site, publication_now))
+                        if validate_site_frontmatter(site_content):
+                            site_reviews.append(SiteReview(site_path, site_content, Path(site_path).stem,
+                                                           doc.message_id, str(index)))
+                        else:
+                            logger.warning("Site review invalid for message %s", doc.message_id)
+                    except Exception:
+                        logger.warning("Site review unavailable for message %s", doc.message_id)
+                if not targets:
                     return
                 path = build_path(doc, str(knowledge.get("dir", "knowledge")))
                 content = build_markdown(doc)
                 message = f"docs(knowledge): add article {doc.message_id}"
                 # Sequential on purpose: one article's targets never race each other.
                 delivered = [await target.publish(path, content, message) for target in direct_targets]
+                github_ok = any(ok and target in github_targets for target, ok in zip(direct_targets, delivered))
+                if github_ok:
+                    direct_github.add(index)
                 if batch_targets:
                     staged.append((index, row, path, content, any(delivered)))
                 elif any(delivered):
-                    store(index, row, path)
+                    store(index, row, path, github_ok)
                 else:
                     counts["failed"] += 1
             except Exception:
@@ -451,7 +594,7 @@ async def publish_selected(
         for index, row, path, _, direct_ok in staged:
             try:
                 if batch_ok or direct_ok:
-                    store(index, row, path)
+                    store(index, row, path, batch_ok or index in direct_github)
                 else:
                     counts["failed"] += 1
             except Exception:
