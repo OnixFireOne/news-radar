@@ -1,0 +1,86 @@
+# VPS deployment: articles pipeline only (rss / hackernews / devto -> ai_value digest).
+# Standalone file, NOT an override of docker-compose.yml: no chromadb, no Telegram
+# userbot, no published ports, no external ai-network.
+#   docker compose -f docker-compose.server.yml up -d --build
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+
+  collector-feeds:
+    build:
+      context: .
+      dockerfile: collectors/Dockerfile
+    image: news-radar-collector:server
+    container_name: news-radar-collector-feeds
+    command: ["python", "-m", "collectors.poll_runner"]
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    mem_limit: 250m
+    logging: *logging
+    restart: unless-stopped
+    networks:
+      - news-radar-network
+
+  analyzer:
+    build:
+      context: .
+      dockerfile: deploy/lite.Dockerfile
+    image: news-radar-lite:server
+    container_name: news-radar-analyzer
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    mem_limit: 300m
+    logging: *logging
+    restart: unless-stopped
+    networks:
+      - news-radar-network
+
+  # Reachable only inside news-radar-network (bot -> http://news-radar-api:8000).
+  news-radar-api:
+    image: news-radar-lite:server
+    container_name: news-radar-api
+    command: ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    depends_on:
+      - analyzer   # shares the image built by the analyzer service
+    env_file: .env
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    mem_limit: 300m
+    logging: *logging
+    restart: unless-stopped
+    networks:
+      - news-radar-network
+
+  bot:
+    build:
+      context: .
+      dockerfile: bot/Dockerfile
+    image: news-radar-bot:server
+    container_name: news-radar-bot
+    depends_on:
+      - news-radar-api
+    env_file: .env
+    environment:
+      - API_URL=http://news-radar-api:8000
+    volumes:
+      - ./data:/app/data
+      - ./config:/app/config
+    mem_limit: 150m
+    logging: *logging
+    restart: unless-stopped
+    networks:
+      - news-radar-network
+
+networks:
+  news-radar-network:
+    driver: bridge

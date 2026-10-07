@@ -211,3 +211,57 @@ API: `POST /digest/generate?name=articles` возвращает прежние �
 Пустые `categories: {}` / `digests: []` сохраняют старый путь через `resolve_legacy`; в БД
 `name`/`category` равны NULL. Совместимый `generate_digest()` при настроенных дайджестах запускает
 первый включённый и возвращает результат первой непустой части.
+
+## Публикация на сайт (И4.3, шаг 2)
+
+`categories.articles.extras` теперь: `candidates`, `knowledge`, `site`. Между `compose` и extras
+черновик сохраняется в `ctx.artifacts["draft"]`. Telegram по-прежнему получает полный шаблон `ai_value`.
+
+Блок `site`:
+
+```json
+{
+  "enabled": false,
+  "live": false,
+  "repo": "OnixFireOne/neuronavt",
+  "branch": "radar-preview",
+  "base_url": "https://neuronavt.blog",
+  "posts_dir": "blog/src/content/posts/_digests",
+  "reviews_dir": "blog/src/content/reviews",
+  "digest_slug": "{date}-ai-radar"
+}
+```
+
+В `DEFAULT_CONFIG` сайт выключен; в `settings.json` включён предпросмотр (`enabled: true`, `live: false`).
+Нужен env `NEURONAVT_GITHUB_TOKEN`: fine-grained token с Contents: Read and write только на
+`OnixFireOne/neuronavt`, создать в GitHub → Settings → Developer settings → Fine-grained tokens.
+Нет токена — INFO и пропуск публикации на сайт. После добавления env нужен пересозданный контейнер.
+
+Разбор генерируется один раз, как раньше: `knowledge` публикует прежние площадки и готовит
+`site_reviews` в artifacts. Площадка сайта включается блоком `site`, независимо от `knowledge.targets`;
+настройки генерации и порог оценки остаются в `knowledge`. Возможна публикация только на сайт с
+`knowledge.targets: []` (или `knowledge.enabled: false`). Extra `site` одним Git Data API-коммитом кладёт:
+
+- разборы: `reviews_dir/YYYY/MM/YYYY-MM-DD-<slug>-<message_id>.md`;
+- дайджест: `posts_dir/<digest_slug>.md`, повторный выпуск в тот же день заменяет этот файл.
+
+Сообщение коммита: `feat(radar): AI radar digest YYYY-MM-DD (+N reviews)`.
+Фронтматтер разборов проверяется перед коммитом: обязательные поля, дата UTC **без кавычек**, тип,
+оценка 0–10, источник HTTP(S). Невалидный разбор исключается с WARNING, старая ссылка сохраняется.
+Описание — одна строка до 280 символов из «Коротко» (`full`) либо «Идея» (`brief`).
+Карточки и кандидаты экранируются; URL с другой схемой не становятся ссылками.
+Дайджест получает дату публикации на минуту раньше времени выпуска.
+
+`md_path` обновляется только после успешной доставки. В предпросмотре при успешной площадке
+`github` остаётся путь `knowledge/...` и Telegram-ссылка на news-radar. Если старый GitHub не доставил
+разбор, а сайт доставил — сохраняется путь `reviews_dir/...`; в этом выпуске `live: false` не добавляет
+ссылку сайта в Telegram. При `live: true` успешная доставка сайта заменяет путь и ссылку на
+`base_url/reviews/<slug>/`. Сбой сайта не меняет пути и `md_map`, Telegram рендерится как раньше.
+Уже сохранённый путь сайта переиспользуется как ссылка сайта; старый `knowledge/...` как blob news-radar,
+без генерации и без переноса (миграция — шаг 4).
+
+При `site.enabled: true` отдельный md кандидатов не создаётся: список с порогом
+`candidates_list.min_score` включён в `<details class="radar-candidates">` дайджеста, по убыванию оценки.
+Это действует и при отсутствии токена или сбое сайта: в таком выпуске отдельного списка нет.
+При выключенном сайте публикация файла кандидатов работает по-прежнему.
+URL успешно записанного выпуска сохраняется в artifacts `site_digest_url`; Telegram-анонс — шаг 3.

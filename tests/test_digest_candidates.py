@@ -217,4 +217,4 @@ def test_config_has_flags_in_both_locations() -> None:
     assert active["tie_break"] == "oldest"
     assert active["candidates_list"] == {"enabled": True, "min_score": 6}
     assert active["quotas"]["hype"] == 0
-    assert settings["categories"]["articles"]["extras"] == ["candidates", "knowledge"]
+    assert settings["categories"]["articles"]["extras"] == ["candidates", "knowledge", "site"]
