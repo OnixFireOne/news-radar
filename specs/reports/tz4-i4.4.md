@@ -247,3 +247,18 @@ docker compose run --rm --no-deps -v "$PWD/bot:/app/bot:ro" -v "$PWD/tests:/app/
 **Запуск на сервере (владелец, после деплоя `main`):** команды — `docs/06_digest.md`, раздел «Перенос старых
 разборов». Сначала `--dry-run`, затем `--commit`. `git pull` на сервере не нужен: папка `knowledge/` приходит
 `git archive` из `main` при деплое и содержит все разборы, закоммиченные ботом до этого.
+
+## Выкатка 08.10 (Claude Code на сервере, по просьбе владельца)
+
+- `main` смержен владельцем, автодеплой прошёл: в контейнерах анализатора, API и бота — код И4.4, в
+  `settings.json` — канал. Миграции базы применились (`site_files` есть).
+- Перенос: `--dry-run` на сервере — **63 к переносу, 0 пропусков**. `--commit` — **сбой**: GitHub
+  `POST git/trees` → **403 Forbidden**. Токен `NEURONAVT_GITHUB_TOKEN` читает репо и ветку (`GET repo` 200,
+  `GET ref main` 200), но писать не может — у fine-grained токена нет `Contents: Read and write` на
+  `OnixFireOne/neuronavt` (или он ограничен другим репо).
+- Следствие: **с прода на сайт ещё не ушёл ни один коммит** — у всех выпусков `site_status` пуст
+  (до И4.4), И4.3 до сих пор публиковала на сайт только с мака владельца.
+- 63 разбора лежат в `site_files` незакоммиченными, `md_path` прежние — повторный `--commit` их дошлёт.
+- **Владелец:** выдать токену `Contents: Read and write` на `OnixFireOne/neuronavt` (или новый токен в `.env`
+  на сервере + `up -d` анализатора и API). Затем повторить `--commit` и `/digest new articles` →
+  `/digest articles site`.
