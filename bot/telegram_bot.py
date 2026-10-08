@@ -19,6 +19,7 @@ import sys
 from datetime import datetime, time
 from urllib.parse import urlencode
 from bot.digest_schedule import schedule_slots, slot_key, split_message
+from bot.site_wait import wait_for_parts
 from pathlib import Path
 
 import httpx
@@ -247,6 +248,9 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⏳ Data collected and dispatched to the agent. Please wait...")
         return
 
+    if any(part.get("site_url") for part in digest.get("parts", [digest])):
+        await wait_for_parts(digest.get("parts", [digest]), await fetch_api("/settings") or {})
+
     for part in digest.get("parts", [digest]):
         parse_mode = part.get("parse_mode", "Markdown")
 
@@ -469,6 +473,9 @@ async def perform_scheduled_digest(app: Application, name: str | None = None) ->
         logger.error(f"Error triggering scheduled digest: {e}")
         await _notify_users(app, f"⚠️ Scheduled digest failed — API connection error:\n{e}")
         return
+
+    # The announcement links the site page, which is deployed a minute or two after the commit.
+    await wait_for_parts(digest.get("parts", [digest]), settings)
 
     for part in digest.get("parts", [digest]):
         content = part.get("content_md", "")

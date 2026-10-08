@@ -299,7 +299,10 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
             for part in parts:
                 if part.digest_id is not None:
                     row = conn.execute("SELECT * FROM digests WHERE id=?", (part.digest_id,)).fetchone()
-                    responses.append(DigestResponse(**dict(row)).model_dump())
+                    response = DigestResponse(**dict(row)).model_dump()
+                    if part.site_url:
+                        response["site_url"] = part.site_url
+                    responses.append(response)
             if not responses:
                 return {"status": "dispatched", "name": spec.name if spec else name, "parts": []}
             result = {**responses[0], "parts": responses}

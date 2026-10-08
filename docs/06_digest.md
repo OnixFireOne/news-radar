@@ -215,7 +215,7 @@ API: `POST /digest/generate?name=articles` возвращает прежние �
 ## Публикация на сайт (И4.3, шаг 2)
 
 `categories.articles.extras` теперь: `candidates`, `knowledge`, `site`. Между `compose` и extras
-черновик сохраняется в `ctx.artifacts["draft"]`. Telegram по-прежнему получает полный шаблон `ai_value`.
+черновик сохраняется в `ctx.artifacts["draft"]`. Telegram по умолчанию получает полный шаблон `ai_value` (`telegram: "full"`).
 
 Блок `site`:
 
@@ -228,7 +228,8 @@ API: `POST /digest/generate?name=articles` возвращает прежние �
   "base_url": "https://neuronavt.blog",
   "posts_dir": "blog/src/content/posts/_digests",
   "reviews_dir": "blog/src/content/reviews",
-  "digest_slug": "{date}-ai-radar"
+  "digest_slug": "{date}-ai-radar",
+  "wait_for_page_sec": 300
 }
 ```
 
@@ -260,8 +261,33 @@ API: `POST /digest/generate?name=articles` возвращает прежние �
 Уже сохранённый путь сайта переиспользуется как ссылка сайта; старый `knowledge/...` как blob news-radar,
 без генерации и без переноса (миграция — шаг 4).
 
-При `site.enabled: true` отдельный md кандидатов не создаётся: список с порогом
+При `site.enabled: true` **и** `site.live: true` отдельный md кандидатов не создаётся: список с порогом
 `candidates_list.min_score` включён в `<details class="radar-candidates">` дайджеста, по убыванию оценки.
-Это действует и при отсутствии токена или сбое сайта: в таком выпуске отдельного списка нет.
-При выключенном сайте публикация файла кандидатов работает по-прежнему.
-URL успешно записанного выпуска сохраняется в artifacts `site_digest_url`; Telegram-анонс — шаг 3.
+В предпросмотре прежний файл кандидатов и ссылка в Telegram сохраняются.
+URL успешно записанного выпуска сохраняется в artifacts `site_digest_url`.
+
+### Главное за день и Telegram-анонс (шаг 3)
+
+`digest_templates.ai_value.digest_prompt_version` выбирает пару промпт/JSON-схема:
+`ai_value-digest-v1` — прежние `items` (дефолт кода), `ai_value-digest-v2` — дополнительно `lead` и
+`highlights` (включено в settings). Неизвестная версия даёт WARNING и v1.
+`lead` — 1–2 русских предложения о главном по статьям выпуска, без выдуманных фактов;
+сайт показывает его в блоке «Главное за день». `highlights` — 2–3 коротких пункта на русском,
+примерно до 8 слов, каждый об отдельной полезной статье. Пустые и неверные значения пропускаются.
+В strict JSON все три поля обязательны; отсутствие содержания выражается пустой строкой/массивом.
+
+`digest_templates.ai_value.telegram`: `full` (дефолт в обоих конфигах) или `announce`.
+Анонс содержит дату, число статей и разбивку по рубрикам, «Интересное» из highlights
+(без них — первые три заголовка статей выпуска) и ссылку «Читать выпуск на сайте →».
+Текст и адрес экранируются для HTML; пункты сокращаются, чтобы анонс был короче 1000 символов.
+Если коммит сайта не прошёл, анонс заменяется полным дайджестом с WARNING
+`announce fallback: no site digest`.
+
+Ждёт деплоя **бот, а не анализатор** (решение владельца 08.10): генерация не удлиняется и не упирается
+в таймаут бота к API (180 с по расписанию). При `site.live: true` анализатор кладёт адрес страницы выпуска
+в `DigestPart.site_url`, API отдаёт его полем `site_url` у части выпуска, а бот (`bot/site_wait.py`) перед
+отправкой опрашивает страницу раз в ~15 с до HTTP 200, максимум `site.wait_for_page_sec` (300 с).
+Таймаут — WARNING, выпуск всё равно уходит. При `live: false` поля `site_url` нет и ожидания нет.
+
+Для включения после проверки предпросмотра: `site.enabled: true`, `site.branch: "main"`,
+`site.live: true` и `digest_templates.ai_value.telegram: "announce"`. Перенос старых разборов остаётся шагом 4.
