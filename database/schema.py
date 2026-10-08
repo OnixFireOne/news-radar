@@ -23,7 +23,28 @@ DIGEST_MESSAGES_SCHEMA = """CREATE TABLE IF NOT EXISTS digest_messages (
     PRIMARY KEY (digest_id, message_id)
 )"""
 
-SCHEMA = USAGE_SCHEMA + ";\n" + DIGEST_MESSAGES_SCHEMA + ";\n" + """
+SITE_FILES_SCHEMA = """CREATE TABLE IF NOT EXISTS site_files (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    digest_id INTEGER REFERENCES digests(id),
+    message_id INTEGER REFERENCES messages(id),
+    kind TEXT NOT NULL,
+    path TEXT NOT NULL UNIQUE,
+    url TEXT,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    committed_at DATETIME,
+    commit_sha TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_site_files_digest ON site_files(digest_id);
+CREATE INDEX IF NOT EXISTS idx_site_files_message ON site_files(message_id);
+CREATE TABLE IF NOT EXISTS digest_deliveries (
+    digest_id INTEGER NOT NULL REFERENCES digests(id),
+    chat_id INTEGER NOT NULL,
+    sent_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (digest_id, chat_id)
+)"""
+
+SCHEMA = SITE_FILES_SCHEMA + ";\n" + USAGE_SCHEMA + ";\n" + DIGEST_MESSAGES_SCHEMA + ";\n" + """
 CREATE INDEX IF NOT EXISTS idx_llm_usage_created ON llm_usage(created_at);
 -- Migration tracking: prevents re-running migrations on every startup
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -277,6 +298,8 @@ MIGRATIONS = [
      "ALTER TABLE messages ADD COLUMN url TEXT"),
     ("add_messages_url_unique_index",
      "CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_url ON messages(url) WHERE url IS NOT NULL"),
+    ("add_digest_site_url", "ALTER TABLE digests ADD COLUMN site_url TEXT"),
+    ("add_digest_site_status", "ALTER TABLE digests ADD COLUMN site_status TEXT"),
 ]
 
 

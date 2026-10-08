@@ -300,8 +300,8 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
                 if part.digest_id is not None:
                     row = conn.execute("SELECT * FROM digests WHERE id=?", (part.digest_id,)).fetchone()
                     response = DigestResponse(**dict(row)).model_dump()
-                    if part.site_url:
-                        response["site_url"] = part.site_url
+                    response["site_url"] = part.site_url
+                    response["site_status"] = part.site_status
                     responses.append(response)
             if not responses:
                 return {"status": "dispatched", "name": spec.name if spec else name, "parts": []}
@@ -331,6 +331,7 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
 
     return DigestResponse(
         name=row["name"], category=row["category"],
+        site_url=row["site_url"], site_status=row["site_status"],
         id=row["id"],
         content_md=row["content_md"],
         parse_mode=row["parse_mode"] if row["parse_mode"] else "Markdown",
@@ -373,6 +374,7 @@ async def get_latest_digest(name: Optional[str] = Query(None)):
 
     return DigestResponse(
         name=row["name"], category=row["category"],
+        site_url=row["site_url"], site_status=row["site_status"],
         id=row["id"],
         content_md=row["content_md"],
         parse_mode=row["parse_mode"] if row["parse_mode"] else "Markdown",

@@ -231,6 +231,7 @@ class GitHubPublisher:
         self.client = client
         self.timeout = timeout
         self.batch = batch
+        self.last_commit_sha: str | None = None
 
     def _headers(self) -> dict[str, str]:
         return {"Authorization": f"Bearer {self.token}",
@@ -244,6 +245,7 @@ class GitHubPublisher:
 
     async def commit_files(self, files: Sequence[tuple[str, str]], message: str, attempts: int = 3) -> bool:
         """Add or overwrite ``files`` (path, content) on the branch in one commit; retries a moved branch."""
+        self.last_commit_sha = None
         if not files:
             return True
         ref_path = f"git/refs/heads/{quote(self.branch, safe='')}"
@@ -279,6 +281,7 @@ class GitHubPublisher:
                     moved = await self._request(client, "PATCH", ref_path,
                                                 {"sha": created.json()["sha"], "force": False})
                     if moved.status_code == 200:
+                        self.last_commit_sha = str(created.json()["sha"])
                         return True
                     if moved.status_code != 422:  # 422: branch moved meanwhile, rebuild on the new head
                         logger.warning("Knowledge batch commit failed: ref update HTTP %s", moved.status_code)
@@ -528,6 +531,23 @@ async def publish_selected(
                     stored = conn.execute("SELECT md_path FROM analysis WHERE message_id=?", (row["id"],)).fetchone()
                 finally:
                     conn.close()
+                if stage_site:
+                    from analyzer.site_store import review_for_message
+                    conn = get_db(db_path)
+                    try:
+                        review = review_for_message(conn, int(row["id"]))
+                    finally:
+                        conn.close()
+                    if review is not None:
+                        counts["reused"] += 1
+                        slug = Path(review.path).stem
+                        links[str(index)] = review.url or site_review_url(slug, site)
+                        if review.committed and site_existing is not None:
+                            site_existing[str(index)] = slug
+                        elif not review.committed and site_reviews is not None:
+                            site_reviews.append(SiteReview(review.path, review.content, slug,
+                                                           int(row["id"]), str(index)))
+                        return
                 path = stored["md_path"] if stored else row.get("md_path")
                 if path:
                     counts["reused"] += 1
@@ -545,6 +565,14 @@ async def publish_selected(
                         site_path = build_path(doc, str(site.get("reviews_dir", "blog/src/content/reviews")))
                         site_content = build_site_review(doc, site_digest_slug(site, publication_now))
                         if validate_site_frontmatter(site_content):
+                            from analyzer.site_store import SiteFile, save_files
+                            conn = get_db(db_path)
+                            try:
+                                save_files(conn, [SiteFile(site_path, site_content, "review",
+                                           site_review_url(Path(site_path).stem, site), doc.message_id)])
+                                conn.commit()
+                            finally:
+                                conn.close()
                             site_reviews.append(SiteReview(site_path, site_content, Path(site_path).stem,
                                                            doc.message_id, str(index)))
                         else:

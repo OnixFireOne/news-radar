@@ -67,7 +67,7 @@
     "max_input_chars": 40000,
     "format": "full",
     "split_over_chars": 150000,
-    "targets": ["github"],
+    "targets": [],
     "batch_commit": true
   },
   "digest_templates": {

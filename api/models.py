@@ -51,6 +51,8 @@ class TopicResponse(BaseModel):
 
 
 class DigestResponse(BaseModel):
+    site_url: Optional[str] = None
+    site_status: Optional[str] = None
     name: Optional[str] = None
     category: Optional[str] = None
     id: int
