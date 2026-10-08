@@ -1,4 +1,5 @@
 {
+  "channels": [{"chat_id": -1003973615006, "digests": ["articles"], "enabled": true}],
   "digest_stats": {"enabled": true},
   "_comment": "Edit this file to change settings. Changes apply within 3 seconds (no restart needed).",
   "_comment_thinking": "llm_thinking_mode controls reasoning for MESSAGE ANALYSIS (not digest — digest always uses full thinking). Options: 'full' = best quality, ~15-20s/msg; 'off' = fastest, ~2s/msg but temperature scores are less reliable. Middle ground: start llama-server with --reasoning-budget 500 (caps thinking tokens) and set this to 'full'.",
@@ -67,7 +68,7 @@
     "max_input_chars": 40000,
     "format": "full",
     "split_over_chars": 150000,
-    "targets": ["github"],
+    "targets": [],
     "batch_commit": true
   },
   "digest_templates": {

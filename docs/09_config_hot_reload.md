@@ -129,7 +129,7 @@ def load_topics(self) -> dict:
 ## Ключи ТЗ #4, И3 шаг 5
 
 - `categories.<имя>.analyzer` — `"crypto"` | `"ai_value"`, читается на каждом цикле анализа (заменил `analysis_profile` в И4.1).
-- `knowledge` (И4) — `enabled` (дефолт false), `repo`, `branch`, `dir`, `min_value_score`, `max_input_chars`, `targets` (И4.1: `["github"]` по умолчанию и в `settings.json` с 28.09, см. `06_digest.md`), `batch_commit` (дефолт `false`, в `settings.json` — `true`: один коммит на прогон), `format` (`brief` по умолчанию, в `settings.json` — `full`; там же `max_input_chars` 40000 (с 30.09; было 24000) — при `split_over_chars` > 0 не режет; `split_over_chars` — 0 по умолчанию, в `settings.json` 150000: статья целиком, длиннее — через заметки по частям). `sources.fulltext.include_comments` — комментарии читателей в полном тексте (`true` по умолчанию, как `trafilatura`; в `settings.json` `false`). `digest_templates.ai_value.carryover_days` — пул с переносом для отбора по квотам (0 по умолчанию — окно «с прошлого выпуска»; в `settings.json` — 7); `digest_templates.ai_value.tie_break` (`temperature` по умолчанию, в `settings.json` `oldest`) и `candidates_list` (`{"enabled": false, "min_score": 6}` по умолчанию, в `settings.json` включён) — с 01.10, см. `06_digest.md`; токен — env `GITHUB_TOKEN`. Читается на каждом дайджесте.
+- `knowledge` (И4) — `enabled` (дефолт false), `repo`, `branch`, `dir`, `min_value_score`, `max_input_chars`, `targets` (И4.1: `["github"]` по умолчанию; в `settings.json` с И4.4 — `[]`, разборы только на сайт, см. `06_digest.md`), `batch_commit` (дефолт `false`, в `settings.json` — `true`: один коммит на прогон), `format` (`brief` по умолчанию, в `settings.json` — `full`; там же `max_input_chars` 40000 (с 30.09; было 24000) — при `split_over_chars` > 0 не режет; `split_over_chars` — 0 по умолчанию, в `settings.json` 150000: статья целиком, длиннее — через заметки по частям). `sources.fulltext.include_comments` — комментарии читателей в полном тексте (`true` по умолчанию, как `trafilatura`; в `settings.json` `false`). `digest_templates.ai_value.carryover_days` — пул с переносом для отбора по квотам (0 по умолчанию — окно «с прошлого выпуска»; в `settings.json` — 7); `digest_templates.ai_value.tie_break` (`temperature` по умолчанию, в `settings.json` `oldest`) и `candidates_list` (`{"enabled": false, "min_score": 6}` по умолчанию, в `settings.json` включён) — с 01.10, см. `06_digest.md`; токен — env `GITHUB_TOKEN`. Читается на каждом дайджесте.
 - `digest_templates.ai_value` — квоты воронки, с И4 ещё `types` (эмодзи и метка по `content_type`), `show_md_link`, `title_max_words`, `summary_max_sentences`, `text_max_chars`. Из-за слияния только верхнего уровня блок продублирован целиком и в `DEFAULT_CONFIG`, и в `settings.json`: если в `settings.json` есть `digest_templates`, дефолтный блок не подмешивается.
 
 ## Категории и расписание (И4.1, шаг 2b)
@@ -183,4 +183,19 @@ Extra `site` должен идти после `knowledge`. Площадка са
 При `enabled: true` список кандидатов переезжает внутрь поста, отдельного md и Telegram-ссылки списка нет.
 Env `NEURONAVT_GITHUB_TOKEN` описан в `.env.example`; его добавление требует пересоздания
 контейнера, hot reload применим только к JSON. Публикация на сайт пропускается без токена;
-сбой не мешает выпуску Telegram. Детали путей и fallback — `06_digest.md`.
+сбой блокирует доставку в привязанные каналы и вызывает алерт админу. Детали — `06_digest.md`.
+
+
+## Каналы (И4.4, шаг 2)
+
+`channels` — новый ключ верхнего уровня, дефолт `[]` сохраняет личную рассылку.
+В `settings.json` включён канал `-1003973615006` для `articles`:
+
+```json
+{"channels": [{"chat_id": -1003973615006, "digests": ["articles"], "enabled": true}]}
+```
+
+`chat_id` — целое число (не bool), `digests` — список имён, `enabled` включает запись.
+Некорректные записи пропускаются с WARNING; повторный ID не дублирует отправку.
+ID канала не секрет. `PATCH /settings` принимает список `channels`.
+Бот читает свежие настройки при выпуске и восстановлении; перезапуск не нужен.

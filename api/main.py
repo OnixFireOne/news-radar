@@ -36,6 +36,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from analyzer.site_store import delivered_to, latest_parts, republish
 from analyzer.digest_stats import latest_digest_stats, format_digest_stats
 from analyzer.usage_store import install_usage_sink
 
@@ -299,9 +300,9 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
             for part in parts:
                 if part.digest_id is not None:
                     row = conn.execute("SELECT * FROM digests WHERE id=?", (part.digest_id,)).fetchone()
-                    response = DigestResponse(**dict(row)).model_dump()
-                    if part.site_url:
-                        response["site_url"] = part.site_url
+                    response = DigestResponse(**dict(row), delivered=delivered_to(conn, row["id"])).model_dump()
+                    response["site_url"] = part.site_url
+                    response["site_status"] = part.site_status
                     responses.append(response)
             if not responses:
                 return {"status": "dispatched", "name": spec.name if spec else name, "parts": []}
@@ -326,11 +327,14 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
     conn = get_db(DB_PATH)
     try:
         row = conn.execute("SELECT * FROM digests ORDER BY created_at DESC LIMIT 1").fetchone()
+        delivered = delivered_to(conn, row["id"])
     finally:
         conn.close()
 
     return DigestResponse(
+        delivered=delivered,
         name=row["name"], category=row["category"],
+        site_url=row["site_url"], site_status=row["site_status"],
         id=row["id"],
         content_md=row["content_md"],
         parse_mode=row["parse_mode"] if row["parse_mode"] else "Markdown",
@@ -365,6 +369,11 @@ async def get_latest_digest(name: Optional[str] = Query(None)):
             + (" ORDER BY created_at DESC, id DESC LIMIT 1" if name is not None
                else " ORDER BY created_at DESC LIMIT 1"), (name,) if name is not None else ()
         ).fetchone()
+        delivered = delivered_to(conn, row["id"]) if row else []
+        parts = None
+        if row and row["name"] is not None:
+            parts = [DigestResponse(**dict(part), delivered=delivered_to(conn, part["id"])).model_dump()
+                     for part in latest_parts(conn, row["name"])]
     finally:
         conn.close()
 
@@ -372,7 +381,9 @@ async def get_latest_digest(name: Optional[str] = Query(None)):
         raise HTTPException(status_code=404, detail="No digests generated yet")
 
     return DigestResponse(
+        parts=parts, delivered=delivered,
         name=row["name"], category=row["category"],
+        site_url=row["site_url"], site_status=row["site_status"],
         id=row["id"],
         content_md=row["content_md"],
         parse_mode=row["parse_mode"] if row["parse_mode"] else "Markdown",
@@ -512,6 +523,7 @@ _SETTINGS_SCHEMA: dict[str, type] = {
     "digest_interval_hours":   int,
     "categories":              dict,
     "digests":                 list,
+    "channels":                list,
     "trend_window_hours":      int,
     "trend_min_sources":       int,
     "trend_min_temperature":   float,
@@ -1139,5 +1151,38 @@ def remove_subscription(user_id: str, query: str):
         if result.rowcount == 0:
             raise HTTPException(status_code=404, detail="Subscription not found")
         return {"status": "removed"}
+    finally:
+        conn.close()
+
+
+@app.post("/digest/{digest_id}/delivered")
+async def mark_digest_delivered(digest_id: int, chat_id: int = Query(...)):
+    conn = get_db(DB_PATH)
+    try:
+        if conn.execute("SELECT id FROM digests WHERE id=?", (digest_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Digest not found")
+        conn.execute("INSERT OR IGNORE INTO digest_deliveries (digest_id, chat_id) VALUES (?, ?)",
+                     (digest_id, chat_id))
+        conn.commit()
+        return {"delivered": delivered_to(conn, digest_id)}
+    finally:
+        conn.close()
+
+
+@app.post("/digest/site/republish")
+async def republish_site_digest(name: str = Query(...)):
+    from config.config_watcher import ConfigWatcher
+    site = ConfigWatcher(str(CONFIG_PATH)).get("site", {})
+    token = os.environ.get("NEURONAVT_GITHUB_TOKEN", "")
+    if not site.get("enabled", False) or not token:
+        raise HTTPException(status_code=400, detail="Site is disabled or publication token is missing")
+    conn = get_db(DB_PATH)
+    try:
+        try:
+            rows = await republish(conn, name, site, token)
+        except LookupError as exc:
+            raise HTTPException(status_code=404, detail=str(exc)) from exc
+        parts = [DigestResponse(**dict(row), delivered=delivered_to(conn, row["id"])).model_dump() for row in rows]
+        return {**parts[-1], "parts": parts}
     finally:
         conn.close()

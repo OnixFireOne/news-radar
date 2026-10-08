@@ -90,7 +90,9 @@ async def test_one_site_commit_and_telegram_fallback(
         else:
             assert ctx.artifacts['md_map'] == old and stored(path) == previous_paths
     else:
-        assert 'site_digest_url' not in ctx.artifacts
+        # I4.4: the post URL is deterministic and kept on failure; delivery is gated by site_status.
+        assert ctx.artifacts['site_digest_url'].startswith('https://neuronavt.blog/posts/')
+        assert ctx.artifacts['site_status'] == 'commit_failed'
         assert ctx.artifacts['md_map'] == old and stored(path) == previous_paths
     rendered, mode = _ai_value_render(ctx.artifacts['draft'], rows, ctx)
     assert rendered and mode == 'HTML'

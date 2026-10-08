@@ -155,12 +155,13 @@ async def knowledge(selected: list[Row], ctx: DigestContext) -> None:
 
 @EXTRAS.register("site")
 async def site(selected: list[Row], ctx: DigestContext) -> None:
-    """Commit the digest and its prepared reviews atomically; failure never blocks Telegram."""
+    """Persist and commit the digest and its reviews; publication failure never aborts the run."""
     import os
     from analyzer.knowledge_publisher import (
         GitHubPublisher, SiteReview, site_review_url, validate_site_frontmatter,
     )
     from analyzer.site_digest import build_digest_post
+    from analyzer.site_store import SiteFile, save_files, mark_committed
     from database.schema import get_db
 
     try:
@@ -169,6 +170,7 @@ async def site(selected: list[Row], ctx: DigestContext) -> None:
             return
         token = os.getenv("NEURONAVT_GITHUB_TOKEN", "").strip()
         if not token:
+            ctx.artifacts["site_status"] = "skipped"
             logger.info("Site skipped: NEURONAVT_GITHUB_TOKEN missing")
             return
         reviews: list[SiteReview] = []
@@ -186,13 +188,30 @@ async def site(selected: list[Row], ctx: DigestContext) -> None:
         path, content, url = build_digest_post(
             ctx.artifacts["draft"], rows, ctx.artifacts.get("pool", []), slugs, ctx.template_cfg, cfg, now,
         )
+        ctx.artifacts["site_digest_url"] = url
+        ctx.artifacts["site_status"] = "commit_failed"
+        conn = get_db(ctx.analyzer.db_path)
+        try:
+            ids = save_files(conn, [SiteFile(review.path, review.content, "review",
+                              site_review_url(review.slug, cfg), review.message_id) for review in reviews]
+                             + [SiteFile(path, content, "digest", url)])
+            conn.commit()
+            ctx.artifacts["site_file_ids"] = ids
+        finally:
+            conn.close()
         publisher = GitHubPublisher(str(cfg.get("repo", "OnixFireOne/neuronavt")),
                                     str(cfg.get("branch", "radar-preview")), token, batch=True)
         files = [(review.path, review.content) for review in reviews] + [(path, content)]
         if not await publisher.commit_files(files, f"feat(radar): AI radar digest {now:%Y-%m-%d} (+{len(reviews)} reviews)"):
             logger.warning("Site digest commit failed")
             return
-        ctx.artifacts["site_digest_url"] = url
+        conn = get_db(ctx.analyzer.db_path)
+        try:
+            mark_committed(conn, ids, publisher.last_commit_sha)
+            conn.commit()
+        finally:
+            conn.close()
+        ctx.artifacts["site_status"] = "ok"
         md_map = ctx.artifacts.setdefault("md_map", {})
         # Preserve successful GitHub knowledge paths in preview; site-only runs store their site path.
         for review in reviews:
@@ -210,4 +229,6 @@ async def site(selected: list[Row], ctx: DigestContext) -> None:
         if cfg.get("live", False):
             md_map.update({sid: site_review_url(slug, cfg) for sid, slug in slugs.items()})
     except Exception:
+        if "site_digest_url" in ctx.artifacts:
+            ctx.artifacts["site_status"] = "commit_failed"
         logger.warning("Site publication unavailable")

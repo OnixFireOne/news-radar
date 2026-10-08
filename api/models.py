@@ -51,6 +51,10 @@ class TopicResponse(BaseModel):
 
 
 class DigestResponse(BaseModel):
+    parts: Optional[list[dict[str, object]]] = None
+    delivered: Optional[list[int]] = None
+    site_url: Optional[str] = None
+    site_status: Optional[str] = None
     name: Optional[str] = None
     category: Optional[str] = None
     id: int

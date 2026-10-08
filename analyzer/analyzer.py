@@ -735,7 +735,7 @@ class NewsAnalyzer:
                 continue
             result = await self.run_category(cat, digest.name, hours, force, return_raw, _since=since, _run_id=run_id)
             if result:
-                parts.append(DigestPart(cat.name, result, self._last_digest_id, self._last_site_url))
+                parts.append(DigestPart(cat.name, result, self._last_digest_id, self._last_site_url, self._last_site_status))
         return parts
 
     async def run_category(self, cat: CategorySpec, digest_name: str | None,
@@ -746,6 +746,7 @@ class NewsAnalyzer:
         self._pipeline_config()
         self._last_digest_id: int | None = None
         self._last_site_url: str | None = None
+        self._last_site_status: str | None = None
         spec = cat
         template_name = cat.template
         rules = self.cfg.get("digest_rules", {}) if self.cfg else {}
@@ -1081,6 +1082,7 @@ class NewsAnalyzer:
                     for extra_name in spec.extras:
                         await EXTRAS.get(extra_name)(selected, digest_ctx)
                     digest_content, parse_mode = writer.render(draft, selected, digest_ctx)
+                    self._last_site_status = digest_ctx.artifacts.get("site_status")
                     site_cfg = self.cfg.get("site", {}) if self.cfg else {}
                     if isinstance(site_cfg, dict) and site_cfg.get("live", False):
                         self._last_site_url = digest_ctx.artifacts.get("site_digest_url")
@@ -1106,6 +1108,10 @@ class NewsAnalyzer:
                          _run_id or uuid4().hex, datetime.utcnow().isoformat(sep=" ")),
                     )
                     self._last_digest_id = cursor.lastrowid
+                    if self._last_digest_id is not None and self._last_site_status is not None:
+                        from analyzer.site_store import attach_digest
+                        attach_digest(conn, digest_ctx.artifacts.get("site_file_ids", []), self._last_digest_id,
+                                      digest_ctx.artifacts.get("site_digest_url"), self._last_site_status)
 
                 selected_ids = [row["id"] for row in selected]
                 if self._last_digest_id is not None:

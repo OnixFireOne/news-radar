@@ -19,7 +19,7 @@ import sys
 from datetime import datetime, time
 from urllib.parse import urlencode
 from bot.digest_schedule import schedule_slots, slot_key, split_message
-from bot.site_wait import wait_for_parts
+from bot.site_wait import wait_for_parts, wait_for_site_page
 from pathlib import Path
 
 import httpx
@@ -104,6 +104,7 @@ async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "I monitor 57+ Telegram channels and analyze news with AI.\n\n"
         "Commands:\n"
         "/hot — trending topics right now\n"
+        "/digest <name> site — recover site publication (admins only)\n"
         "/digest [name] — latest AI digest\n"
         "/digest new [name] [hours] [force] — generate fresh digest now (like scheduled cron)\n"
         "/track <topic> — subscribe to a topic\n"
@@ -174,6 +175,19 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
       /digest new 6 force  — generate for last 6 hours, include already-digested messages
       /digest new force    — generate with force, auto period
     """
+    args = [str(a) for a in (ctx.args or [])]
+    if any(token.lower() == "site" for token in args):
+        name = next((token for token in args if not token.isdigit()
+                     and token.lower() not in ("site", "new", "force")), None)
+        if update.effective_user.id not in ADMIN_USERS:
+            await update.message.reply_text("Admins only.")
+            return
+        if name is None:
+            await update.message.reply_text("Usage: /digest <name> site")
+            return
+        await recover_site_digest(update, ctx, name)
+        return
+
     if not is_allowed(update.effective_user.id):
         return
 
@@ -183,7 +197,7 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     force_new = any(token.lower() == "new" for token in args)
     force_flag = any(token.lower() == "force" for token in args)
     name = next((token for token in args if not token.isdigit()
-                 and token.lower() not in ("new", "force")), None)
+                 and token.lower() not in ("new", "force", "site")), None)
     name_query = urlencode({"name": name}) if name is not None else ""
     digest = await fetch_api("/digest/latest" + ("?" + name_query if name_query else ""))
 
@@ -301,6 +315,7 @@ async def cmd_help(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         "📡 News Radar — AI news aggregator\n\n"
         "Commands:\n"
         "/hot — trending topics right now\n"
+        "/digest <name> site — recover site publication (admins only)\n"
         "/digest [name] — latest saved digest\n"
         "/digest new [name] [hours] [force] — generate fresh digest (auto period)\n"
         "/digest new 6 — generate for last 6 hours\n"
@@ -447,6 +462,7 @@ async def _notify_users(app: Application, text: str) -> None:
 async def perform_scheduled_digest(app: Application, name: str | None = None) -> None:
     """Trigger digest generation automatically if legacy mode is active."""
     settings = await fetch_api("/settings") or {}
+    channels = channels_for(settings, name)
     use_agent = settings.get("route_via_openclaw", False)
 
     if use_agent:
@@ -464,14 +480,29 @@ async def perform_scheduled_digest(app: Application, name: str | None = None) ->
         if resp.status_code != 200:
             err = resp.json().get("detail", resp.text[:200])
             logger.error(f"Scheduled digest failed: {err}")
-            await _notify_users(app, f"⚠️ Scheduled digest failed:\n{err}")
+            if channels:
+                await alert_admins(app.bot, f"⚠️ Scheduled digest failed: {err}")
+            else:
+                await _notify_users(app, f"⚠️ Scheduled digest failed:\n{err}")
             return
 
         digest = resp.json()
 
     except Exception as e:
         logger.error(f"Error triggering scheduled digest: {e}")
-        await _notify_users(app, f"⚠️ Scheduled digest failed — API connection error:\n{e}")
+        if channels:
+            await alert_admins(app.bot, "⚠️ Scheduled digest failed — API connection error")
+        else:
+            await _notify_users(app, f"⚠️ Scheduled digest failed — API connection error:\n{e}")
+        return
+
+    if channels:
+        parts = digest.get("parts", [digest])
+        for part in parts:
+            if await channel_part_ready(app.bot, part, settings, name):
+                await publish_channels(app.bot, [part], channels)
+        if digest.get("stats"):
+            await send_digest_stats(app.bot, digest["stats"])
         return
 
     # The announcement links the site page, which is deployed a minute or two after the commit.
@@ -614,6 +645,109 @@ def main():
     # python-telegram-bot v20+ manages its own event loop
     app.run_polling(drop_pending_updates=True)
 
+
+
+def channels_for(settings: object, name: str | None) -> list[int]:
+    channels = settings.get("channels", []) if isinstance(settings, dict) else []
+    if not isinstance(channels, list):
+        logger.warning("Invalid channels configuration")
+        return []
+    result: list[int] = []
+    for entry in channels:
+        if (not isinstance(entry, dict) or type(entry.get("chat_id")) is not int
+                or not isinstance(entry.get("digests"), list)):
+            logger.warning("Invalid channel entry")
+            continue
+        if entry.get("enabled", False) and name in entry["digests"] and entry["chat_id"] not in result:
+            result.append(entry["chat_id"])
+    return result
+
+
+async def alert_admins(bot: Bot, text: str) -> None:
+    for user_id in sorted(ADMIN_USERS):
+        try:
+            await bot.send_message(chat_id=user_id, text=text, parse_mode=None)
+        except Exception:
+            logger.warning("Failed to alert admin %s", user_id, exc_info=True)
+
+
+async def channel_part_ready(bot: Bot, part: dict, settings: dict, name: str | None) -> bool:
+    status = part.get("site_status")
+    if status is not None and status != "ok":
+        await alert_admins(bot, f"⚠️ Site publish failed for digest '{name}' ({status}): readers got nothing. Retry: /digest {name} site")
+        return False
+    if part.get("site_url"):
+        ready = await wait_for_parts([part], settings)
+        if not ready[0]:
+            seconds = settings.get("site", {}).get("wait_for_page_sec", 300)
+            await alert_admins(bot, f"⚠️ Site page did not open in {seconds}s (blog deploy?): {part['site_url']}. Readers got nothing. Retry: /digest {name} site")
+            return False
+    return True
+
+
+async def publish_channels(bot: Bot, parts: list[dict], channels: list[int]) -> int:
+    posted: set[int] = set()
+    for part in parts:
+        for chat_id in channels:
+            if chat_id in (part.get("delivered") or []):
+                continue
+            content = part.get("content_md", "")
+            if not content:
+                continue
+            mode = part.get("parse_mode", "Markdown")
+            try:
+                for chunk in split_message(content, html=mode == "HTML"):
+                    try:
+                        await bot.send_message(chat_id=chat_id, text=chunk, parse_mode=mode,
+                                               disable_web_page_preview=True)
+                    except Exception:
+                        await bot.send_message(chat_id=chat_id, text=chunk, disable_web_page_preview=True)
+            except Exception:
+                logger.warning("Channel delivery failed for %s", chat_id, exc_info=True)
+                continue
+            posted.add(chat_id)
+            try:
+                async with httpx.AsyncClient(timeout=10) as client:
+                    response = await client.post(f"{API_URL}/digest/{part['id']}/delivered?" + urlencode({"chat_id": chat_id}))
+                    response.raise_for_status()
+                part.setdefault("delivered", [])
+                part["delivered"] = list(part.get("delivered") or []) + [chat_id]
+            except Exception:
+                logger.warning("Failed to record channel delivery for %s", chat_id, exc_info=True)
+    return len(posted)
+
+
+async def recover_site_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE, name: str) -> None:
+    query = urlencode({"name": name})
+    digest = await fetch_api("/digest/latest?" + query)
+    if not digest or not digest.get("site_url"):
+        await update.message.reply_text("No saved site digest found.")
+        return
+    settings = await fetch_api("/settings") or {}
+    if not await wait_for_site_page(digest["site_url"], 0):
+        await update.message.reply_text("Republishing...")
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.post(f"{API_URL}/digest/site/republish?" + query)
+                response.raise_for_status()
+                digest = response.json()
+        except Exception as exc:
+            reason = f"HTTP {exc.response.status_code}" if isinstance(exc, httpx.HTTPStatusError) else type(exc).__name__
+            await alert_admins(ctx.bot, f"⚠️ Site republish failed for digest '{name}' ({reason}). Retry: /digest {name} site")
+            return
+        for part in digest.get("parts", [digest]):
+            if not await channel_part_ready(ctx.bot, part, settings, name):
+                return
+    parts = digest.get("parts", [digest])
+    for part in parts:
+        mode = part.get("parse_mode", "Markdown")
+        for chunk in split_message(part.get("content_md", ""), html=mode == "HTML"):
+            try:
+                await update.message.reply_text(chunk, parse_mode=mode, disable_web_page_preview=True)
+            except Exception:
+                await update.message.reply_text(chunk, disable_web_page_preview=True)
+    count = await publish_channels(ctx.bot, parts, channels_for(settings, name))
+    await update.message.reply_text(f"Posted to {count} channel(s)" if count else "Already posted to all channels")
 
 if __name__ == "__main__":
     main()
