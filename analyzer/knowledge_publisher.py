@@ -116,22 +116,28 @@ def neutralize_html(markdown: str) -> str:
     return "".join(part if part.startswith("`") else part.replace("<", "&lt;") for part in parts)
 
 
-def build_site_review(doc: KnowledgeDoc, digest_slug: str) -> str:
-    """JSON values are YAML-compatible; the timestamp must remain an unquoted YAML date."""
+def build_site_review(doc: KnowledgeDoc, digest_slug: str | None, published: datetime | None = None) -> str:
+    """JSON values are YAML-compatible; the timestamp must remain an unquoted YAML date.
+
+    Migrated legacy reviews have no site digest page, so ``digest`` is omitted when ``digest_slug`` is None.
+    """
     fields: dict[str, Any] = {
         "title": doc.title, "description": short_description(doc.description or doc.idea),
         "tags": doc.tags, "source_url": doc.source_url, "source_type": doc.source_type,
         "content_type": doc.content_type if doc.content_type in SITE_CONTENT_TYPES else "other",
-        "value_score": doc.value_score, "digest": digest_slug,
+        "value_score": doc.value_score,
     }
-    stamp = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+    if digest_slug is not None:
+        fields["digest"] = digest_slug
+    moment = (published or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    stamp = moment.isoformat(timespec="milliseconds").replace("+00:00", "Z")
     frontmatter = "\n".join(f"{key}: {json.dumps(value, ensure_ascii=False)}" for key, value in fields.items())
     body = doc.body or f"## Идея\n{doc.idea}\n\n## Вывод\n{doc.conclusion}"
     body = neutralize_html(re.sub(r"(?m)^# [^\n]*\n?", "", body).strip())
     return f"---\n{frontmatter}\npubDatetime: {stamp}\n---\n\n{body}\n"
 
 
-def validate_site_frontmatter(content: str) -> bool:
+def validate_site_frontmatter(content: str, require_digest: bool = True) -> bool:
     """Validate the restricted frontmatter emitted by build_site_review without a YAML dependency."""
     try:
         if not content.startswith("---\n"):
@@ -151,6 +157,8 @@ def validate_site_frontmatter(content: str) -> bool:
             else:
                 fields[key] = json.loads(value)
         for key in ("title", "description", "source_url", "source_type", "digest"):
+            if key == "digest" and not require_digest and "digest" not in fields:
+                continue
             if not isinstance(fields.get(key), str) or not fields[key].strip():
                 return False
         score = fields.get("value_score")
