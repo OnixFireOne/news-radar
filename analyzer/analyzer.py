@@ -856,6 +856,7 @@ class NewsAnalyzer:
         digest_ctx = DigestContext(
             analyzer=self, cfg={"digest_template": template_name,
                                 "knowledge": self.cfg.get("knowledge", {}) if self.cfg else {},
+                                "site": self.cfg.get("site", {}) if self.cfg else {},
                                 "llm_concurrency": self.cfg.get("llm_concurrency", 3) if self.cfg else 3},
             rules=rules, template_name=template_name,
             template_cfg=template_cfg, digest_max=digest_max, min_temp=min_temp,
