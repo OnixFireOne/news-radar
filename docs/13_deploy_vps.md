@@ -24,7 +24,20 @@ ChromaDB, тренды) сюда не переносится — для неё �
   `/search`, `/similar`, `/duplicates` в API на сервере не работают, `/health` показывает `chroma: unavailable`.
 - Тесты и mypy по-прежнему гоняются в локальных полных образах (`docker-compose.yml`).
 
-## Выкладка кода
+## Автодеплой (GitHub Actions)
+
+`.github/workflows/deploy.yml`: пуш или мерж в `main` → код уходит на сервер (`git archive` → `/opt/news-radar`)
+→ `docker compose -f docker-compose.server.yml up -d --build` → проверка: 4 сервиса running и `/health` API = 200.
+Красный прогон — письмо от GitHub. Ручной запуск — кнопка Run workflow (`workflow_dispatch`).
+
+- **Не деплоит** коммиты, где меняются только `knowledge/**`, `docs/**`, `specs/**`, `*.md`: анализатор сам
+  коммитит разборы в `main` каждый день, и перезапуск сразу после выпуска оборвал бы ожидание анонса ботом.
+- **Окно выпуска:** с 09:05 до 09:20 МСК workflow ждёт до 09:20, затем выкатывает.
+- Два деплоя одновременно не идут (`concurrency`).
+- Секреты репозитория (Settings → Secrets and variables → Actions): `SERVER_HOST`, `SERVER_USER`, `SERVER_PORT`,
+  `SERVER_SSH_KEY` (приватный ключ целиком). Лучше отдельный ключ только для деплоя.
+
+## Выкладка кода вручную
 
 Источник — ветка `main`. С Mac из корня репо:
 
