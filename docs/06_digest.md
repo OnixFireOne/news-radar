@@ -259,7 +259,7 @@ API: `POST /digest/generate?name=articles` возвращает прежние �
 ссылку сайта в Telegram. При `live: true` успешная доставка сайта заменяет путь и ссылку на
 `base_url/reviews/<slug>/`. Сбой сайта не меняет `analysis.md_path`; собранный пост сохраняется в базе, Telegram рендерит анонс.
 Уже сохранённый путь сайта переиспользуется как ссылка сайта; старый `knowledge/...` как blob news-radar,
-без генерации и без переноса (миграция — шаг 4).
+без генерации; перенос на сайт — `scripts/migrate_knowledge_to_site.py` (И4.4, шаг 3, ниже).
 
 При `site.enabled: true` **и** `site.live: true` отдельный md кандидатов не создаётся: список с порогом
 `candidates_list.min_score` включён в `<details class="radar-candidates">` дайджеста, по убыванию оценки.
@@ -333,3 +333,26 @@ NULL (выпуск без сайта). `ok` подтверждает комми�
 При ошибке коммита или таймауте — только алерт, доставки нет.
 `/digest/latest` возвращает `delivered` и части именованного выпуска; republish
 возвращает сохранённый `site_url` также при `live: false`.
+
+### Перенос старых разборов на сайт (И4.4, шаг 3)
+
+`scripts/migrate_knowledge_to_site.py` переносит разборы из `knowledge/` на сайт **без LLM**. Источник —
+`analysis.md_path`, начинающийся с `knowledge/` (кроме `knowledge/candidates/`); файл читается из `--root`.
+Старый md переводится во фронтматтер сайта **без поля `digest`** (страниц старых выпусков на сайте нет; в схеме
+блога поле необязательное), `pubDatetime` — дата разбора, 06:10 UTC (09:10 МСК), чтобы старые разборы не
+встали наверх списка. Описание — раздел «Идея», иначе «Коротко», иначе первый обычный абзац.
+
+- `--dry-run` — список «откуда → куда» и пропуски (нет файла, не читается, не прошёл проверку фронтматтера); ничего не пишет.
+- `--commit` — запись в `site_files` (`digest_id` NULL), **один** коммит в репо сайта; после успеха
+  `analysis.md_path` переключается на путь сайта (ссылки следующих выпусков ведут на `/reviews/<slug>/`).
+  Сбой коммита — файлы остаются в базе незакоммиченными, `md_path` прежний, повторный запуск их досылает.
+- Повторный запуск безопасен: закоммиченные разборы пропускаются.
+- Сама папка `knowledge/` и ссылки старых Telegram-выпусков на GitHub не трогаются.
+
+На сервере код запечён в образ без `scripts/` и `knowledge/` — монтировать при запуске (папка `knowledge/`
+на сервере — из `git archive` ветки `main`, то есть все разборы, закоммиченные ботом до деплоя):
+
+```bash
+cd /opt/news-radar && docker compose -f docker-compose.server.yml run --rm --no-deps -v "$PWD/scripts:/app/scripts:ro" -v "$PWD/knowledge:/app/knowledge:ro" analyzer python scripts/migrate_knowledge_to_site.py --dry-run --root /app
+cd /opt/news-radar && docker compose -f docker-compose.server.yml run --rm --no-deps -v "$PWD/scripts:/app/scripts:ro" -v "$PWD/knowledge:/app/knowledge:ro" analyzer python scripts/migrate_knowledge_to_site.py --commit --root /app
+```
