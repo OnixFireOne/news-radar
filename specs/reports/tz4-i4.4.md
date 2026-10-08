@@ -262,3 +262,8 @@ docker compose run --rm --no-deps -v "$PWD/bot:/app/bot:ro" -v "$PWD/tests:/app/
 - **Владелец:** выдать токену `Contents: Read and write` на `OnixFireOne/neuronavt` (или новый токен в `.env`
   на сервере + `up -d` анализатора и API). Затем повторить `--commit` и `/digest new articles` →
   `/digest articles site`.
+- **Повтор 08.10 после нового токена (с правом записи):** анализатор и API пересозданы (`up -d --force-recreate`),
+  `--commit` — 63 разбора одним коммитом в `main` блога (tree 201, ref 200). В базе: 63 из 63 `committed_at`,
+  `md_path` — 63 на путь сайта, 0 на `knowledge/`. Страницы `/reviews/<slug>/` отдают 200 (проверены 4,
+  включая 284 — старый файл был с номером 353, на сайте путь по номеру статьи).
+- Осталось владельцу: `/digest new articles` → `/digest articles site` (первая боевая проверка канала).
