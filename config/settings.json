@@ -50,9 +50,9 @@
   "site": {
     "enabled": true,
     "wait_for_page_sec": 300,
-    "live": false,
+    "live": true,
     "repo": "OnixFireOne/neuronavt",
-    "branch": "radar-preview",
+    "branch": "main",
     "base_url": "https://neuronavt.blog",
     "posts_dir": "blog/src/content/posts/_digests",
     "reviews_dir": "blog/src/content/reviews",
@@ -73,7 +73,7 @@
   "digest_templates": {
     "ai_value": {
       "digest_prompt_version": "ai_value-digest-v2",
-      "telegram": "full",
+      "telegram": "announce",
       "show_md_link": true,
       "title_max_words": 10,
       "summary_max_sentences": 4,
