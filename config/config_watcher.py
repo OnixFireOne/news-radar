@@ -30,6 +30,7 @@ DEFAULT_CONFIG = {
     "digest_template": "classic",
     "site": {
         "enabled": False,
+        "wait_for_page_sec": 300,
         "live": False,
         "repo": "OnixFireOne/neuronavt",
         "branch": "radar-preview",
@@ -54,6 +55,8 @@ DEFAULT_CONFIG = {
     },
     "digest_templates": {
         "ai_value": {
+            "digest_prompt_version": "ai_value-digest-v1",
+            "telegram": "full",
             "show_md_link": True,
             "title_max_words": 10,
             "summary_max_sentences": 4,

@@ -7,6 +7,7 @@ import re
 from datetime import datetime, timezone
 from collections.abc import Mapping, Sequence
 
+
 from analyzer.pipeline.context import DigestContext, Row
 from analyzer.pipeline.registry import EXTRAS
 from analyzer.value_funnel import explain_selection

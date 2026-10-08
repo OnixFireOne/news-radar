@@ -49,6 +49,7 @@
   "digest_template": "ai_value",
   "site": {
     "enabled": true,
+    "wait_for_page_sec": 300,
     "live": false,
     "repo": "OnixFireOne/neuronavt",
     "branch": "radar-preview",
@@ -71,6 +72,8 @@
   },
   "digest_templates": {
     "ai_value": {
+      "digest_prompt_version": "ai_value-digest-v2",
+      "telegram": "full",
       "show_md_link": true,
       "title_max_words": 10,
       "summary_max_sentences": 4,

@@ -26,3 +26,12 @@ DIGEST_AI_VALUE_SCHEMA = JsonSchemaTool(
     {"type": "object", "properties": {"items": {"type": "array", "items":
         _object(("source_id", "title", "takeaway", "summary"))}}, "required": ["items"]},
 )
+
+DIGEST_AI_VALUE_SCHEMA_V2 = JsonSchemaTool(
+    "submit_ai_digest_v2", "Submit digest items, the daily lead and highlights",
+    {"type": "object", "properties": {
+        "items": {"type": "array", "items": _object(("source_id", "title", "takeaway", "summary"))},
+        "lead": {"type": "string"},
+        "highlights": {"type": "array", "items": {"type": "string"}},
+    }, "required": ["items", "lead", "highlights"]},
+)

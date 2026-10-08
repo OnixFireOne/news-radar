@@ -44,16 +44,9 @@ def _source_link(url: object, title: str, css: str = "") -> str:
     return f'<a{attr} href="{_escaped(safe_url)}" target="_blank" rel="noopener">{_escaped(title)}</a>'
 
 
-def build_digest_post(
-    draft: Mapping[str, Any], selected: Sequence[Mapping[str, Any]], pool: Sequence[Mapping[str, Any]],
-    reviews: Mapping[str, str], template_cfg: Mapping[str, Any], site_cfg: Mapping[str, Any], now: datetime,
-) -> tuple[str, str, str]:
-    """Review keys are draft source IDs (1-based selected indexes), values are committed/staged slugs."""
-    # Import lazily to keep candidate-title ownership in extras without a module cycle.
-    from analyzer.pipeline.extras import candidate_title
-
-    now = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now.astimezone(timezone.utc)
-    slug = site_digest_slug(site_cfg, now)
+def _digest_items(
+    draft: Mapping[str, Any], selected: Sequence[Mapping[str, Any]],
+) -> list[tuple[Mapping[str, Any], Mapping[str, Any], str]]:
     by_source = {str(i): row for i, row in enumerate(selected, 1)}
     items: list[tuple[Mapping[str, Any], Mapping[str, Any], str]] = []
     seen: set[str] = set()
@@ -64,16 +57,67 @@ def build_digest_post(
         if source_id in by_source and source_id not in seen:
             seen.add(source_id)
             items.append((item, by_source[source_id], source_id))
+    return items
+
+
+def _kind(row: Mapping[str, Any]) -> str:
     known = {kind for _, kinds, _ in SECTIONS for kind in kinds}
+    value = str(row.get("content_type") or "other")
+    return value if value in known else "other"
 
-    def kind(row: Mapping[str, Any]) -> str:
-        value = str(row.get("content_type") or "other")
-        return value if value in known else "other"
 
-    counts = [sum(kind(row) in kinds for _, row, _ in items) for _, kinds, _ in SECTIONS]
+def _description(items: Sequence[tuple[Mapping[str, Any], Mapping[str, Any], str]]) -> tuple[str, list[str]]:
+    counts = [sum(_kind(row) in kinds for _, row, _ in items) for _, kinds, _ in SECTIONS]
     breakdown = [counted(n, forms) for n, (_, _, forms) in zip(counts, SECTIONS) if n]
     count_text = counted(len(items), ("статья", "статьи", "статей"))
-    description = count_text + (": " + ", ".join(breakdown) if breakdown else "")
+    return count_text + (": " + ", ".join(breakdown) if breakdown else ""), breakdown
+
+
+def build_telegram_announce(
+    draft: Mapping[str, Any], selected: Sequence[Mapping[str, Any]], digest_url: str,
+    template_cfg: Mapping[str, Any], now: datetime,
+) -> str:
+    """Keep complete HTML entities while fitting the raw announcement below 1000 characters."""
+    items = _digest_items(draft, selected)
+    description, _ = _description(items)
+    highlights = draft.get("highlights")
+    points = ([point.strip() for point in highlights if isinstance(point, str) and point.strip()]
+              if isinstance(highlights, list) else [])
+    if not points:
+        points = [str(item.get("title") or "") for item, _, _ in items[:3]]
+    heading = f"🤖 <b>AI-радар — {now.day} {MONTHS[now.month - 1]}</b>\n{description}"
+    link = f'<a href="{escape(digest_url, quote=True)}">Читать выпуск на сайте →</a>'
+    lines: list[str] = []
+    budget = max(0, 999 - len(heading) - len(link) - len("\n\nИнтересное:\n\n\n"))
+    for point in points[:3]:
+        allowance = max(0, budget // (min(3, len(points)) - len(lines)) - 3)
+        escaped_chars: list[str] = []
+        used = 0
+        for char in point:
+            escaped_char = escape(char, quote=True)
+            if used + len(escaped_char) > allowance:
+                break
+            escaped_chars.append(escaped_char)
+            used += len(escaped_char)
+        line = "• " + "".join(escaped_chars)
+        lines.append(line)
+        budget -= len(line) + 1
+    interesting = "\n\nИнтересное:\n" + "\n".join(lines) if lines else ""
+    return heading + interesting + "\n\n" + link
+
+
+def build_digest_post(
+    draft: Mapping[str, Any], selected: Sequence[Mapping[str, Any]], pool: Sequence[Mapping[str, Any]],
+    reviews: Mapping[str, str], template_cfg: Mapping[str, Any], site_cfg: Mapping[str, Any], now: datetime,
+) -> tuple[str, str, str]:
+    """Review keys are draft source IDs (1-based selected indexes), values are committed/staged slugs."""
+    # Import lazily to keep candidate-title ownership in extras without a module cycle.
+    from analyzer.pipeline.extras import candidate_title
+
+    now = now.replace(tzinfo=timezone.utc) if now.tzinfo is None else now.astimezone(timezone.utc)
+    slug = site_digest_slug(site_cfg, now)
+    items = _digest_items(draft, selected)
+    description, breakdown = _description(items)
     fields = {"title": f"AI-радар — {now.day} {MONTHS[now.month - 1]}",
               "description": description, "tags": ["дайджест", "ai-радар"]}
     header = "\n".join(f"{key}: {json.dumps(value, ensure_ascii=False)}" for key, value in fields.items())
@@ -87,7 +131,7 @@ def build_digest_post(
         blocks.append('<div class="radar-lead">\n<p class="radar-lead-title">Главное за день</p>\n'
                       f'<p>{_escaped(lead.strip())}</p>\n</div>')
     for heading, kinds, _ in SECTIONS:
-        group = [(item, row, sid) for item, row, sid in items if kind(row) in kinds]
+        group = [(item, row, sid) for item, row, sid in items if _kind(row) in kinds]
         if not group:
             continue
         blocks.append(f'<h2 class="radar-section">{heading}</h2>')

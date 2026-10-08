@@ -39,7 +39,7 @@
 |---|---|---|---|
 | 1 | блог | коллекция `reviews`, страницы `/reviews` (список, фильтр по типу) и `/reviews/<slug>`, пункт меню, стили карточек дайджеста, черновики-образцы; главная/RSS/архив/теги не трогаются | ✅ 07.10: Codex (`gpt-6.1-sol`) по брифу, правки Claude Code (оценка — атрибут `data-high` вместо клиентского скрипта, `z.url()`); сборка зелёная, все критерии брифа; коммит `1c698a9` в ветку `radar-preview` блога |
 | 2 | news-radar | (бриф: `specs/briefs/tz4-i4.3-step2-site.md`) разборы с фронтматтером Astro; дайджест для сайта (`analyzer/site_digest.py`) из того же черновика; один коммит на выпуск (дайджест + разборы) в `neuronavt`; блок `site` в конфиге за флагом; `NEURONAVT_GITHUB_TOKEN` в `.env.example`; проверка фронтматтера перед коммитом | 🔧 07.10: реализован Codex, ожидает pytest/mypy и сборку блога в Docker |
-| 3 | news-radar | Telegram-анонс: режим `telegram: "announce"` шаблона `ai_value` (по умолчанию `full`), ожидание, пока страница выпуска откроется (до ~5 мин), новая версия промпта дайджеста с `lead` / `highlights` | — |
+| 3 | news-radar | Telegram-анонс: режим `telegram: "announce"` шаблона `ai_value` (по умолчанию `full`), ожидание, пока страница выпуска откроется (до ~5 мин), новая версия промпта дайджеста с `lead` / `highlights` | ✅ 08.10: Codex + правки Claude Code (ожидание перенесено в бот) |
 | 4 | news-radar | `scripts/migrate_knowledge_to_site.py`: старые md из `knowledge/` → фронтматтер Astro, `--dry-run`, один коммит | — |
 
 Код по брифам пишет Codex; Claude Code проверяет диф, собирает блог и гоняет pytest/mypy в докере, коммитит.
@@ -156,3 +156,61 @@ docker compose -f "$blog_check_root/neuronavt/docker-compose.dev.yml" run --rm -
 
 **Статическая проверка Codex:** все изменённые Python-файлы прочитаны через `ast.parse`,
 `settings.json` — через `json.loads`; `git diff --check` без ошибок. Это не заменяет pytest/mypy/сборку.
+
+
+## Шаг 3 — реализация Codex (08.10), ✅ приёмка Claude Code 08.10
+
+**Что сделано:**
+- `analyzer/prompts.py`, `analyzer/json_schemas.py`: новая v2 с `lead` / `highlights`, старые константы сохранены.
+- `analyzer/pipeline/writers.py`: реестр пар промпт/схема, выбор по конфигу, WARNING + v1 при неизвестной
+  версии, очистка необязательного содержания, анонс только при успешном коммите сайта.
+- `analyzer/site_digest.py`: HTML-анонс, общий с постом подсчёт/склонения, экранирование, сокращение пунктов.
+- `analyzer/pipeline/extras.py`: GET до 200/таймаута, интервал 15 с, только live после успешного коммита.
+- Оба конфига: версия (код v1, settings v2), Telegram full, ожидание 300 с.
+- `tests/test_site_announce.py`, `mypy.ini`: новые offline-контракты, strict для нового файла.
+  `tests/conftest.py`: HTTP 200 для ожидания в существующих тестах публикации, чтобы они оставались
+  без сети; сами тесты и их проверки не изменены.
+- `docs/06_digest.md`, `specs/STATE.md`: настройки, включение и статус.
+
+**Коммиты:** нет. После приёмки оркестратору:
+```bash
+git add analyzer/prompts.py analyzer/json_schemas.py analyzer/pipeline/writers.py analyzer/site_digest.py analyzer/pipeline/extras.py config/config_watcher.py config/settings.json tests/test_site_announce.py tests/conftest.py mypy.ini docs/06_digest.md specs/STATE.md specs/reports/tz4-i4.3.md
+git commit -m "feat(tz4-i4.3): add daily leads and Telegram announcements"
+```
+
+**Новые зависимости:** нет.
+
+**Расхождения со спекой:** расширение площадки И4.3 уже принято владельцем, изменение спеки за ним.
+
+**Что НЕ сделано / отложено:** pytest/mypy не запускались (запрет Docker); переключение live/main/announce
+и реальная публикация не выполнялись. `renderer.py`, classic/spoiler, v1 промпт и схема не изменены.
+
+**Побочные находки / спорное:** ожидание до 300 с добавляется к генерации, а таймаут бота/API клиента
+может закончиться раньше (грабля 44). По брифу таймаут страницы не отменяет анонс: ссылка может ещё
+возвращать 404. Preview тоже позволяет announce при наличии успешного коммита, как требует бриф;
+включать режим следует вместе с live/main. Лимит 1000 достижим сокращением пунктов для штатного URL;
+аномально длинный base_url сам может превысить лимит без пунктов.
+
+**Команды приёмки:**
+```bash
+docker compose run --rm --no-deps analyzer python -m pytest -q --ignore=tests/collector
+docker compose run --rm --no-deps analyzer python -m mypy
+```
+
+**Статическая проверка:** AST изменённых Python-файлов и JSON настроек валидны; `git diff --check` чистый.
+Защищённые v1-константы сравнены с HEAD и не изменены; `renderer.py` не затронут.
+
+## Шаг 3 — приёмка Claude Code (08.10)
+
+- Первый запуск Codex 07.10 завис на 13 ч (`Reading additional input from stdin...`), без изменений; перезапуск с `< /dev/null`.
+- **Ожидание деплоя перенесено из анализатора в бот (решение владельца 08.10).** У Codex оно было в extra `site`:
+  до 300 с сверх генерации при таймауте бота к API 180 с (по расписанию) — выпуск сгенерировался бы, но не ушёл.
+  Теперь: `DigestPart.site_url` (только при `live: true`) → поле `site_url` в ответе `/digest/generate` →
+  `bot/site_wait.py::wait_for_parts` перед отправкой (и по расписанию, и по `/digest new`).
+- Хак Codex в общем `tests/conftest.py` (autouse-фикстура по имени файла) откатан — после переноса не нужен.
+- pytest 354 passed / 12 skipped, mypy без ошибок (82 файла). Тест `bot/site_wait.py` идёт в контейнере анализатора
+  с подключённой папкой бота (в образе бота нет pytest):
+  `docker compose run --rm --no-deps -v "$PWD/bot:/app/bot" analyzer python -m pytest -q tests/test_site_announce.py`
+- **Побочная находка:** таймаут бота к API по расписанию — 180 с, по `/digest new` — 300 с. Генерация с разборами
+  растёт с их числом; посмотреть фактическую длительность выпуска 08.10 на сервере.
+- Включение анонса: `site.branch: "main"`, `site.live: true`, `telegram: "announce"` — вместе; иначе анонс сошлётся на неразвёрнутую ветку.

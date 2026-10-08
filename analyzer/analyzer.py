@@ -735,7 +735,7 @@ class NewsAnalyzer:
                 continue
             result = await self.run_category(cat, digest.name, hours, force, return_raw, _since=since, _run_id=run_id)
             if result:
-                parts.append(DigestPart(cat.name, result, self._last_digest_id))
+                parts.append(DigestPart(cat.name, result, self._last_digest_id, self._last_site_url))
         return parts
 
     async def run_category(self, cat: CategorySpec, digest_name: str | None,
@@ -745,6 +745,7 @@ class NewsAnalyzer:
         """Select and render one category, preserving the legacy pipeline order."""
         self._pipeline_config()
         self._last_digest_id: int | None = None
+        self._last_site_url: str | None = None
         spec = cat
         template_name = cat.template
         rules = self.cfg.get("digest_rules", {}) if self.cfg else {}
@@ -1079,6 +1080,9 @@ class NewsAnalyzer:
                     for extra_name in spec.extras:
                         await EXTRAS.get(extra_name)(selected, digest_ctx)
                     digest_content, parse_mode = writer.render(draft, selected, digest_ctx)
+                    site_cfg = self.cfg.get("site", {}) if self.cfg else {}
+                    if isinstance(site_cfg, dict) and site_cfg.get("live", False):
+                        self._last_site_url = digest_ctx.artifacts.get("site_digest_url")
                 except Exception as e:
                     logger.error(f"Local LLM digest generation failed: {e}")
                     self.digest_failures.append("llm")
