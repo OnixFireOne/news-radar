@@ -15,6 +15,7 @@ from typing import Any, Callable
 logger = logging.getLogger(__name__)
 
 DEFAULT_CONFIG = {
+    "channels": [],
     "digest_stats": {"enabled": False},
     "telegram_folder": "",
     "min_message_length": 30,

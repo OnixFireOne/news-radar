@@ -58,3 +58,46 @@ def attach_digest(conn: sqlite3.Connection, ids: Sequence[int], digest_id: int,
     conn.executemany("UPDATE site_files SET digest_id=? WHERE id=?", [(digest_id, i) for i in ids])
     conn.execute("UPDATE digests SET site_url=?, site_status=? WHERE id=?",
                  (site_url, site_status, digest_id))
+
+
+def delivered_to(conn: sqlite3.Connection, digest_id: int) -> list[int]:
+    return [int(row[0]) for row in conn.execute(
+        "SELECT chat_id FROM digest_deliveries WHERE digest_id=? ORDER BY chat_id", (digest_id,))]
+
+
+def latest_parts(conn: sqlite3.Connection, name: str) -> list[sqlite3.Row]:
+    row = conn.execute("SELECT * FROM digests WHERE name=? ORDER BY created_at DESC, id DESC LIMIT 1",
+                       (name,)).fetchone()
+    if row is None:
+        return []
+    if row["run_id"] is None:
+        return [row]
+    return list(conn.execute("SELECT * FROM digests WHERE name=? AND run_id=? ORDER BY id",
+                             (name, row["run_id"])))
+
+
+async def republish(conn: sqlite3.Connection, name: str, cfg: dict[str, object], token: str) -> list[sqlite3.Row]:
+    """Commit stored bytes for the entire latest run, including previously committed files."""
+    import logging
+    from analyzer.knowledge_publisher import GitHubPublisher
+
+    parts = latest_parts(conn, name)
+    ids = [int(row["id"]) for row in parts]
+    placeholders = ",".join("?" for _ in ids)
+    files = list(conn.execute(f"SELECT id, path, content FROM site_files WHERE digest_id IN ({placeholders}) ORDER BY id", ids))
+    if not parts or not files:
+        raise LookupError("No digest or site files found")
+    publisher = GitHubPublisher(str(cfg.get("repo", "OnixFireOne/neuronavt")),
+                                str(cfg.get("branch", "radar-preview")), token, batch=True)
+    try:
+        ok = await publisher.commit_files([(str(row["path"]), str(row["content"])) for row in files],
+            f"feat(radar): republish AI radar digest {str(parts[-1]['period_end'])[:10]}")
+    except Exception:
+        logging.getLogger(__name__).warning("Site republish failed", exc_info=True)
+        ok = False
+    if ok:
+        mark_committed(conn, [int(row["id"]) for row in files], publisher.last_commit_sha)
+    conn.executemany("UPDATE digests SET site_status=? WHERE id=?",
+                     [("ok" if ok else "commit_failed", digest_id) for digest_id in ids])
+    conn.commit()
+    return list(conn.execute(f"SELECT * FROM digests WHERE id IN ({placeholders}) ORDER BY id", ids))
