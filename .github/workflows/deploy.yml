@@ -1,0 +1,66 @@
+name: Deploy to VPS
+
+# Push to main -> ship the code to the server and rebuild the articles stack (docs/13_deploy_vps.md).
+on:
+  push:
+    branches: [main]
+    # The analyzer itself commits article summaries to main every day; those must not redeploy
+    # (a restart right after the digest would drop the bot's pending announcement).
+    paths-ignore:
+      - "knowledge/**"
+      - "docs/**"
+      - "specs/**"
+      - "**/*.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never run two deploys at once; a newer push waits for the running one.
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SSH: ssh -i ~/.ssh/deploy -p ${{ secrets.SERVER_PORT }} -o StrictHostKeyChecking=accept-new ${{ secrets.SERVER_USER }}@${{ secrets.SERVER_HOST }}
+      COMPOSE: cd /opt/news-radar && docker compose -f docker-compose.server.yml
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Wait out the digest window (09:05-09:20 MSK)
+        run: |
+          now=$(TZ=Europe/Moscow date +%H%M)
+          if [ "$now" -ge 905 ] && [ "$now" -lt 920 ]; then
+            wait=$(( $(TZ=Europe/Moscow date -d 09:20 +%s) - $(date +%s) ))
+            echo "Digest window, waiting ${wait}s"
+            sleep "$wait"
+          fi
+
+      - name: SSH key
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.SERVER_SSH_KEY }}" > ~/.ssh/deploy
+          chmod 600 ~/.ssh/deploy
+
+      - name: Ship code
+        # .env and data/ are not in git, so the server's secrets and database stay untouched.
+        run: git archive HEAD | $SSH "mkdir -p /opt/news-radar && tar -x -C /opt/news-radar"
+
+      - name: Rebuild and restart
+        run: $SSH "$COMPOSE up -d --build --remove-orphans && docker image prune -f"
+
+      - name: Health check
+        run: |
+          sleep 15
+          $SSH "$COMPOSE ps --format '{{.Service}}: {{.Status}}'"
+          $SSH "$COMPOSE exec -T news-radar-api python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=10)\""
+          running=$($SSH "$COMPOSE ps --status running --services" | wc -l)
+          if [ "$running" -lt 4 ]; then
+            echo "Only $running of 4 services are running"
+            $SSH "$COMPOSE logs --tail 50"
+            exit 1
+          fi
