@@ -6,8 +6,8 @@
 
 | Шаг | Что | Бриф | Статус |
 |---|---|---|---|
-| 1 | Разборы и пост выпуска в базе (`site_files`), статус сайта у выпуска, `knowledge.targets: []` | `specs/briefs/tz4-i4.4-step1-store.md` | 🔧 у Codex |
-| 2 | Каналы (`channels` в конфиге), алерты админу, `/digest <name> site`, отметки доставки | — | — |
+| 1 | Разборы и пост выпуска в базе (`site_files`), статус сайта у выпуска, `knowledge.targets: []` | `specs/briefs/tz4-i4.4-step1-store.md` | ✅ `50082ad` |
+| 2 | Каналы (`channels` в конфиге), алерты админу, `/digest <name> site`, отметки доставки | `specs/briefs/tz4-i4.4-step2-channel.md` | 🔧 у Codex |
 | 3 | `scripts/migrate_knowledge_to_site.py`: старые разборы из `knowledge/` → `site_files` + один коммит, без LLM | — | — |
 
 ### Миграции базы
