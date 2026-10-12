@@ -46,6 +46,8 @@ class ProviderProfile:
     # Per-model request quirks merged into the payload; a None value removes the key
     # (e.g. {"gpt-6-luna": {"temperature": None, "reasoning_effort": "none"}}).
     model_params: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+    # Models without function tools on this protocol; strict JSON tasks fall back to text for them.
+    no_tool_models: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
         if not self.api_key_env:
@@ -61,6 +63,9 @@ class ProviderProfile:
     def request_params(self, model: str) -> dict[str, object]:
         """Payload overrides for one model; None values mean 'drop this key'."""
         return dict(self.model_params.get(model, {}))
+
+    def supports_tools(self, model: str) -> bool:
+        return model not in self.no_tool_models
 
 
 @dataclass(frozen=True)
@@ -144,6 +149,9 @@ def _validate(name: str, raw: object) -> ProviderProfile:
             if param is not None and not isinstance(param, (str, int, float, bool)):
                 _fail(name, f"model_params.{model}.{key}", "must be a scalar or null")
         model_params[model] = params
+    raw_no_tools = obj.get("no_tool_models", [])
+    if not isinstance(raw_no_tools, list) or not all(isinstance(m, str) and m for m in raw_no_tools):
+        _fail(name, "no_tool_models", "must be a list of model ids")
     prices: dict[str, ModelPrice] = {}
     raw_prices = obj.get("price_table", {})
     unverified_prices = raw_prices == "TODO(unverified)"
@@ -178,7 +186,7 @@ def _validate(name: str, raw: object) -> ProviderProfile:
         max_concurrency=ints["max_concurrency"], input_overhead=ints["input_overhead"] or 0,
         price_table="TODO(unverified)" if unverified_prices else prices, extra_headers=headers, gpu_lock=bools["gpu_lock"],
         chat_template_kwargs=bools["chat_template_kwargs"], strict_tools=bools["strict_tools"],
-        model_params=model_params,
+        model_params=model_params, no_tool_models=frozenset(raw_no_tools),
     )
 
 

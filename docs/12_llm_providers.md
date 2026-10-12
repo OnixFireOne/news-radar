@@ -175,6 +175,7 @@ alpha. `analyzer/jev_classifier.py` — вторая реализация пор
 `gpt-6.1-sol` добавлена в профиль `openai.chat_completions` (цена = sol, $2/$10), в маршрут не поставлена.
 Повадки: `reasoning_effort` только low..max, function tools на `/chat/completions` нет → только текстовый
 режим. Прогон 12.10 на дайджестах 8 и 9 (по 7 статей): 6.1-sol ~$0.021 против $0.019 (+12%), 35 с
-против 14 с, сломанных ответов нет; тексты подробнее и аккуратнее с цифрами. Чтобы включить её в
-`digest`, нужно снять `digest` с tool-пути только для этой модели (сейчас `llm_strict_json_tasks` общий
-на задачу) — решение владельца.
+против 14 с, сломанных ответов нет; тексты подробнее и аккуратнее с цифрами. **С 12.10 `digest` = gpt-6.1-sol** (решение владельца). Поле профиля
+`no_tool_models` — модели без function tools: для них `complete_json` идёт текстовым путём, даже если
+задача в `llm_strict_json_tasks` (`ProviderProfile.supports_tools`). `classify`/`knowledge` остаются
+на gpt-6-luna с tool-путём.
