@@ -21,6 +21,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from analyzer.knowledge_publisher import frame_article
 from analyzer.pipeline.writers import DIGEST_AI_VALUE_PROMPTS
+from analyzer.site_digest import build_telegram_announce
 from llm_core.catalog import load_catalog, resolve_active
 from llm_core.router import ProviderRouter
 from llm_core.client import ChatMessage
@@ -84,13 +85,18 @@ async def run_one(router: ProviderRouter, model: str, mode: str, prompt: str,
     }
 
 
-def to_markdown(digest_id: int, rows: list[dict[str, Any]], runs: list[dict[str, Any]]) -> str:
+def to_markdown(digest_id: int, rows: list[dict[str, Any]], runs: list[dict[str, Any]],
+                cfg: dict[str, Any] | None = None) -> str:
     out = [f"# Digest {digest_id}: {len(rows)} articles\n"]
     for run in runs:
         out.append(f"## {run['model']} ({run['mode']})\n")
         out.append(f"tokens in/out/reasoning: {run['prompt_tokens']}/{run['completion_tokens']}/"
                    f"{run['reasoning_tokens']} · cost ${run['cost_usd']} · {run['latency_s']}s\n")
         draft = run["draft"] or {}
+        if cfg is not None and draft:
+            announce = build_telegram_announce(draft, rows, "https://example.org/digest", cfg,
+                                               datetime.now(timezone.utc))
+            out.append(f"Telegram announce ({len(announce)} chars):\n\n```\n{announce}\n```\n")
         if draft.get("lead"):
             out.append(f"**Lead:** {draft['lead']}\n")
         for point in draft.get("highlights") or []:
@@ -138,7 +144,7 @@ async def main() -> None:
         base.with_suffix(".json").write_text(json.dumps(
             {"digest_id": digest_id, "provider": args.provider, "article_ids": [r["id"] for r in rows],
              "runs": runs}, ensure_ascii=False, indent=2))
-        base.with_suffix(".md").write_text(to_markdown(digest_id, rows, runs))
+        base.with_suffix(".md").write_text(to_markdown(digest_id, rows, runs, cfg))
         print(f"-> {base}.md")
 
 

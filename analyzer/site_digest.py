@@ -73,11 +73,76 @@ def _description(items: Sequence[tuple[Mapping[str, Any], Mapping[str, Any], str
     return count_text + (": " + ", ".join(breakdown) if breakdown else ""), breakdown
 
 
+def _fit(text: str, limit: int) -> str:
+    """Escape text and cut it at a word boundary so the escaped result stays within limit."""
+    escaped = _escaped(text)
+    if len(escaped) <= limit:
+        return escaped
+    words: list[str] = []
+    for word in text.split():
+        if len(_escaped(" ".join([*words, word]) + "…")) > limit:
+            break
+        words.append(word)
+    return _escaped(" ".join(words).rstrip(",;:—-") + "…") if words else ""
+
+
+def _teaser_announce(
+    draft: Mapping[str, Any], selected: Sequence[Mapping[str, Any]], digest_url: str,
+    template_cfg: Mapping[str, Any], now: datetime,
+) -> str | None:
+    """Lead, up to three hooks the model picked and the rest of the issue; None without picks."""
+    items = _digest_items(draft, selected)
+    by_id = {source_id: (item, row) for item, row, source_id in items}
+    raw_picks = draft.get("picks")
+    picks = [(str(pick["hook"]).strip(), str(pick["source_id"]))
+             for pick in (raw_picks if isinstance(raw_picks, list) else [])
+             if isinstance(pick, Mapping) and str(pick.get("source_id", "")) in by_id
+             and isinstance(pick.get("hook"), str) and str(pick["hook"]).strip()][:3]
+    if not picks:
+        return None
+    types = template_cfg.get("types", {})
+    default = types.get("_default", {}) if isinstance(types, Mapping) else {}
+
+    def emoji(row: Mapping[str, Any]) -> str:
+        entry = types.get(str(row.get("content_type")), default) if isinstance(types, Mapping) else {}
+        return str(entry.get("emoji") or default.get("emoji") or "🔹")
+
+    heading = f"🤖 <b>AI-радар — {now.day} {MONTHS[now.month - 1]}</b>"
+    link = f'<a href="{escape(digest_url, quote=True)}">Читать выпуск на сайте →</a>'
+    title = "\n\n<b>Стоит открыть:</b>\n"
+    budget = 999 - len(heading) - len(title) - len("\n\n") - len(link)
+    lines: list[str] = []
+    for hook, source_id in picks:
+        prefix = emoji(by_id[source_id][1]) + " "
+        allowance = min(240, budget * 2 // 3 // (len(picks) - len(lines))) - len(prefix)
+        text = _fit(hook, allowance)
+        if text:
+            lines.append(prefix + text)
+            budget -= len(lines[-1]) + 1
+    lead_text = draft.get("lead")
+    lead = ""
+    if isinstance(lead_text, str) and lead_text.strip() and budget > 60:
+        lead = "\n" + _fit(lead_text.strip(), min(320, budget - 1))
+        budget -= len(lead)
+    picked = {source_id for _, source_id in picks}
+    rest_titles = [str(item.get("title") or "").strip() for item, _, source_id in items
+                   if source_id not in picked and str(item.get("title") or "").strip()]
+    rest = ""
+    if rest_titles and budget > 50:
+        label = "Ещё " + counted(len(rest_titles), ("статья", "статьи", "статей")) + ": "
+        rest = "\n\n" + _escaped(label) + _fit(" · ".join(rest_titles), budget - 2 - len(label))
+    return heading + lead + title + "\n".join(lines) + rest + "\n\n" + link
+
+
 def build_telegram_announce(
     draft: Mapping[str, Any], selected: Sequence[Mapping[str, Any]], digest_url: str,
     template_cfg: Mapping[str, Any], now: datetime,
 ) -> str:
     """Keep complete HTML entities while fitting the raw announcement below 1000 characters."""
+    if template_cfg.get("announce_style") == "teaser":
+        teaser = _teaser_announce(draft, selected, digest_url, template_cfg, now)
+        if teaser is not None:
+            return teaser
     items = _digest_items(draft, selected)
     description, _ = _description(items)
     highlights = draft.get("highlights")

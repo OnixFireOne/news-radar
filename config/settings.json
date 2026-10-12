@@ -73,8 +73,10 @@
   },
   "digest_templates": {
     "ai_value": {
-      "digest_prompt_version": "ai_value-digest-v2",
+      "digest_prompt_version": "ai_value-digest-v3",
       "telegram": "announce",
+      "_comment_announce_style": "points = highlights list (old); teaser = lead + 3 hooks the model picked + the rest (needs digest_prompt_version ai_value-digest-v3).",
+      "announce_style": "teaser",
       "show_md_link": true,
       "title_max_words": 10,
       "summary_max_sentences": 4,
