@@ -90,13 +90,16 @@
     "price_table": {
       "gpt-6-luna": {"in_per_million": 0.1, "out_per_million": 0.5},
       "gpt-6-sol": {"in_per_million": 2, "out_per_million": 10},
+      "gpt-6.1-sol": {"in_per_million": 2, "out_per_million": 10},
       "gpt-6-astra": {"in_per_million": 10, "out_per_million": 50}
     },
     "_comment_price_table": "Standard short-context rates, verified against developers.openai.com/api/docs/pricing on 2026-09-28 (match the OpenRouter listing of 2026-09-25). Not modelled: cached input is 10x cheaper (cost is overestimated when the cache hits), long context costs 2x input / 1.5x output.",
+    "_comment_gpt_6_1_sol": "Added 2026-10-12 for a digest eval, not routed. Per the model page: reasoning_effort low..max only (no none), no function tools on /chat/completions, so it runs in text mode like astra.",
     "_comment_model_params": "Probe 2026-09-25: GPT-6 accepts only the default temperature; function tools on /chat/completions need reasoning_effort=none, which astra does not support (low/medium/high/xhigh only), so astra runs in text mode.",
     "model_params": {
       "gpt-6-luna": {"temperature": null, "reasoning_effort": "none"},
       "gpt-6-sol": {"temperature": null, "reasoning_effort": "none"},
+      "gpt-6.1-sol": {"temperature": null, "reasoning_effort": "low"},
       "gpt-6-astra": {"temperature": null, "reasoning_effort": "low"}
     },
     "input_overhead": 0
