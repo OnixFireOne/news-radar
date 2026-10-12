@@ -330,6 +330,20 @@ DIGEST_PROMPT_AI_VALUE_V2 = DIGEST_PROMPT_AI_VALUE.replace(
     "One item per input article",
 )
 
+DIGEST_PROMPT_AI_VALUE_V3 = DIGEST_PROMPT_AI_VALUE_V2.replace(
+    '"highlights": ["...", "..."], ',
+    '"highlights": ["...", "..."], "picks": [{{"source_id": "N", "hook": "..."}}], ',
+).replace(
+    "One item per input article",
+    "picks: the 3 articles of THIS digest most worth opening (all of them if there are fewer), best first. "
+    "hook: one Russian sentence of at most about 20 words for a Telegram announcement: a concrete fact "
+    "or number from the article plus what the reader gains by opening it. Make the reader curious, "
+    "but no clickbait, no exaggeration and no facts absent from the article. Write it as natural, "
+    "lively Russian, vary the structure between hooks, and do not end with imperatives like "
+    "'узнайте', 'изучите', 'разберите', 'посмотрите'.\n"
+    "One item per input article",
+)
+
 KNOWLEDGE_PROMPT_VERSION = "knowledge-v1"
 KNOWLEDGE_MD_PROMPT_AI_VALUE = """Summarize this AI article in RUSSIAN. Return strictly JSON:
 {{"title": "...", "idea": "...", "conclusion": "...", "tags": ["tag", "tag"]}}

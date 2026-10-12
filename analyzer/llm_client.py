@@ -309,7 +309,8 @@ class LLMClient:
         Handles cases where the model wraps JSON in markdown code blocks.
         """
         resolved_task = task or self._task
-        use_tool = schema is not None and self._router is not None and resolved_task in self.strict_json_tasks
+        use_tool = (schema is not None and self._router is not None and resolved_task in self.strict_json_tasks
+                    and self._router.primary().profile.supports_tools(self._router.model_for(resolved_task)))
         logger.info("json path=%s task=%s", "tool" if use_tool else "text", resolved_task)
         if use_tool:
             assert schema is not None and self._router is not None

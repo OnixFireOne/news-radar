@@ -10,10 +10,10 @@ from analyzer.pipeline.context import DigestContext, Row
 from analyzer.pipeline.registry import WRITERS, Writer
 from analyzer.prompts import (
     DIGEST_PROMPT_SPOILER, DIGEST_SPOILER_MERGE_ON, DIGEST_SPOILER_MERGE_OFF,
-    DIGEST_PROMPT_AI_VALUE, DIGEST_PROMPT_AI_VALUE_V2, SYSTEM_PROMPT,
+    DIGEST_PROMPT_AI_VALUE, DIGEST_PROMPT_AI_VALUE_V2, DIGEST_PROMPT_AI_VALUE_V3, SYSTEM_PROMPT,
 )
 from analyzer.knowledge_publisher import frame_article
-from analyzer.json_schemas import DIGEST_AI_VALUE_SCHEMA, DIGEST_AI_VALUE_SCHEMA_V2
+from analyzer.json_schemas import DIGEST_AI_VALUE_SCHEMA, DIGEST_AI_VALUE_SCHEMA_V2, DIGEST_AI_VALUE_SCHEMA_V3
 from analyzer.site_digest import build_telegram_announce
 from analyzer.renderer import render_digest
 
@@ -22,6 +22,7 @@ logger = logging.getLogger("analyzer.analyzer")
 DIGEST_AI_VALUE_PROMPTS = {
     "ai_value-digest-v1": (DIGEST_PROMPT_AI_VALUE, DIGEST_AI_VALUE_SCHEMA),
     "ai_value-digest-v2": (DIGEST_PROMPT_AI_VALUE_V2, DIGEST_AI_VALUE_SCHEMA_V2),
+    "ai_value-digest-v3": (DIGEST_PROMPT_AI_VALUE_V3, DIGEST_AI_VALUE_SCHEMA_V3),
 }
 
 
@@ -97,6 +98,17 @@ async def _ai_value_compose(selected: list[Row], ctx: DigestContext) -> Any:
                 draft.pop("highlights", None)
         else:
             draft.pop("highlights", None)
+        picks = draft.pop("picks", None)
+        valid: list[dict[str, str]] = []
+        for pick in picks if isinstance(picks, list) else []:
+            if not isinstance(pick, dict):
+                continue
+            source_id, hook = str(pick.get("source_id", "")), pick.get("hook")
+            if (source_id.isdigit() and 1 <= int(source_id) <= len(selected) and isinstance(hook, str)
+                    and hook.strip() and all(p["source_id"] != source_id for p in valid)):
+                valid.append({"source_id": source_id, "hook": hook.strip()})
+        if valid:
+            draft["picks"] = valid[:3]
     return draft
 
 

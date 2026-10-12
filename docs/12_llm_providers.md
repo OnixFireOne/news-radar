@@ -165,3 +165,17 @@ alpha. `analyzer/jev_classifier.py` — вторая реализация пор
 Цена и её источник сохраняются без пересчёта; отсутствующая цена остаётся NULL.
 Вызовы без ответа провайдера могут иметь нулевые счётчики и неизвестную цену;
 транспортные повторы не становятся отдельными строками учёта.
+
+## Замер дайджеста: gpt-6-sol vs gpt-6.1-sol (12.10)
+
+`tests/eval_digest_models.py` — только чтение БД: берёт статьи последних дайджестов `articles` из
+`digest_messages`, гонит промпт `ai_value` (версия из `settings.json`) через `--models model:tool|text`,
+пишет JSON и md для чтения в `tests/golden/digest_runs/`. Ничего не публикует, `in_digest` не трогает.
+
+`gpt-6.1-sol` добавлена в профиль `openai.chat_completions` (цена = sol, $2/$10), в маршрут не поставлена.
+Повадки: `reasoning_effort` только low..max, function tools на `/chat/completions` нет → только текстовый
+режим. Прогон 12.10 на дайджестах 8 и 9 (по 7 статей): 6.1-sol ~$0.021 против $0.019 (+12%), 35 с
+против 14 с, сломанных ответов нет; тексты подробнее и аккуратнее с цифрами. **С 12.10 `digest` = gpt-6.1-sol** (решение владельца). Поле профиля
+`no_tool_models` — модели без function tools: для них `complete_json` идёт текстовым путём, даже если
+задача в `llm_strict_json_tasks` (`ProviderProfile.supports_tools`). `classify`/`knowledge` остаются
+на gpt-6-luna с tool-путём.
