@@ -31,6 +31,7 @@ class DigestPart:
     # Live site page of this part; the bot waits for it before sending the announcement.
     site_url: str | None = None
     site_status: str | None = None
+    editor_review: str | None = None
 
 
 class UnknownDigestError(ValueError):

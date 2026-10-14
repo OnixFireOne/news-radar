@@ -76,6 +76,7 @@ DEFAULT_CONFIG = {
             "quotas": {"practical": 5, "tools_research": 2, "hype": 1},
             "tie_break": "temperature",
             "candidates_list": {"enabled": False, "min_score": 6},
+            "editor_review": {"enabled": False, "candidates": 20, "text_chars": 600},
             "min_value_score": 5,
             "carryover_days": 0,  # >0: unselected articles stay in the pool for N days (quota selection)
             "max_items": 8,

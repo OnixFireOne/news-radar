@@ -84,7 +84,7 @@
     "protocol": "chat_completions",
     "auth_style": "bearer",
     "strict_tools": true,
-    "models": {"default": "gpt-6-luna", "classify": "gpt-6-luna", "digest": "gpt-6.1-sol", "knowledge": "gpt-6-luna"},
+    "models": {"default": "gpt-6-luna", "classify": "gpt-6-luna", "digest": "gpt-6.1-sol", "knowledge": "gpt-6-luna", "editor": "gpt-6.1-sol"},
     "models_path": "/models",
     "cost_source": "table",
     "price_table": {

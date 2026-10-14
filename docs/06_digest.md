@@ -1,5 +1,18 @@
 # Digest: генерация и отправка
 
+## ИИ-редактор выпуска
+
+Для категории `articles` после отбора и публикации может запускаться отдельный редактор: он сравнивает
+статьи выпуска с лучшими статьями остатка пула и советует админу замены, отмечает дубли и дополнения.
+Советы не меняют выпуск, сайт и канал. Они приходят пользователям `ADMIN_USERS` отдельным личным
+сообщением после статистики; сообщение отправляется обычным текстом.
+
+Флаг `digest_templates.ai_value.editor_review.enabled` по умолчанию `false`. Рядом настраиваются
+`candidates` (20) и `text_chars` (600). Полный сырой ответ, разобранные рекомендации, модель,
+версия промпта и соответствие коротких ID статьям хранятся в `data/editor_reviews/YYYY-MM-DD-articles.json`.
+Для замера на старом выпуске: `python tests/eval_editor_review.py --digest-id N`. Ожидаемая стоимость
+одного разбора на `gpt-6.1-sol` — около $0.02; фактическая цена зависит от длины статей и ответа.
+
 ## Priority queue (4 tier)
 
 ```python
@@ -365,3 +378,7 @@ NULL (выпуск без сайта). `ok` подтверждает комми�
 cd /opt/news-radar && docker compose -f docker-compose.server.yml run --rm --no-deps -v "$PWD/scripts:/app/scripts:ro" -v "$PWD/knowledge:/app/knowledge:ro" analyzer python scripts/migrate_knowledge_to_site.py --dry-run --root /app
 cd /opt/news-radar && docker compose -f docker-compose.server.yml run --rm --no-deps -v "$PWD/scripts:/app/scripts:ro" -v "$PWD/knowledge:/app/knowledge:ro" analyzer python scripts/migrate_knowledge_to_site.py --commit --root /app
 ```
+Чтобы включить: `enabled: true` **и** `"editor"` последним в `categories.articles.extras` (вне списка
+шаг не вызывается). Замер 14.10 на выпусках 8 и 9 — `tests/golden/editor_runs/`: ~7.5k токенов на
+вход, ~400 на выход, $0.019. Заголовок статьи — первая строка текста (`candidate_title`), у части
+статей это первый абзац.

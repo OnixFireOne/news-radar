@@ -307,6 +307,7 @@ async def generate_digest(hours: Optional[int] = Query(None, ge=1, le=48), force
             if not responses:
                 return {"status": "dispatched", "name": spec.name if spec else name, "parts": []}
             result = {**responses[0], "parts": responses}
+            result["editor_review"] = next((part.editor_review for part in reversed(parts) if part.editor_review), None)
             if analyzer.cfg.get("digest_stats", {}).get("enabled", False):
                 try:
                     cfg = {key: analyzer.cfg.get(key, default) for key, default in (
