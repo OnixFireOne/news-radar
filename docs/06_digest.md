@@ -378,7 +378,7 @@ NULL (выпуск без сайта). `ok` подтверждает комми�
 cd /opt/news-radar && docker compose -f docker-compose.server.yml run --rm --no-deps -v "$PWD/scripts:/app/scripts:ro" -v "$PWD/knowledge:/app/knowledge:ro" analyzer python scripts/migrate_knowledge_to_site.py --dry-run --root /app
 cd /opt/news-radar && docker compose -f docker-compose.server.yml run --rm --no-deps -v "$PWD/scripts:/app/scripts:ro" -v "$PWD/knowledge:/app/knowledge:ro" analyzer python scripts/migrate_knowledge_to_site.py --commit --root /app
 ```
-Чтобы включить: `enabled: true` **и** `"editor"` последним в `categories.articles.extras` (вне списка
+Включён в settings 14.10. Для работы нужны оба: `enabled: true` **и** `"editor"` последним в `categories.articles.extras` (вне списка
 шаг не вызывается). Замер 14.10 на выпусках 8 и 9 — `tests/golden/editor_runs/`: ~7.5k токенов на
 вход, ~400 на выход, $0.019. Заголовок статьи — первая строка текста (`candidate_title`), у части
 статей это первый абзац.

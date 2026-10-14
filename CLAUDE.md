@@ -62,7 +62,7 @@
 
 - **Запуск — напрямую через Bash, в фоне** (`run_in_background`), чтобы чат оставался свободным; по завершении приходит уведомление:
   `codex exec -C <repo> -s workspace-write -m <model> -o <файл-ответа> "<бриф>"` · продолжить сессию: `codex exec resume <session_id> "<уточнение>"`.
-  Модели: `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`. MCP-мост `codex-bridge` (`~/.codex-bridge/`) нужен только чатам без shell (Cowork, Claude Desktop); Claude Code без него обходится.
+  Модели: **по умолчанию `gpt-6.1-sol`** (решение владельца 14.10: сильнее `gpt-6-sol` при той же цене); есть также `gpt-6-astra`, `gpt-6-sol`, `gpt-6-luna`. В фоне добавлять `< /dev/null`, иначе Codex может зависнуть на чтении stdin. MCP-мост `codex-bridge` (`~/.codex-bridge/`) нужен только чатам без shell (Cowork, Claude Desktop); Claude Code без него обходится.
 - **Бриф самодостаточный:** цель, файлы, критерии приёмки, ограничения. Длинный бриф — файлом, в промпте ссылка на него. Codex сам читает `AGENTS.md` → `CLAUDE.md`, но контекста этой сессии не видит.
 - **Codex не достаёт до Docker** (песочница режет `docker.sock`) — pytest и mypy гоняет Claude Code.
 - **Codex не пишет в `.git`** — коммиты делает Claude Code.
