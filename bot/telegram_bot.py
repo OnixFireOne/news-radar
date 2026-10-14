@@ -288,6 +288,8 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
     if digest.get("stats"):
         await send_digest_stats(ctx.bot, digest["stats"])
+    if digest.get("editor_review"):
+        await send_digest_stats(ctx.bot, digest["editor_review"])
 
 
 async def send_digest_stats(bot: Bot, text: str) -> None:
@@ -503,6 +505,8 @@ async def perform_scheduled_digest(app: Application, name: str | None = None) ->
                 await publish_channels(app.bot, [part], channels)
         if digest.get("stats"):
             await send_digest_stats(app.bot, digest["stats"])
+        if digest.get("editor_review"):
+            await send_digest_stats(app.bot, digest["editor_review"])
         return
 
     # The announcement links the site page, which is deployed a minute or two after the commit.
@@ -540,6 +544,8 @@ async def perform_scheduled_digest(app: Application, name: str | None = None) ->
 
     if digest.get("stats"):
         await send_digest_stats(app.bot, digest["stats"])
+    if digest.get("editor_review"):
+        await send_digest_stats(app.bot, digest["editor_review"])
 
 
 # A digest slot missed while the host slept still runs on wake-up, once, if within this window

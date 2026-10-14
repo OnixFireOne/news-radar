@@ -735,7 +735,7 @@ class NewsAnalyzer:
                 continue
             result = await self.run_category(cat, digest.name, hours, force, return_raw, _since=since, _run_id=run_id)
             if result:
-                parts.append(DigestPart(cat.name, result, self._last_digest_id, self._last_site_url, self._last_site_status))
+                parts.append(DigestPart(cat.name, result, self._last_digest_id, self._last_site_url, self._last_site_status, self._last_editor_review))
         return parts
 
     async def run_category(self, cat: CategorySpec, digest_name: str | None,
@@ -747,6 +747,7 @@ class NewsAnalyzer:
         self._last_digest_id: int | None = None
         self._last_site_url: str | None = None
         self._last_site_status: str | None = None
+        self._last_editor_review: str | None = None
         spec = cat
         template_name = cat.template
         rules = self.cfg.get("digest_rules", {}) if self.cfg else {}
@@ -1083,6 +1084,7 @@ class NewsAnalyzer:
                         await EXTRAS.get(extra_name)(selected, digest_ctx)
                     digest_content, parse_mode = writer.render(draft, selected, digest_ctx)
                     self._last_site_status = digest_ctx.artifacts.get("site_status")
+                    self._last_editor_review = digest_ctx.artifacts.get("editor_review")
                     site_cfg = self.cfg.get("site", {}) if self.cfg else {}
                     if isinstance(site_cfg, dict) and site_cfg.get("live", False):
                         self._last_site_url = digest_ctx.artifacts.get("site_digest_url")

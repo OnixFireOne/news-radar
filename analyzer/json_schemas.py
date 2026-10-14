@@ -2,6 +2,23 @@
 
 from llm_core.transport import JsonSchemaTool
 
+EDITOR_REVIEW_SCHEMA = JsonSchemaTool(
+    "submit_editor_review", "Review selected digest articles against candidates",
+    {"type": "object", "properties": {
+        "verdict": {"type": "string", "enum": ["ok", "improve"]},
+        "summary": {"type": "string"},
+        "swaps": {"type": "array", "items": {"type": "object", "properties": {
+            "out_id": {"type": "string"}, "in_id": {"type": "string"}, "reason": {"type": "string"}},
+            "required": ["out_id", "in_id", "reason"]}},
+        "duplicates": {"type": "array", "items": {"type": "object", "properties": {
+            "id_a": {"type": "string"}, "id_b": {"type": "string"}, "reason": {"type": "string"}},
+            "required": ["id_a", "id_b", "reason"]}},
+        "additions": {"type": "array", "items": {"type": "object", "properties": {
+            "id": {"type": "string"}, "reason": {"type": "string"}},
+            "required": ["id", "reason"]}},
+    }, "required": ["verdict", "summary", "swaps", "duplicates", "additions"]},
+)
+
 
 def _object(strings: tuple[str, ...], arrays: tuple[str, ...] = ()) -> dict[str, object]:
     properties: dict[str, object] = {name: {"type": "string"} for name in strings}

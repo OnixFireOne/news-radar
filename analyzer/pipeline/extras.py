@@ -16,6 +16,27 @@ from analyzer.knowledge_publisher import blob_url
 logger = logging.getLogger("analyzer.analyzer")
 
 
+@EXTRAS.register("editor")
+async def editor(selected: list[Row], ctx: DigestContext) -> None:
+    options = ctx.template_cfg.get("editor_review", {})
+    if not isinstance(options, Mapping) or not options.get("enabled", False):
+        return
+    pool = ctx.artifacts.get("pool")
+    if not pool:
+        return
+    try:
+        from analyzer.editor_review import run_editor_review
+        result = await run_editor_review(
+            ctx.analyzer.llm, selected, pool, ctx.template_cfg,
+            ctx.artifacts.get("source_map", {}),
+            str(ctx.artifacts.get("digest_name") or ctx.artifacts.get("category_name") or "articles"),
+        )
+        if result:
+            ctx.artifacts["editor_review"] = result
+    except Exception:
+        logger.warning("Editor review unavailable", exc_info=True)
+
+
 def _table_text(value: object) -> str:
     return re.sub(r"\s+", " ", str(value or "")).strip().replace("\\", "\\\\").replace("|", "\\|")
 
