@@ -13,8 +13,10 @@ Auto-sends named digests at configured local times.
 """
 
 import asyncio
+import html
 import logging
 import os
+import re
 import sys
 from datetime import datetime, time
 from urllib.parse import urlencode
@@ -24,6 +26,7 @@ from pathlib import Path
 
 import httpx
 from telegram import Update, BotCommand, Bot
+from telegram.error import BadRequest
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -289,13 +292,27 @@ async def cmd_digest(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     if digest.get("stats"):
         await send_digest_stats(ctx.bot, digest["stats"])
     if digest.get("editor_review"):
-        await send_digest_stats(ctx.bot, digest["editor_review"])
+        await send_digest_stats(ctx.bot, digest["editor_review"], "HTML")
 
 
-async def send_digest_stats(bot: Bot, text: str) -> None:
+def html_to_plain(text: str) -> str:
+    """Keep link targets visible when Telegram rejects our HTML."""
+    text = re.sub(r'<a href="([^"]*)">(.*?)</a>', r"\2 — \1", text)
+    return html.unescape(re.sub(r"<[^>]+>", "", text))
+
+
+async def send_digest_stats(bot: Bot, text: str, parse_mode: str | None = None) -> None:
     for user_id in sorted(ADMIN_USERS):
         try:
-            await bot.send_message(chat_id=user_id, text=text, parse_mode=None)
+            try:
+                await bot.send_message(chat_id=user_id, text=text, parse_mode=parse_mode,
+                                       disable_web_page_preview=True if parse_mode else None)
+            except BadRequest:
+                if parse_mode is None:
+                    raise
+                logger.warning("Admin message HTML rejected, resending as plain text", exc_info=True)
+                await bot.send_message(chat_id=user_id, text=html_to_plain(text), parse_mode=None,
+                                       disable_web_page_preview=True)
         except Exception:
             logger.warning("Failed to send digest statistics to admin %s", user_id, exc_info=True)
 
@@ -506,7 +523,7 @@ async def perform_scheduled_digest(app: Application, name: str | None = None) ->
         if digest.get("stats"):
             await send_digest_stats(app.bot, digest["stats"])
         if digest.get("editor_review"):
-            await send_digest_stats(app.bot, digest["editor_review"])
+            await send_digest_stats(app.bot, digest["editor_review"], "HTML")
         return
 
     # The announcement links the site page, which is deployed a minute or two after the commit.
@@ -545,7 +562,7 @@ async def perform_scheduled_digest(app: Application, name: str | None = None) ->
     if digest.get("stats"):
         await send_digest_stats(app.bot, digest["stats"])
     if digest.get("editor_review"):
-        await send_digest_stats(app.bot, digest["editor_review"])
+        await send_digest_stats(app.bot, digest["editor_review"], "HTML")
 
 
 # A digest slot missed while the host slept still runs on wake-up, once, if within this window
