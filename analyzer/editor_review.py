@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import random
@@ -131,33 +132,56 @@ def parse_review(data: object, ids: Mapping[str, Row] | Sequence[str]) -> Editor
     return EditorReview(data["verdict"], swaps, duplicates, additions, summary)
 
 
+_ID_RE = re.compile(r"\b[SC]\d+\b")
+
+
+def _short(title: str, limit: int) -> str:
+    return title if len(title) <= limit else title[:limit - 1].rstrip() + "…"
+
+
 def format_review(review: EditorReview, rows: Mapping[str, Row], source_map: Mapping[str, str]) -> str:
-    lines = [f"🧐 Редактор выпуска: {'всё хорошо' if review.verdict == 'ok' else 'есть предложения'}"]
-    if review.summary:
-        lines.append(review.summary)
+    """Render Telegram HTML; every model and article string is escaped."""
+    verdict = "всё хорошо" if review.verdict == "ok" else "есть предложения"
+
+    def prose(text: str) -> str:
+        # Readers do not know internal S1/C19 ids, so name the article instead.
+        named = _ID_RE.sub(lambda match: f"«{_short(candidate_title(rows[match.group()]), 40)}»"
+                           if match.group() in rows else match.group(), text)
+        return html.escape(named, quote=False)
 
     def article(article_id: str) -> str:
         row = rows[article_id]
         url = str(row.get("url") or "")
         if not url and article_id.startswith("S"):
             url = source_map.get(article_id[1:], "")
+        title = html.escape(_short(candidate_title(row), 80), quote=False)
+        link = f'<a href="{html.escape(url)}">{title}</a>' if url else title
         score = row.get("value_score")
-        return f"{candidate_title(row)} (оценка {score if score is not None else '—'})" + (f" — {url}" if url else "")
+        return f"{link} · {html.escape(str(score)) if score is not None else '—'}"
 
-    if review.swaps:
-        lines.append("Заменить:")
-        lines.extend(f"• {article(out_id)} → {article(in_id)}: {reason}" for out_id, in_id, reason in review.swaps)
-    if review.duplicates:
-        lines.append("Дубли:")
-        lines.extend(f"• {article(first)} / {article(second)}: {reason}" for first, second, reason in review.duplicates)
-    if review.additions:
-        lines.append("Добавить:")
-        lines.extend(f"• {article(article_id)}: {reason}" for article_id, reason in review.additions)
+    def reason(text: str) -> str:
+        return f"<blockquote>{prose(text)}</blockquote>"
+
+    blocks = [f"🧐 <b>Редактор выпуска</b> — {verdict}"]
+    if review.summary:
+        blocks.append(f"<blockquote expandable>{prose(review.summary)}</blockquote>")
+    sections: list[tuple[str, list[str]]] = [
+        ("🔁 <b>Заменить</b>", [f"❌ {article(out_id)}\n✅ {article(in_id)}\n{reason(why)}"
+                               for out_id, in_id, why in review.swaps]),
+        ("👯 <b>Дубли</b>", [f"• {article(first)}\n• {article(second)}\n{reason(why)}"
+                            for first, second, why in review.duplicates]),
+        ("➕ <b>Добавить</b>", [f"• {article(article_id)}\n{reason(why)}"
+                               for article_id, why in review.additions]),
+    ]
+    for header, items in sections:
+        # The header travels with its first item so truncation never leaves it dangling.
+        blocks.extend(f"\n{header}\n{item}" if index == 0 else item for index, item in enumerate(items))
+    # Whole blocks only: cutting inside one would leave unbalanced HTML tags.
     result: list[str] = []
-    for line in lines:
-        if sum(len(part) + 1 for part in result) + len(line) > 3500:
+    for block in blocks:
+        if sum(len(part) + 1 for part in result) + len(block) > 3500:
             break
-        result.append(line)
+        result.append(block)
     return "\n".join(result)
 
 

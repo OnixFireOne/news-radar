@@ -122,4 +122,45 @@ async def test_bot_sends_advice_after_stats_to_admins() -> None:
         await bot.perform_scheduled_digest(app, "articles")
     private = [(call.kwargs["chat_id"], call.kwargs["text"], call.kwargs["parse_mode"])
                for call in telegram.send_message.call_args_list if call.kwargs.get("chat_id") == 456]
-    assert private == [(456, "stats", None), (456, "advice", None)]
+    assert private == [(456, "stats", None), (456, "advice", "HTML")]
+
+
+def test_format_html_escapes_untrusted_text_and_names_ids() -> None:
+    bad = {**row(2), "text": "A <b>&</b> title\nbody", "url": 'https://example.org/2?a=1&b="x"'}
+    review = parse_review({"verdict": "improve", "summary": "C1 beats S1 <script>", "swaps": [
+        {"out_id": "S1", "in_id": "C1", "reason": "C1 is deeper than S1 & S9"}],
+        "duplicates": [], "additions": []}, ["S1", "C1"])
+    assert review is not None
+    result = format_review(review, {"S1": row(1), "C1": bad}, {})
+    assert "<script>" not in result and "&lt;script&gt;" in result
+    assert "A &lt;b&gt;&amp;&lt;/b&gt; title" in result
+    assert 'href="https://example.org/2?a=1&amp;b=&quot;x&quot;"' in result
+    assert "«Title 1»" in result and "S9" in result
+    assert "<blockquote>«A &lt;b&gt;&amp;&lt;/b&gt; title» is deeper" in result
+
+
+def test_format_html_truncates_on_whole_blocks() -> None:
+    ids = [f"S{i}" for i in range(1, 4)] + [f"C{i}" for i in range(1, 4)]
+    review = parse_review({"verdict": "improve", "summary": "x" * 3000, "swaps": [
+        {"out_id": f"S{i}", "in_id": f"C{i}", "reason": "r" * 400} for i in range(1, 4)],
+        "duplicates": [], "additions": []}, ids)
+    assert review is not None
+    rows = {key: row(index) for index, key in enumerate(ids, 1)}
+    result = format_review(review, rows, {})
+    assert len(result) <= 3500
+    assert result.count("<blockquote") == result.count("</blockquote>")
+    assert result.count("<a ") == result.count("</a>")
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(importlib.util.find_spec("telegram") is None, reason="Run in bot image")
+async def test_bot_resends_rejected_html_as_plain_text() -> None:
+    bot: Any = importlib.import_module("bot.telegram_bot")
+    from telegram.error import BadRequest
+    telegram = Mock(send_message=AsyncMock(side_effect=[BadRequest("Can't parse entities"), None]))
+    with patch.object(bot, "ADMIN_USERS", {456}):
+        await bot.send_digest_stats(telegram, '<b>Hi</b> <a href="https://x.org/?a=1&amp;b=2">T &amp; U</a>', "HTML")
+    first, second = telegram.send_message.call_args_list
+    assert first.kwargs["parse_mode"] == "HTML"
+    assert second.kwargs["parse_mode"] is None
+    assert second.kwargs["text"] == "Hi T & U — https://x.org/?a=1&b=2"
