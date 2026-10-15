@@ -122,7 +122,7 @@ async def test_bot_sends_advice_after_stats_to_admins() -> None:
         await bot.perform_scheduled_digest(app, "articles")
     private = [(call.kwargs["chat_id"], call.kwargs["text"], call.kwargs["parse_mode"])
                for call in telegram.send_message.call_args_list if call.kwargs.get("chat_id") == 456]
-    assert private == [(456, "stats", None), (456, "advice", None)]
+    assert private == [(456, "stats", None), (456, "advice", "HTML")]
 
 
 def test_format_html_escapes_untrusted_text_and_names_ids() -> None:
