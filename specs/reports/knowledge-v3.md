@@ -17,7 +17,7 @@
 
 - `pytest -q --ignore=tests/collector`: 396 passed, 20 skipped. `tests/collector/` не собирается в образе analyzer (как и до изменений).
 - `mypy`: 2 ошибки `unused-ignore` в `tests/test_strict_json.py` — есть и на HEAD до изменений, новых нет.
-- Eval «до/после» — ждёт свежую копию БД с сервера (скачивание делает владелец).
+- Eval «до/после» (23.10, снимок `data/news.server-2026-10-23.db`, статьи 1695 ML Intern · 2494 Claude Code · 2433 research · 2518 tutorial · 2452 opinion; варианты v2/luna, v3/luna, v3/6.1-sol) — **не состоялся**: все 15 вызовов → HTTP 429 `insufficient_quota`, у ключа OpenAI кончились кредиты. Затрат нет, пустые результаты удалены. Повторить той же командой после пополнения.
 
 ## Новые зависимости
 
@@ -39,10 +39,12 @@
 - `tests/test_strict_json.py`: 2 устаревших `type: ignore[method-assign]` валят `mypy` (было до knowledge-v3).
 - Локально пропала внешняя сеть `ai-network` (после перезапуска OrbStack); создана заново `docker network create ai-network`.
 
+- **Прод:** по `llm_usage` снимка все LLM-вызовы с 23.10 01:09 UTC — с нулём токенов (последний успешный 22.10 23:09 UTC); выпуска за 23.10 в `digests` нет. Та же причина — нет кредитов.
+
 ## Команды приёмки
 
 ```bash
 docker compose run --rm --no-deps analyzer python -m pytest -q tests/test_knowledge_publisher_v3.py tests/test_knowledge_publisher_full.py tests/test_knowledge_publisher.py tests/test_strict_json.py
 docker compose run --rm --no-deps analyzer python -m mypy
-docker compose run --rm --no-deps analyzer python tests/eval_knowledge_prompts.py --db data/news.server-2026-10-23.db --message-id <id> --variants knowledge-v2:gpt-6-luna knowledge-v3:gpt-6-luna knowledge-v3:gpt-6.1-sol
+docker compose run --rm --no-deps analyzer python tests/eval_knowledge_prompts.py --db data/news.server-2026-10-23.db --message-id 1695 --message-id 2494 --message-id 2433 --message-id 2518 --message-id 2452 --variants knowledge-v2:gpt-6-luna knowledge-v3:gpt-6-luna knowledge-v3:gpt-6.1-sol
 ```
