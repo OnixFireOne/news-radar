@@ -66,7 +66,7 @@
     "dir": "knowledge",
     "min_value_score": 6,
     "max_input_chars": 40000,
-    "prompt_version": "knowledge-v2",
+    "prompt_version": "knowledge-v3",
     "format": "full",
     "split_over_chars": 150000,
     "targets": [],
