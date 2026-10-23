@@ -396,13 +396,19 @@ Return strictly JSON:
 "read_original_if": "...", "tags": ["tag", "tag"]}}
 - title: clear Russian title, up to 10 words.
 - tldr: one central idea plus who benefits and how, without jargon.
-- glossary: up to 5 unfamiliar terms the reader needs, each as "term — one short explanation".
-  Do not explain familiar AI-tool vocabulary unnecessarily. Return [] when no explanation is needed.
+- glossary: up to 5 terms from the article's own field (ML, security, databases, etc.) that this reader
+  would not know, each as "term — one short explanation". The reader already knows everyday AI-tool
+  words: never explain prompt, agent, LLM, token, context, API, MCP, MCP server, hook, skill, plugin,
+  subagent, benchmark, fine-tuning, RAG, Claude Code, Cursor, ChatGPT. When in doubt, leave a term out.
+  Return [] when no explanation is needed; for articles about AI coding tools this is the usual case.
 - context: who the author is and what problem they started from, only when supported by the article.
 - key_points: 3–6 ideas, not a list of numbers. Include a number only if it changes the conclusion.
-- table: if the article compares similar projects, models, prices or other items, preserve the useful
-  comparison as an array of strings "a | b | c". First row is the header; 2–5 columns, 2–9 rows total.
-  Do not include Markdown separator rows, outer pipes or line breaks inside cells. Otherwise return [].
+- table: if the article contains a table, or compares 3+ similar items (projects, models, prices,
+  methods) with the same attributes, you MUST fill this field: keep the comparison, with exact values
+  copied from the article, as an array of strings "a | b | c". First row is the header; 2–5 columns,
+  2–9 rows total; pick the most useful columns and rows if the source is larger. Do not include
+  Markdown separator rows, outer pipes or line breaks inside cells. Write the header and plain-word
+  cells in Russian; keep names, versions and prices as in the article. Otherwise return [].
 - how: briefly explain the approach or steps; keep commands, settings and names exact.
 - results: measured outcomes and numbers from the article, without repeating key_points or the table.
 - limitations: unverified claims, caveats, costs and weak points supported by the source.

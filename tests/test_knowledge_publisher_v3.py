@@ -61,7 +61,7 @@ async def test_v3_uses_own_schema_prompt_and_order() -> None:
 
 
 @pytest.mark.parametrize("table", [["A | B"], ["A | B", "C | D | E"], ["A", "B"],
-                                    ["A | B | C | D | E | F"] * 2, ["A | B"] * 10,
+                                    ["A | B | C | D | E | F"] * 2, ["A | B"] * 10, [" | B", "C | D"],
                                     ["A | B", "C\nD | E"], "A | B", [1, 2]])
 @pytest.mark.asyncio
 async def test_bad_table_does_not_lose_doc(table: object, caplog: pytest.LogCaptureFixture) -> None:
@@ -87,3 +87,8 @@ def test_schema_v3_adds_only_two_required_arrays() -> None:
 def test_valid_table_boundaries() -> None:
     assert render_table(["A | B"] * 9).count("\n") == 9
     assert render_table(["A | B | C | D | E"] * 2)
+
+
+def test_empty_data_cell_is_kept_as_dash() -> None:
+    table = render_table(["Проект | Модель | Цена", "A | m | $2", "Итого |  | $2"])
+    assert "| Итого | — | $2 |" in table

@@ -363,11 +363,12 @@ def render_table(value: object) -> str:
         return ""
     rows = [[cell.strip() for cell in row.split("|")] for row in value]
     width = len(rows[0])
-    if not 2 <= width <= 5 or any(len(row) != width or any(not cell or "\n" in cell or "\r" in cell
-                                                         for cell in row) for row in rows):
+    # Data cells may be empty (e.g. a "Total" row); header cells may not.
+    if not 2 <= width <= 5 or not all(rows[0]) or any(
+            len(row) != width or any("\n" in cell or "\r" in cell for cell in row) for row in rows):
         logger.warning("Knowledge: invalid table omitted")
         return ""
-    lines = ["| " + " | ".join(row) + " |" for row in rows]
+    lines = ["| " + " | ".join(cell or "—" for cell in row) + " |" for row in rows]
     lines.insert(1, "| " + " | ".join(["---"] * width) + " |")
     return "\n".join(lines)
 
