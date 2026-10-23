@@ -380,8 +380,7 @@ def build_full_body(result: Mapping[str, Any], prompt_version: str = "knowledge-
     parts: list[str] = []
     sections: tuple[tuple[str, str], ...] = _FULL_SECTIONS
     if prompt_version == "knowledge-v3":
-        sections = (_FULL_SECTIONS[:1] + (("glossary", "Термины"),) + _FULL_SECTIONS[1:3]
-                    + (("table", "Таблица"),) + _FULL_SECTIONS[3:])
+        sections = _FULL_SECTIONS[:3] + (("table", "Таблица"),) + _FULL_SECTIONS[3:]
     for key, heading in sections:
         if key == "table":
             table = render_table(result.get(key))

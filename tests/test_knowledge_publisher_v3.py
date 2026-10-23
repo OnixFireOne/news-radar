@@ -18,7 +18,7 @@ def answer(**overrides: Any) -> dict[str, Any]:
     return {"title": "Статья", "tldr": "Суть", "context": "Контекст", "key_points": ["А", "Б", "В"],
             "how": "Подход", "results": "Итог", "limitations": "Оговорка", "takeaways": ["Урок"],
             "read_original_if": "Нужен код", "tags": ["ai", "tools"],
-            "glossary": ["LoRA — способ дообучения"], "table": ["Модель | Цена", "A | $2"], **overrides}
+            "table": ["Модель | Цена", "A | $2"], **overrides}
 
 
 def headings(body: str) -> list[str]:
@@ -50,7 +50,7 @@ async def test_v3_uses_own_schema_prompt_and_order() -> None:
     llm.complete_json.return_value = answer()
     doc = await generate_doc(llm, ROW, {"format": "full", "prompt_version": "knowledge-v3"})
     assert doc is not None
-    assert headings(doc.body) == ["Коротко", "Термины", "Контекст", "Главное", "Таблица", "Как сделано",
+    assert headings(doc.body) == ["Коротко", "Контекст", "Главное", "Таблица", "Как сделано",
                                   "Результаты", "Ограничения", "Что взять себе", "Читать оригинал, если…"]
     assert "| Модель | Цена |\n| --- | --- |\n| A | $2 |" in doc.body
     call = llm.complete_json.call_args.kwargs
@@ -73,15 +73,15 @@ async def test_bad_table_does_not_lose_doc(table: object, caplog: pytest.LogCapt
 
 
 def test_empty_new_fields_have_no_headings() -> None:
-    body = build_full_body(answer(glossary=[], table=[]), "knowledge-v3")
-    assert "## Термины" not in body and "## Таблица" not in body
+    body = build_full_body(answer(table=[]), "knowledge-v3")
+    assert "## Таблица" not in body
 
 
-def test_schema_v3_adds_only_two_required_arrays() -> None:
+def test_schema_v3_adds_only_table_array() -> None:
     old = cast(dict[str, Any], KNOWLEDGE_FULL_SCHEMA.schema)
     new = cast(dict[str, Any], KNOWLEDGE_FULL_SCHEMA_V3.schema)
-    assert set(new["required"]) == set(old["required"]) | {"glossary", "table"}
-    assert "ask_ai" not in new["properties"]
+    assert set(new["required"]) == set(old["required"]) | {"table"}
+    assert "ask_ai" not in new["properties"] and "glossary" not in new["properties"]
 
 
 def test_valid_table_boundaries() -> None:

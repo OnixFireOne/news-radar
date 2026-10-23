@@ -34,7 +34,7 @@ KNOWLEDGE_FULL_SCHEMA = JsonSchemaTool(
 KNOWLEDGE_FULL_SCHEMA_V3 = JsonSchemaTool(
     "submit_knowledge_full_v3", "Submit the accessible full article retelling",
     _object(("title", "tldr", "context", "how", "results", "limitations", "read_original_if"),
-            ("key_points", "takeaways", "tags", "glossary", "table")),
+            ("key_points", "takeaways", "tags", "table")),
 )
 KNOWLEDGE_BRIEF_SCHEMA = JsonSchemaTool(
     "submit_knowledge_brief", "Submit the brief article retelling",
