@@ -93,6 +93,7 @@
         "_default": {"emoji": "🔹", "label": ""}
       },
       "quotas": {"practical": 4, "tools_research": 2, "hype": 0},
+      "quota_min_score": 8,
       "tie_break": "oldest",
       "candidates_list": {"enabled": true, "min_score": 6},
       "editor_review": {"enabled": true, "candidates": 20, "text_chars": 600},

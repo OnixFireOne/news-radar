@@ -169,6 +169,11 @@ def _log_dispatch(self, event_type, sent_to, status, payload_preview="", http_st
 - крипта проходит только при `temperature ≥ crypto_min_temperature` (8) или в горячем тренде — и всё равно в пределах квоты;
 - свободные слоты до `max_items` (8) добирают practical / tools_research / `opinion` (у opinion своей квоты нет); хайп и крипта сверх квоты — никогда;
 - сортировка внутри групп и итоговая — `value_score`, затем `temperature`.
+- **мягкая квота (23.10, `quota_min_score`, дефолт `null` — как раньше; в `settings.json` — 8):** practical и
+  tools_research резервируют места только статьям с оценкой не ниже порога; слабее — соревнуются за свободные
+  места по общему рейтингу. Нет сильных статей группы — место уходит другой теме. Hype и crypto порог не касается
+  (у них нет добора). Причина — `specs/reports/editor-review-eval.md`: резерв tools_research почти всегда
+  доставался семёркам, восьмёрки ждали ~5 дней.
 
 С И4 у `ai_value` свой промпт и рендер (ниже). В `settings.json` шаблон включён 27.09.
 
