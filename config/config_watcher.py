@@ -49,6 +49,7 @@ DEFAULT_CONFIG = {
         "max_input_chars": 12000,
         "targets": ["github"],  # "local" (md into ./knowledge, tests) | "github" (Contents API, prod)
         "batch_commit": False,  # github: one commit per digest run instead of one per article
+        "prompt_version": "knowledge-v2",
         "format": "brief",  # "brief" (Идея/Вывод) | "full" (structured retelling, knowledge-v2)
         # full format: 0 = cut the article at max_input_chars (old behaviour); >0 = send the whole article,
         # and split longer ones into parts condensed to notes first, so the end of an article is never lost.

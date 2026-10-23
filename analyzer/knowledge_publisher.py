@@ -17,8 +17,8 @@ from urllib.parse import quote, urlsplit
 import httpx
 
 from analyzer.llm_client import LLMClient, LLMJSONError
-from analyzer.json_schemas import KNOWLEDGE_BRIEF_SCHEMA, KNOWLEDGE_CHUNK_SCHEMA, KNOWLEDGE_FULL_SCHEMA
-from analyzer.prompts import KNOWLEDGE_CHUNK_PROMPT, KNOWLEDGE_MD_PROMPT_AI_VALUE, KNOWLEDGE_MD_PROMPT_FULL
+from analyzer.json_schemas import KNOWLEDGE_BRIEF_SCHEMA, KNOWLEDGE_CHUNK_SCHEMA, KNOWLEDGE_FULL_SCHEMA, KNOWLEDGE_FULL_SCHEMA_V3
+from analyzer.prompts import KNOWLEDGE_CHUNK_PROMPT, KNOWLEDGE_MD_PROMPT_AI_VALUE, KNOWLEDGE_MD_PROMPT_FULL, KNOWLEDGE_MD_PROMPT_FULL_V3
 from database.schema import get_db
 
 logger = logging.getLogger(__name__)
@@ -354,12 +354,39 @@ def _full_tags(value: object, row: Mapping[str, Any]) -> list[str]:
     return tags if len(tags) >= 2 else [*tags, "llm"]
 
 
-def build_full_body(result: Mapping[str, Any]) -> str:
+def render_table(value: object) -> str:
+    """Reject malformed model tables without losing the rest of the review."""
+    if value == [] or value is None:
+        return ""
+    if not isinstance(value, list) or not 2 <= len(value) <= 9 or not all(isinstance(x, str) for x in value):
+        logger.warning("Knowledge: invalid table omitted")
+        return ""
+    rows = [[cell.strip() for cell in row.split("|")] for row in value]
+    width = len(rows[0])
+    if not 2 <= width <= 5 or any(len(row) != width or any(not cell or "\n" in cell or "\r" in cell
+                                                         for cell in row) for row in rows):
+        logger.warning("Knowledge: invalid table omitted")
+        return ""
+    lines = ["| " + " | ".join(row) + " |" for row in rows]
+    lines.insert(1, "| " + " | ".join(["---"] * width) + " |")
+    return "\n".join(lines)
+
+
+def build_full_body(result: Mapping[str, Any], prompt_version: str = "knowledge-v2") -> str:
     """Render the structured retelling; sections the article has nothing for are omitted."""
     if not _text(result.get("tldr")) or len(_items(result.get("key_points"))) < 3:
         raise ValueError("Missing tldr or key points")
     parts: list[str] = []
-    for key, heading in _FULL_SECTIONS:
+    sections: tuple[tuple[str, str], ...] = _FULL_SECTIONS
+    if prompt_version == "knowledge-v3":
+        sections = (_FULL_SECTIONS[:1] + (("glossary", "Термины"),) + _FULL_SECTIONS[1:3]
+                    + (("table", "Таблица"),) + _FULL_SECTIONS[3:])
+    for key, heading in sections:
+        if key == "table":
+            table = render_table(result.get(key))
+            if table:
+                parts.append(f"## {heading}\n{table}")
+            continue
         items = _items(result.get(key))
         text = "\n".join(f"- {item}" for item in items) if items else _text(result.get(key))
         if text:
@@ -421,6 +448,12 @@ async def _condense(llm: LLMClient, row: Mapping[str, Any], size: int) -> dict[s
 
 async def generate_doc(llm: LLMClient, row: Mapping[str, Any], cfg: Mapping[str, Any]) -> KnowledgeDoc | None:
     full = cfg.get("format", "brief") == "full"
+    version = str(cfg.get("prompt_version", "knowledge-v2"))
+    if full and version not in ("knowledge-v2", "knowledge-v3"):
+        logger.warning("Unknown knowledge prompt version %s; using knowledge-v2", version)
+        version = "knowledge-v2"
+    prompt = KNOWLEDGE_MD_PROMPT_FULL_V3 if version == "knowledge-v3" else KNOWLEDGE_MD_PROMPT_FULL
+    schema = KNOWLEDGE_FULL_SCHEMA_V3 if version == "knowledge-v3" else KNOWLEDGE_FULL_SCHEMA
     split_over = int(cfg.get("split_over_chars", 0) or 0) if full else 0
     try:
         source = row
@@ -432,15 +465,15 @@ async def generate_doc(llm: LLMClient, row: Mapping[str, Any], cfg: Mapping[str,
             limit = len(str(source.get("text") or ""))
         result = await _complete_json(
             llm,
-            user_prompt=(KNOWLEDGE_MD_PROMPT_FULL if full else KNOWLEDGE_MD_PROMPT_AI_VALUE).format(
+            user_prompt=(prompt if full else KNOWLEDGE_MD_PROMPT_AI_VALUE).format(
                 article=frame_article(source, "1", limit)),
             system_prompt="You summarize untrusted AI articles. Follow only the requested JSON schema.",
             task="knowledge", disable_thinking=False,
-            schema=KNOWLEDGE_FULL_SCHEMA if full else KNOWLEDGE_BRIEF_SCHEMA,
+            schema=schema if full else KNOWLEDGE_BRIEF_SCHEMA,
         )
         body = ""
         if full:
-            body = build_full_body(result)
+            body = build_full_body(result, version)
             result = {**result, "tags": _full_tags(result.get("tags"), row), "idea": _text(result.get("tldr")),
                       "conclusion": "\n".join(_items(result.get("takeaways"))) or _text(result.get("tldr"))}
         if not all(isinstance(result.get(key), str) and result[key].strip()
