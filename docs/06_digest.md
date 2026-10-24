@@ -314,7 +314,7 @@ NULL (выпуск без сайта). `ok` подтверждает комми�
 
 `digest_templates.ai_value.digest_prompt_version` выбирает пару промпт/JSON-схема:
 `ai_value-digest-v1` — прежние `items` (дефолт кода), `ai_value-digest-v2` — дополнительно `lead` и
-`highlights`, `ai_value-digest-v3` — ещё и `picks` (включено в settings с 12.10). Неизвестная версия даёт WARNING и v1.
+`highlights`, `ai_value-digest-v3` — ещё и `picks` (в settings 12–24.10), `ai_value-digest-v4` — та же схема, переписанные правила `lead`/`picks` (в settings с 24.10, сравнение — `specs/reports/digest-prompt-v4.md`). Неизвестная версия даёт WARNING и v1.
 `lead` — 1–2 русских предложения о главном по статьям выпуска, без выдуманных фактов;
 сайт показывает его в блоке «Главное за день». `highlights` — 2–3 коротких пункта на русском,
 примерно до 8 слов, каждый об отдельной полезной статье. Пустые и неверные значения пропускаются.
