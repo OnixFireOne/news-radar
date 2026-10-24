@@ -59,7 +59,7 @@ DEFAULT_CONFIG = {
         "ai_value": {
             "digest_prompt_version": "ai_value-digest-v1",
             "telegram": "full",
-            "announce_style": "points",  # telegram announce: "points" (highlights) | "teaser" (lead + picks, prompt v3)
+            "announce_style": "points",  # telegram announce: "points" (highlights) | "teaser" (lead + picks, prompt v3) | "cards" (linked picks + collapsed list)
             "show_md_link": True,
             "title_max_words": 10,
             "summary_max_sentences": 4,

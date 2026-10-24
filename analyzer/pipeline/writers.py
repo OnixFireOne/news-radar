@@ -119,6 +119,7 @@ def _ai_value_render(draft: Any, selected: list[Row], ctx: DigestContext) -> tup
             return build_telegram_announce(
                 draft, selected, str(url), ctx.template_cfg,
                 ctx.artifacts.get("site_now", datetime.utcnow()),
+                ctx.artifacts.get("site_review_urls", {}),
             ), "HTML"
         logger.warning("announce fallback: no site digest")
     value_json: dict[str, Any] = draft

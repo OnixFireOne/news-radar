@@ -134,11 +134,70 @@ def _teaser_announce(
     return heading + lead + title + "\n".join(lines) + rest + "\n\n" + link
 
 
+CARDS_LIMIT = 3500  # raw HTML budget, well below Telegram's 4096 visible characters
+
+
+def _cards_announce(
+    draft: Mapping[str, Any], selected: Sequence[Mapping[str, Any]], digest_url: str,
+    template_cfg: Mapping[str, Any], now: datetime, review_urls: Mapping[str, str],
+) -> str | None:
+    """Picks as linked titles with hooks, the rest as a collapsed linked list; None without picks."""
+    items = _digest_items(draft, selected)
+    by_id = {source_id: (item, row) for item, row, source_id in items}
+    raw_picks = draft.get("picks")
+    picks = [(str(pick["hook"]).strip(), str(pick["source_id"]))
+             for pick in (raw_picks if isinstance(raw_picks, list) else [])
+             if isinstance(pick, Mapping) and str(pick.get("source_id", "")) in by_id
+             and isinstance(pick.get("hook"), str) and str(pick["hook"]).strip()][:3]
+    if not picks:
+        return None
+    types = template_cfg.get("types", {})
+    default = types.get("_default", {}) if isinstance(types, Mapping) else {}
+
+    def emoji(row: Mapping[str, Any]) -> str:
+        entry = types.get(str(row.get("content_type")), default) if isinstance(types, Mapping) else {}
+        return str(entry.get("emoji") or default.get("emoji") or "🔹")
+
+    def title(source_id: str) -> str:
+        text = _fit(str(by_id[source_id][0].get("title") or "").strip(), 120)
+        url = http_url(review_urls.get(source_id))
+        return f'<a href="{escape(url, quote=True)}">{text}</a>' if url and text else text
+
+    parts = [f"🤖 <b>AI-радар — {now.day} {MONTHS[now.month - 1]}</b>"]
+    lead = draft.get("lead")
+    if isinstance(lead, str) and lead.strip():
+        parts[0] += "\n<i>" + _fit(lead.strip(), 320) + "</i>"
+    cards = [f"{emoji(by_id[sid][1])} <b>{title(sid)}</b>\n{_fit(hook, 240)}" for hook, sid in picks]
+    parts.append("<b>Стоит открыть</b>\n\n" + "\n\n".join(cards))
+    link = f'<a href="{escape(digest_url, quote=True)}">Читать выпуск на сайте →</a>'
+    picked = {source_id for _, source_id in picks}
+    rest = [sid for _, _, sid in items if sid not in picked and str(by_id[sid][0].get("title") or "").strip()]
+    lines: list[str] = []
+    budget = CARDS_LIMIT - len("\n\n".join(parts)) - len(link) - 80
+    for sid in rest:
+        line = f"{emoji(by_id[sid][1])} {title(sid)}"
+        if len(line) + 1 > budget:
+            break
+        lines.append(line)
+        budget -= len(line) + 1
+    if lines:
+        label = "Ещё " + counted(len(rest), ("статья", "статьи", "статей")) + " в выпуске"
+        parts.append(f"<blockquote expandable><b>{label}</b>\n" + "\n".join(lines) + "</blockquote>")
+    return "\n\n".join([*parts, link])
+
+
 def build_telegram_announce(
     draft: Mapping[str, Any], selected: Sequence[Mapping[str, Any]], digest_url: str,
-    template_cfg: Mapping[str, Any], now: datetime,
+    template_cfg: Mapping[str, Any], now: datetime, review_urls: Mapping[str, str] | None = None,
 ) -> str:
-    """Keep complete HTML entities while fitting the raw announcement below 1000 characters."""
+    """Keep complete HTML entities while fitting the raw announcement below 1000 characters.
+
+    The ``cards`` style is the exception: it links every article and stays below CARDS_LIMIT.
+    """
+    if template_cfg.get("announce_style") == "cards":
+        cards = _cards_announce(draft, selected, digest_url, template_cfg, now, review_urls or {})
+        if cards is not None:
+            return cards
     if template_cfg.get("announce_style") == "teaser":
         teaser = _teaser_announce(draft, selected, digest_url, template_cfg, now)
         if teaser is not None:
