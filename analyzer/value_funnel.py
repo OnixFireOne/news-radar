@@ -1,6 +1,7 @@
 """Pure conversion and quota selection for the AI value profile."""
 
 import json
+import re
 from dataclasses import dataclass
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timedelta, timezone
@@ -133,5 +134,30 @@ def select_with_quotas(
             break
         if candidates[i].get("content_type") in fill_types:
             selected.add(i)
+    # Preserve the original main selection, including truncation of oversized reservations.
+    main = [i for i in ranked if i in selected][:maximum]
+    selected = set(main)
+    bonus = cfg.get("media_bonus")
+    if isinstance(bonus, dict) and bonus.get("enabled") is True:
+        patterns = bonus.get("patterns")
+        if isinstance(patterns, list) and all(isinstance(pattern, str) for pattern in patterns):
+            try:
+                compiled = [re.compile(pattern, re.IGNORECASE) for pattern in patterns]
+            except re.error:
+                compiled = []
+            limit = max(0, int(_number(bonus.get("max_items"), 3)))
+            floor = _number(bonus.get("min_score"), minimum)
+            added = 0
+            for i in ranked:
+                if added >= limit:
+                    break
+                row = candidates[i]
+                if i in selected or row.get("content_type") not in fill_types or _rank(row)[0] < floor:
+                    continue
+                text = "\n".join((str(row.get("text") or "")[:300],
+                                   str(row.get("takeaway") or ""), str(row.get("summary") or "")))
+                if any(pattern.search(text) for pattern in compiled):
+                    selected.add(i)
+                    added += 1
     # Filtering the globally ranked indices preserves input order for tied scores.
-    return [dict(candidates[i]) for i in ranked if i in selected][:maximum]
+    return [dict(candidates[i]) for i in ranked if i in selected]

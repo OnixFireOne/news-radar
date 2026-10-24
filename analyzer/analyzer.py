@@ -868,6 +868,11 @@ class NewsAnalyzer:
                                      "digest_name": digest_name, "category_name": cat.name})
         selected = SELECTORS.get(spec.select)(rows_dicts, digest_ctx)
         alerts_count, trends_count, high_count = digest_ctx.artifacts["tier_counts"]
+        if spec.select == "quotas":
+            from analyzer.value_funnel import select_with_quotas
+
+            main_selected = select_with_quotas(rows_dicts, {**template_cfg, "media_bonus": {}})
+            logger.info("Digest media bonus: %d additional articles selected", len(selected) - len(main_selected))
 
         if not selected:
             logger.warning("Digest priority queue produced 0 candidates")
@@ -932,7 +937,7 @@ class NewsAnalyzer:
 
         # For Agent mode, strictly enforce the max limit after dedup.
         # For Legacy Mode, we KEEP the oversized `selected` list and let the LLM prune it.
-        if return_raw:
+        if return_raw and spec.select != "quotas":
             selected = selected[:digest_max]
 
         # ── Build LLM prompt ──

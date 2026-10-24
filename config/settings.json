@@ -93,6 +93,26 @@
         "_default": {"emoji": "🔹", "label": ""}
       },
       "quotas": {"practical": 4, "tools_research": 2, "hype": 0},
+      "_comment_media_bonus": "До 3 дополнительных медиа-статей сверх основного отбора; min_score: null использует min_value_score, patterns — регулярки без учёта регистра.",
+      "media_bonus": {
+        "enabled": true,
+        "max_items": 3,
+        "min_score": null,
+        "patterns": [
+          "\\bvideo\\b",
+          "\\bвидео(?!карт|памят|звон|конф)\\w*",
+          "\\b(?:Veo|Sora|Kling|Runway|Pika|Hailuo|Seedance|Midjourney|ComfyUI|Suno|Udio)\\b",
+          "\\b(?:Stable\\s+Diffusion|Nano\\s+Banana)\\b",
+          "\\bFlux[\\s.-]?(?:\\d|dev|schnell|pro|kontext)",
+          "\\bimage\\s+generation\\b",
+          "\\bгенераци\\w*\\s+(?:изображени\\w*|картин\\w*|иллюстраци\\w*|музык\\w*)",
+          "\\btext-to-(?:image|video)\\b",
+          "\\b(?:озвучк\\w*|voiceover|TTS|reels|shorts|ролик\\w*)\\b",
+          "\\bcontent\\s+creation\\b",
+          "\\bконтент[-\\s](?:план|завод)\\w*",
+          "\\bгенераци\\w*\\s+контент\\w*"
+        ]
+      },
       "quota_min_score": 8,
       "tie_break": "oldest",
       "candidates_list": {"enabled": true, "min_score": 6},

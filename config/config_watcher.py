@@ -75,6 +75,7 @@ DEFAULT_CONFIG = {
                 "_default": {"emoji": "🔹", "label": ""},
             },
             "quotas": {"practical": 5, "tools_research": 2, "hype": 1},
+            "media_bonus": {"enabled": False, "max_items": 3, "min_score": None, "patterns": []},
             "quota_min_score": None,  # set: practical/tools_research reserve slots only at this score or higher
             "tie_break": "temperature",
             "candidates_list": {"enabled": False, "min_score": 6},
