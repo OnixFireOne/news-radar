@@ -210,6 +210,11 @@ async def site(selected: list[Row], ctx: DigestContext) -> None:
             ctx.artifacts["draft"], rows, ctx.artifacts.get("pool", []), slugs, ctx.template_cfg, cfg, now,
         )
         ctx.artifacts["site_digest_url"] = url
+        # Same slug check as the digest post's review buttons.
+        ctx.artifacts["site_review_urls"] = {
+            source_id: site_review_url(slug, cfg) for source_id, slug in slugs.items()
+            if isinstance(slug, str) and re.fullmatch(r"[a-z0-9-]+", slug)
+        }
         ctx.artifacts["site_status"] = "commit_failed"
         conn = get_db(ctx.analyzer.db_path)
         try:

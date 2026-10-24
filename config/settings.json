@@ -74,10 +74,10 @@
   },
   "digest_templates": {
     "ai_value": {
-      "digest_prompt_version": "ai_value-digest-v3",
+      "digest_prompt_version": "ai_value-digest-v4",
       "telegram": "announce",
-      "_comment_announce_style": "points = highlights list (old); teaser = lead + 3 hooks the model picked + the rest (needs digest_prompt_version ai_value-digest-v3).",
-      "announce_style": "teaser",
+      "_comment_announce_style": "points = highlights list (old); teaser = lead + 3 hooks the model picked + the rest (needs digest_prompt_version ai_value-digest-v3 or v4); cards = picks as linked titles with hooks + the rest in a collapsed linked list, up to 3500 chars.",
+      "announce_style": "cards",
       "show_md_link": true,
       "title_max_words": 10,
       "summary_max_sentences": 4,
@@ -93,6 +93,7 @@
         "_default": {"emoji": "🔹", "label": ""}
       },
       "quotas": {"practical": 4, "tools_research": 2, "hype": 0},
+      "quota_min_score": 8,
       "tie_break": "oldest",
       "candidates_list": {"enabled": true, "min_score": 6},
       "editor_review": {"enabled": true, "candidates": 20, "text_chars": 600},

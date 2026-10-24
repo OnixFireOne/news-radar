@@ -89,5 +89,5 @@ def test_config_defaults_keep_old_announce() -> None:
     assert template["announce_style"] == "points"
     assert template["digest_prompt_version"] == "ai_value-digest-v1"
     settings = json.loads(Path("config/settings.json").read_text())["digest_templates"]["ai_value"]
-    assert settings["announce_style"] == "teaser"
-    assert settings["digest_prompt_version"] == "ai_value-digest-v3"
+    assert settings["announce_style"] in ("teaser", "cards")
+    assert settings["digest_prompt_version"] in ("ai_value-digest-v3", "ai_value-digest-v4")

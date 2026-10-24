@@ -74,3 +74,26 @@ def test_verdict_row_mapping():
                                     has_outcome=1, takeaway="Вывод", topic="agents", summary="Кратко",
                                     keywords=json.dumps(["агенты"], ensure_ascii=False))
     assert verdict_to_row(ValueVerdict(1, "opinion", 1, False, "", "other", "", [], False))["has_outcome"] == 0
+
+
+def test_soft_quota_reserves_only_strong_rows():
+    rows = ([candidate("practical_case", 8, id=f"p{i}") for i in range(7)]
+            + [candidate("tool_release", 7, id="t7"), candidate("research", 8, id="r8")])
+    cfg = {"quotas": {"practical": 4, "tools_research": 2, "hype": 0}, "max_items": 7, "min_value_score": 7}
+    hard = [r["id"] for r in select_with_quotas(rows, cfg)]
+    assert "t7" in hard and "r8" in hard
+    soft = [r["id"] for r in select_with_quotas(rows, {**cfg, "quota_min_score": 8})]
+    assert "t7" not in soft and "r8" in soft and len(soft) == 7
+
+
+def test_soft_quota_weak_rows_still_fill_free_slots():
+    rows = [candidate("practical_case", 8, id="p8"), candidate("tool_release", 7, id="t7")]
+    cfg = {"quotas": {"practical": 4, "tools_research": 2}, "max_items": 7, "min_value_score": 7,
+           "quota_min_score": 8}
+    assert [r["id"] for r in select_with_quotas(rows, cfg)] == ["p8", "t7"]
+
+
+def test_soft_quota_keeps_plain_minimum_for_hype():
+    rows = [candidate("hype_news", 6, id="h6")]
+    cfg = {"quotas": {"hype": 1}, "min_value_score": 5, "quota_min_score": 8}
+    assert [r["id"] for r in select_with_quotas(rows, cfg)] == ["h6"]

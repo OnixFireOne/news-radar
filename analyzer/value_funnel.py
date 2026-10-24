@@ -117,12 +117,17 @@ def select_with_quotas(
               if candidates[i].get("value_score") is not None and _rank(candidates[i])[0] >= minimum
               and (candidates[i].get("content_type") != "crypto"
                    or _rank(candidates[i])[1] >= crypto_min or candidates[i].get("in_hot_trend"))]
+    fill_types = QUOTA_GROUPS["practical"] | QUOTA_GROUPS["tools_research"] | {"opinion"}
+    # Soft quotas: a fill group reserves slots only for strong rows; weaker ones compete by rank.
+    # Hype and crypto pass only through their reservation, so they keep the plain minimum.
+    reserve_min = _number(cfg.get("quota_min_score"), minimum)
     selected: set[int] = set()
     for group, types in QUOTA_GROUPS.items():
         limit = max(0, int(_number(quotas.get(group), _DEFAULT_QUOTAS[group])))
-        members = [i for i in ranked if candidates[i].get("content_type") in types]
+        floor = reserve_min if types <= fill_types else minimum
+        members = [i for i in ranked if candidates[i].get("content_type") in types
+                   and _rank(candidates[i])[0] >= floor]
         selected.update(members[:limit])
-    fill_types = QUOTA_GROUPS["practical"] | QUOTA_GROUPS["tools_research"] | {"opinion"}
     for i in ranked:
         if len(selected) >= maximum:
             break
