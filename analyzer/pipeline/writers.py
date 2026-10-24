@@ -10,7 +10,8 @@ from analyzer.pipeline.context import DigestContext, Row
 from analyzer.pipeline.registry import WRITERS, Writer
 from analyzer.prompts import (
     DIGEST_PROMPT_SPOILER, DIGEST_SPOILER_MERGE_ON, DIGEST_SPOILER_MERGE_OFF,
-    DIGEST_PROMPT_AI_VALUE, DIGEST_PROMPT_AI_VALUE_V2, DIGEST_PROMPT_AI_VALUE_V3, SYSTEM_PROMPT,
+    DIGEST_PROMPT_AI_VALUE, DIGEST_PROMPT_AI_VALUE_V2, DIGEST_PROMPT_AI_VALUE_V3,
+    DIGEST_PROMPT_AI_VALUE_V4, SYSTEM_PROMPT,
 )
 from analyzer.knowledge_publisher import frame_article
 from analyzer.json_schemas import DIGEST_AI_VALUE_SCHEMA, DIGEST_AI_VALUE_SCHEMA_V2, DIGEST_AI_VALUE_SCHEMA_V3
@@ -23,6 +24,7 @@ DIGEST_AI_VALUE_PROMPTS = {
     "ai_value-digest-v1": (DIGEST_PROMPT_AI_VALUE, DIGEST_AI_VALUE_SCHEMA),
     "ai_value-digest-v2": (DIGEST_PROMPT_AI_VALUE_V2, DIGEST_AI_VALUE_SCHEMA_V2),
     "ai_value-digest-v3": (DIGEST_PROMPT_AI_VALUE_V3, DIGEST_AI_VALUE_SCHEMA_V3),
+    "ai_value-digest-v4": (DIGEST_PROMPT_AI_VALUE_V4, DIGEST_AI_VALUE_SCHEMA_V3),
 }
 
 

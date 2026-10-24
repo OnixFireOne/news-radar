@@ -89,7 +89,7 @@ def to_markdown(digest_id: int, rows: list[dict[str, Any]], runs: list[dict[str,
                 cfg: dict[str, Any] | None = None) -> str:
     out = [f"# Digest {digest_id}: {len(rows)} articles\n"]
     for run in runs:
-        out.append(f"## {run['model']} ({run['mode']})\n")
+        out.append(f"## {run.get('prompt_version', '')} {run['model']} ({run['mode']})\n")
         out.append(f"tokens in/out/reasoning: {run['prompt_tokens']}/{run['completion_tokens']}/"
                    f"{run['reasoning_tokens']} · cost ${run['cost_usd']} · {run['latency_s']}s\n")
         draft = run["draft"] or {}
@@ -120,26 +120,30 @@ async def main() -> None:
                         help="model:tool|text")
     parser.add_argument("--digests", type=int, default=2, help="how many latest articles digests")
     parser.add_argument("--digest-id", type=int, action="append", default=[])
+    parser.add_argument("--prompt-version", action="append", default=[],
+                        help="digest prompt version(s) to compare; default: the one in settings")
     args = parser.parse_args()
 
     cfg = json.loads(Path(args.settings).read_text())["digest_templates"]["ai_value"]
-    prompt_tpl, schema = DIGEST_AI_VALUE_PROMPTS[cfg.get("digest_prompt_version", "ai_value-digest-v1")]
+    versions = args.prompt_version or [str(cfg.get("digest_prompt_version", "ai_value-digest-v1"))]
     router = ProviderRouter(resolve_active(load_catalog(args.catalog), [args.provider], os.environ), timeout=600)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     ROOT.mkdir(parents=True, exist_ok=True)
     for digest_id, rows in load_digests(args.db, args.digests, args.digest_id):
         articles = "\n\n".join(frame_article(row, str(i), int(cfg.get("text_max_chars", 1500)))
                                for i, row in enumerate(rows, 1))
-        prompt = prompt_tpl.format(articles=articles, title_max_words=cfg.get("title_max_words", 10),
-                                   summary_max_sentences=cfg.get("summary_max_sentences", 4))
         runs = []
-        for spec in args.models:
-            model, _, mode = spec.partition(":")
-            run = await run_one(router, model, mode or "tool", prompt, schema)
-            print(f"digest {digest_id} {model} {run['mode']}: in={run['prompt_tokens']} "
-                  f"out={run['completion_tokens']} reasoning={run['reasoning_tokens']} "
-                  f"cost={run['cost_usd']} {run['latency_s']}s broken={run['broken']}")
-            runs.append(run)
+        for version in versions:
+            prompt_tpl, schema = DIGEST_AI_VALUE_PROMPTS[version]
+            prompt = prompt_tpl.format(articles=articles, title_max_words=cfg.get("title_max_words", 10),
+                                       summary_max_sentences=cfg.get("summary_max_sentences", 4))
+            for spec in args.models:
+                model, _, mode = spec.partition(":")
+                run = dict(await run_one(router, model, mode or "tool", prompt, schema), prompt_version=version)
+                print(f"digest {digest_id} {version} {model} {run['mode']}: in={run['prompt_tokens']} "
+                      f"out={run['completion_tokens']} reasoning={run['reasoning_tokens']} "
+                      f"cost={run['cost_usd']} {run['latency_s']}s broken={run['broken']}")
+                runs.append(run)
         base = ROOT / f"{stamp}-d{digest_id}"
         base.with_suffix(".json").write_text(json.dumps(
             {"digest_id": digest_id, "provider": args.provider, "article_ids": [r["id"] for r in rows],

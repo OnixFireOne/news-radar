@@ -344,6 +344,47 @@ DIGEST_PROMPT_AI_VALUE_V3 = DIGEST_PROMPT_AI_VALUE_V2.replace(
     "One item per input article",
 )
 
+# v4 (24.10): lead/picks rewritten after the review of 13-22.10 announces
+# (specs/reports/teaser-review-2026-10.md): v3 leads repeated one moral every day and hooks
+# followed "number: the case shows why...". Items and schema are the same as v3.
+DIGEST_PROMPT_AI_VALUE_V4 = DIGEST_PROMPT_AI_VALUE.replace(
+    '{{"items":',
+    '{{"lead": "...", "highlights": ["...", "..."], "picks": [{{"source_id": "N", "hook": "..."}}], "items":',
+).replace(
+    "One item per input article",
+    "Reader of lead and picks: a Russian-speaking developer who uses AI tools but does not know the "
+    "project names from this digest.\n"
+    "lead: 1–2 Russian sentences, about 140–200 characters, built only from THESE articles. Start with one "
+    "concrete result, or a clash of two results, from the articles. If the articles share no real common "
+    "theme, do not invent one: name two different practical tasks instead. Do not repeat the numbers or "
+    "conclusions of the picks, and do not claim that all articles prove one thesis. Every sentence must "
+    "name a subject of today's articles. Never start with 'Практическая польза/ценность ИИ', "
+    "'Надёжность ИИ', 'В этих материалах', 'В сегодняшних материалах', 'Кейсы дня показывают'; never use "
+    "'зависит не только от модели', 'важно проверять результаты' or other advice that fits almost any day.\n"
+    "highlights: 2–3 short Russian points, at most about 8 words each, one per article, choosing the most "
+    "useful articles in this digest. Return empty lead/highlights if the articles do not support them.\n"
+    "picks: up to 3 articles of THIS digest most worth opening (all of them if there are fewer), best first. "
+    "Choose by usefulness for the reader, novelty and quality of evidence; prefer a concrete task, result or "
+    "reproducible way of working over general reasoning. Do not pick three variations of the same moral when "
+    "a comparably useful article on another topic exists; this is a preference, not a quota, and must not "
+    "push out a clearly stronger article.\n"
+    "hook: one complete Russian sentence, at most about 20 words and preferably under 140 characters. "
+    "The announcement shows the item title right above the hook, so do not repeat the title; add what it "
+    "lacks. Explain the task or the result first. An unfamiliar name is allowed only with a short "
+    "description of what it does; if that does not fit, drop the name. A number is optional; if you use "
+    "one, the reader must understand what was counted and what it was compared with. Do not turn a test "
+    "sample into a guarantee, a single run into a pattern, or a preliminary estimate into a proven effect; "
+    "keep a caveat when the practical conclusion changes without it. The reason to open must follow from "
+    "the fact itself: never write 'кейс показывает', 'эксперимент показывает', 'эксперимент помогает', "
+    "'статья объясняет', 'полезный пример', 'полезный кейс', 'в статье — подход'. Start the hooks of one "
+    "digest differently; do not build all of them as 'number: moral'. No clickbait, no exaggeration, no "
+    "facts absent from the article, no imperatives like 'узнайте', 'изучите', 'посмотрите'.\n"
+    "Before answering, silently check each hook against the article: source fragment, units, baseline of "
+    "comparison, scope. Do not show this check. If brevity and accuracy conflict, choose another fact or "
+    "another article.\n"
+    "One item per input article",
+)
+
 KNOWLEDGE_PROMPT_VERSION = "knowledge-v1"
 KNOWLEDGE_MD_PROMPT_AI_VALUE = """Summarize this AI article in RUSSIAN. Return strictly JSON:
 {{"title": "...", "idea": "...", "conclusion": "...", "tags": ["tag", "tag"]}}
